@@ -11,16 +11,14 @@ const CAR_COLORS := [Color(0.75, 0.16, 0.14), Color(0.16, 0.32, 0.62), Color(0.9
 	Color(0.62, 0.64, 0.66), Color(0.12, 0.12, 0.14), Color(0.9, 0.72, 0.2), Color(0.2, 0.45, 0.3),
 	Color(0.85, 0.4, 0.15), Color(0.2, 0.55, 0.6)]
 
-static var _vc_mat: StandardMaterial3D
+static var _vc_mat: ShaderMaterial
 static var _cache := {}
 
 
-static func vc_material() -> StandardMaterial3D:
+static func vc_material() -> ShaderMaterial:
 	if _vc_mat == null:
-		_vc_mat = StandardMaterial3D.new()
-		_vc_mat.vertex_color_use_as_albedo = true
-		_vc_mat.vertex_color_is_srgb = true
-		_vc_mat.roughness = 0.92
+		_vc_mat = ShaderMaterial.new()
+		_vc_mat.shader = load("res://shaders/lit_vc.gdshader")
 	return _vc_mat
 
 

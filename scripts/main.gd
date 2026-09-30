@@ -3,7 +3,7 @@ extends Node3D
 ##
 ## Debug args (after `--` on the command line):
 ##   --seed=N  --speed=0..3  --cam=x,z,dist,yaw_deg,pitch_deg  --select=K (Kth terminal island)
-##   --follow=K (Kth ferry)  --shot=path.png  --shot-delay=seconds
+##   --follow=K (Kth ferry)  --time=H (pin time of day, e.g. 19.5)  --shot=path.png  --shot-delay=seconds
 
 static var map_seed := 0
 
@@ -14,6 +14,9 @@ var rig: CameraRig
 var hud: Hud
 var sun: DirectionalLight3D
 var env: Environment
+var sky_mat: ProceduralSkyMaterial
+var day_cycle: DayCycle
+var water_mat: ShaderMaterial
 var route_overlay: MeshInstance3D
 var _args := {}
 
@@ -30,6 +33,7 @@ func _ready() -> void:
 	var builder := WorldBuilder.new(map, terrain)
 	add_child(builder.build())
 	route_overlay = builder.route_overlay
+	water_mat = builder.water_material
 	print("Map %d built in %d ms: %d islands, %d routes" % [map_seed, Time.get_ticks_msec() - t0, map.islands.size(), map.routes.size()])
 
 	rig = CameraRig.new()
@@ -40,6 +44,18 @@ func _ready() -> void:
 	sim.name = "Simulation"
 	add_child(sim)
 	sim.setup(map, terrain)
+	var clouds := CloudLayer.new()
+	clouds.setup(sim.weather, sim.wind_dir, sim.wind_speed)
+	add_child(clouds)
+	day_cycle = DayCycle.new()
+	day_cycle.name = "DayCycle"
+	day_cycle.sim = sim
+	day_cycle.sun = sun
+	day_cycle.env = env
+	day_cycle.sky_mat = sky_mat
+	day_cycle.water_mat = water_mat
+	add_child(day_cycle)
+	day_cycle.apply(sim.hour())
 	hud = Hud.new()
 	add_child(hud)
 	hud.setup(self)
@@ -53,7 +69,8 @@ func regenerate() -> void:
 
 
 func _setup_environment() -> void:
-	var sky_mat := ProceduralSkyMaterial.new()
+	# Colours, ambient, fog and sun direction are driven per frame by DayCycle.
+	sky_mat = ProceduralSkyMaterial.new()
 	sky_mat.sky_top_color = Color(0.36, 0.56, 0.8)
 	sky_mat.sky_horizon_color = Color(0.74, 0.83, 0.9)
 	sky_mat.ground_horizon_color = Color(0.74, 0.83, 0.9)
@@ -63,7 +80,7 @@ func _setup_environment() -> void:
 	env = Environment.new()
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_energy = 0.6
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
@@ -80,6 +97,13 @@ func _setup_environment() -> void:
 	env.fog_depth_end = 1600.0
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.12
+	# Thin volumetric haze so sunlight scatters and cloud shadows read as shafts.
+	env.volumetric_fog_enabled = true
+	env.volumetric_fog_density = 0.0012
+	env.volumetric_fog_anisotropy = 0.6
+	env.volumetric_fog_ambient_inject = 0.1
+	env.volumetric_fog_sky_affect = 0.15
+	env.volumetric_fog_temporal_reprojection_enabled = true
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -100,6 +124,7 @@ func _process(_delta: float) -> void:
 	sun.directional_shadow_max_distance = clampf(rig.distance * 2.6, 120.0, 1200.0)
 	env.fog_depth_begin = rig.distance * 1.6 + 200.0
 	env.fog_depth_end = rig.distance * 4.0 + 700.0
+	env.volumetric_fog_length = clampf(rig.distance * 2.4, 250.0, 1600.0)
 
 
 # --- Debug / screenshot args ----------------------------------------------------------
@@ -112,6 +137,9 @@ func _parse_args() -> void:
 
 
 func _apply_debug_args() -> void:
+	if _args.has("time"):
+		day_cycle.set_hour(float(_args["time"]))
+		day_cycle.apply(day_cycle.hour())
 	if _args.has("speed"):
 		hud.set_speed(int(_args["speed"]))
 	if _args.has("cam"):

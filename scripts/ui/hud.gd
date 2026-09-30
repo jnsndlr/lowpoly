@@ -218,7 +218,7 @@ func _build_sidebar() -> void:
 
 func _build_help() -> void:
 	var l := _label("Drag: pan · Right-drag / Q E: rotate & tilt · Wheel / pinch: zoom · Click: select\n" +
-		"Space: pause · 1-3: speed · Tab: next ferry · Esc: deselect · G: new map", 12, Color(1, 1, 1, 0.75))
+		"Space: pause · 1-3: speed · Tab: next ferry · Esc: deselect · G: new map · [ ]: time of day · T: follow clock", 12, Color(1, 1, 1, 0.75))
 	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
 	l.add_theme_constant_override("shadow_offset_y", 1)
 	l.anchor_top = 1.0
@@ -381,6 +381,13 @@ func _unhandled_input(event: InputEvent) -> void:
 				select_ferry(sim.ferries[(i + 1) % sim.ferries.size()])
 		KEY_G:
 			main.regenerate()
+		KEY_BRACKETLEFT, KEY_BRACKETRIGHT:
+			var step := -1.0 if (event as InputEventKey).physical_keycode == KEY_BRACKETLEFT else 1.0
+			main.day_cycle.set_hour(roundf(main.day_cycle.hour()) + step)
+			show_toast("TIME OF DAY", "Lighting pinned to %s. Press T to follow the clock." % sim.clock_text(main.day_cycle.hour() * 60.0), 3.0)
+		KEY_T:
+			main.day_cycle.follow_clock()
+			show_toast("TIME OF DAY", "Lighting follows the game clock.", 3.0)
 
 
 # --- Info panel (top right) ---------------------------------------------------------
@@ -608,9 +615,15 @@ func _build_minimap(env: Environment) -> void:
 	cam.far = 1000.0
 	cam.position = Vector3(0, 400, 0)
 	cam.rotation_degrees = Vector3(-90, 0, 0)
+	cam.cull_mask = 1 # skip the visible cloud layer
 	var mini_env := env.duplicate() as Environment
 	mini_env.fog_enabled = false
 	mini_env.ssao_enabled = false
+	mini_env.volumetric_fog_enabled = false
+	# Rendered once, so give it flat daylight regardless of the time of day it starts at.
+	mini_env.ambient_light_color = Color(0.85, 0.9, 1.0)
+	mini_env.ambient_light_energy = 1.0
+	mini_env.tonemap_exposure = 1.0
 	cam.environment = mini_env
 	vp.add_child(cam)
 

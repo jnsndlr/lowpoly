@@ -18,6 +18,7 @@ var terrain: Terrain
 var rng := RandomNumberGenerator.new()
 var root: Node3D
 var route_overlay: MeshInstance3D
+var water_material: ShaderMaterial
 var _blocked := {}
 
 
@@ -154,6 +155,8 @@ func _build_water() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/water.gdshader")
 	var inner := map.half_size + 100.0
+	mat.set_shader_parameter("swell_extent", inner)
+	water_material = mat
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(inner * 2.0, inner * 2.0)
 	plane.subdivide_width = 180
