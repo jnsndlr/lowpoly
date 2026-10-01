@@ -19,12 +19,21 @@ void vertex() {
 
 void fragment() {
 	vec2 p = world_pos.xz;
-	float d = cloud_density(p, TIME);
-	float e = 12.0;
-	float dx = cloud_density(p + vec2(e, 0.0), TIME) - d;
-	float dz = cloud_density(p + vec2(0.0, e), TIME) - d;
-	// Treat density as height so edges shade like rounded billows.
-	vec3 wn = normalize(vec3(-dx * puff, 1.0, -dz * puff));
+	float coarse = cloud_octaves(p, TIME, 0, COARSE_OCTAVES);
+	float d = 0.0;
+	vec3 wn = vec3(0.0, 1.0, 0.0);
+	// Clear sky (the fine octaves can't lift it past the threshold) needs no more work.
+	if (coarse + CLOUD_FINE_RANGE >= cloud_threshold()) {
+		float n = coarse + cloud_octaves(p, TIME, COARSE_OCTAVES, CLOUD_OCTAVES);
+		d = cloud_coverage_curve(n);
+		// The 12-unit finite difference smooths away the fine octaves anyway, so step
+		// only the broad ones and shift the full-detail value by that change.
+		float e = 12.0;
+		float dx = cloud_coverage_curve(n + cloud_octaves(p + vec2(e, 0.0), TIME, 0, COARSE_OCTAVES) - coarse) - d;
+		float dz = cloud_coverage_curve(n + cloud_octaves(p + vec2(0.0, e), TIME, 0, COARSE_OCTAVES) - coarse) - d;
+		// Treat density as height so edges shade like rounded billows.
+		wn = normalize(vec3(-dx * puff, 1.0, -dz * puff));
+	}
 	NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
 
 	float near = mix(0.12, 1.0, smoothstep(near_fade_start, near_fade_end, length(VERTEX)));

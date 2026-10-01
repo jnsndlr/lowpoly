@@ -4,6 +4,7 @@ extends Node3D
 ## Debug args (after `--` on the command line):
 ##   --seed=N  --speed=0..3  --cam=x,z,dist,yaw_deg,pitch_deg  --select=K (Kth terminal island)
 ##   --follow=K (Kth ferry)  --time=H (pin time of day, e.g. 19.5)  --shot=path.png  --shot-delay=seconds
+##   --bench=seconds (print frame/GPU time and render stats, then quit)
 
 static var map_seed := 0
 
@@ -163,6 +164,31 @@ func _apply_debug_args() -> void:
 			hud.select_ferry(sim.ferries[k])
 	if _args.has("shot"):
 		_take_screenshot(str(_args["shot"]), float(_args.get("shot-delay", "3")))
+	if _args.has("bench"):
+		_bench(float(_args["bench"]))
+
+
+## Prints averaged frame / GPU time and render stats after a warm-up, then quits.
+## GPU time needs a driver with timestamp queries (e.g. --rendering-driver vulkan).
+func _bench(seconds: float) -> void:
+	var vp := get_viewport().get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(vp, true)
+	await get_tree().create_timer(3.0, true, false, true).timeout
+	var frames := 0
+	var gpu := 0.0
+	var t0 := Time.get_ticks_usec()
+	while (Time.get_ticks_usec() - t0) / 1e6 < seconds:
+		await get_tree().process_frame
+		frames += 1
+		gpu += RenderingServer.viewport_get_measured_render_time_gpu(vp)
+	var rs := RenderingServer
+	print("BENCH frame %.2f ms | gpu %.2f ms | draws %d | primitives %d | objects %d | nodes %d" % [
+		(Time.get_ticks_usec() - t0) / 1000.0 / frames, gpu / frames,
+		rs.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
+		rs.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME),
+		rs.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME),
+		Performance.get_monitor(Performance.OBJECT_NODE_COUNT)])
+	get_tree().quit()
 
 
 func _take_screenshot(path: String, delay: float) -> void:

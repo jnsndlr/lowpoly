@@ -129,9 +129,15 @@ func _build_terrain() -> void:
 
 
 func _terrain_tri(mb: MeshBuilder, a: Vector3, b: Vector3, c: Vector3) -> void:
-	var nrm := (b - a).cross(c - a).normalized()
-	var avg := (a.y + b.y + c.y) / 3.0
-	mb.tri(a, b, c, _ground_color(avg, absf(nrm.y), a.x + c.x, a.z + b.z), Vector3.UP)
+	var nrm := (b - a).cross(c - a)
+	if nrm.length_squared() < 1e-10:
+		return
+	nrm = nrm.normalized()
+	var col := _ground_color((a.y + b.y + c.y) / 3.0, absf(nrm.y), a.x + c.x, a.z + b.z)
+	if nrm.y < 0.0:
+		mb.tri_raw(a, c, b, -nrm, col)
+	else:
+		mb.tri_raw(a, b, c, nrm, col)
 
 
 func _ground_color(h: float, ny: float, sx: float, sz: float) -> Color:
@@ -389,10 +395,11 @@ func _build_vegetation() -> void:
 			var pz := z + rng.randf_range(-1.4, 1.4)
 			x += step
 			var h := terrain.height_at(px, pz)
+			# Open water gets nothing (and draws no random numbers), so skip the slope.
+			if h <= -1.0 or _is_blocked(px, pz):
+				continue
 			var slope := Vector2(terrain.height_at(px + 1.0, pz) - terrain.height_at(px - 1.0, pz),
 				terrain.height_at(px, pz + 1.0) - terrain.height_at(px, pz - 1.0)).length() * 0.5
-			if _is_blocked(px, pz):
-				continue
 			if h > 1.3 and slope < 1.0:
 				var density := 0.85 + forest.get_noise_2d(px, pz) * 1.2
 				var near_town := false

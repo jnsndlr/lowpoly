@@ -54,4 +54,11 @@ saved map can therefore replace `MapGenerator.generate()` without other changes.
 ```
 
 Available flags: `--seed=N`, `--speed=0..3`, `--cam=x,z,dist,yaw,pitch`, `--select=K`,
-`--follow=K`, `--shot=path.png`, `--shot-delay=s`.
+`--follow=K`, `--time=H`, `--shot=path.png`, `--shot-delay=s`, `--bench=s`.
+
+`--bench=s` prints average frame time, GPU time, draw calls and primitives over `s`
+seconds and quits. Metal doesn't report GPU time, so profile with Vulkan:
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --path . --rendering-driver vulkan -- --seed=42 --bench=6
+```

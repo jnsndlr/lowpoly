@@ -46,42 +46,83 @@ float vnoise(vec2 p) {
 			mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
 
+// Random unit gradient per lattice cell (hash22 + normalise; no sin/cos).
+vec2 grad(vec2 i) {
+	vec3 p3 = fract(vec3(i.xyx) * vec3(0.1031, 0.1030, 0.0973));
+	p3 += dot(p3, p3.yzx + 33.33);
+	vec2 g = fract((p3.xx + p3.yz) * p3.zy) * 2.0 - 1.0;
+	return g * inversesqrt(max(dot(g, g), 1e-4));
+}
+
 // Gradient noise in -1..1; unlike value noise it has no visible grid cells.
 float gnoise(vec2 p) {
 	vec2 i = floor(p);
 	vec2 f = fract(p);
 	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-	float a0 = hash(i) * TAU;
-	float a1 = hash(i + vec2(1.0, 0.0)) * TAU;
-	float a2 = hash(i + vec2(0.0, 1.0)) * TAU;
-	float a3 = hash(i + vec2(1.0, 1.0)) * TAU;
-	float n0 = dot(vec2(cos(a0), sin(a0)), f);
-	float n1 = dot(vec2(cos(a1), sin(a1)), f - vec2(1.0, 0.0));
-	float n2 = dot(vec2(cos(a2), sin(a2)), f - vec2(0.0, 1.0));
-	float n3 = dot(vec2(cos(a3), sin(a3)), f - vec2(1.0, 1.0));
+	float n0 = dot(grad(i), f);
+	float n1 = dot(grad(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
+	float n2 = dot(grad(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));
+	float n3 = dot(grad(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));
 	return mix(mix(n0, n1, u.x), mix(n2, n3, u.x), u.y) * 1.5;
+}
+
+// Gradient noise plus its analytic derivative: (value, d/dx, d/dy), same scale as gnoise.
+vec3 gnoise_d(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+	vec2 ga = grad(i);
+	vec2 gb = grad(i + vec2(1.0, 0.0));
+	vec2 gc = grad(i + vec2(0.0, 1.0));
+	vec2 gd = grad(i + vec2(1.0, 1.0));
+	float va = dot(ga, f);
+	float vb = dot(gb, f - vec2(1.0, 0.0));
+	float vc = dot(gc, f - vec2(0.0, 1.0));
+	float vd = dot(gd, f - vec2(1.0, 1.0));
+	float k = va - vb - vc + vd;
+	float v = va + u.x * (vb - va) + u.y * (vc - va) + u.x * u.y * k;
+	vec2 d = ga + u.x * (gb - ga) + u.y * (gc - ga) + u.x * u.y * (ga - gb - gc + gd)
+			+ du * (u.yx * k + vec2(vb, vc) - va);
+	return vec3(v, d) * 1.5;
 }
 
 // Wind-driven chop: the domain is warped and stretched across the wind so crests
 // read as elongated wavelets rather than a repeating cell pattern, and the layers
 // drift in different directions so the whole never visibly scrolls.
-float chop(vec2 p, float t) {
-	mat2 rot = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8));
-	p = rot * p;
-	p += 0.45 * vec2(gnoise(p * 0.27 + t * 0.04), gnoise(p * 0.27 + 31.7 - t * 0.04));
+// Split in two so the (slowly varying) warp is shared by the normal's three taps.
+const mat2 CHOP_ROT = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8));
+
+vec2 chop_warp(vec2 p, float t) {
+	p = CHOP_ROT * p;
+	return p + 0.45 * vec2(gnoise(p * 0.27 + t * 0.04), gnoise(p * 0.27 + 31.7 - t * 0.04));
+}
+
+// Returns (height 0..1, dh/dx, dh/dy) with respect to the warped domain. Slopes are
+// weighted per octave to match the soft look of the old 0.12-step finite difference,
+// which blurred the finest layers (sinc falloff), at a third of the noise lookups.
+vec3 chop_layers(vec2 p, float t) {
 	p.y *= 0.7;
+	mat2 jac = mat2(vec2(1.0, 0.0), vec2(0.0, 0.7));
 	float h = 0.0;
+	vec2 dh = vec2(0.0);
 	float a = 0.34;
 	vec2 drift = vec2(0.35, 0.22);
+	const vec4 SLOPE_WEIGHT = vec4(0.97, 0.9, 0.7, 0.3);
 	for (int i = 0; i < 4; i++) {
-		float n = gnoise(p + drift * t);
+		vec3 n = gnoise_d(p + drift * t);
 		// Soft ridge: rounded at the top so crests don't shade as hard creases.
-		h += a * (1.0 - 1.6 * sqrt(n * n + 0.02));
-		p = rot * p * 1.87 + 17.1;
-		drift = rot * drift * -1.35;
+		float r = sqrt(n.x * n.x + 0.02);
+		h += a * (1.0 - 1.6 * r);
+		dh += a * -1.6 * n.x / r * SLOPE_WEIGHT[i] * (transpose(jac) * n.yz);
+		p = CHOP_ROT * p * 1.87 + 17.1;
+		jac = CHOP_ROT * jac * 1.87;
+		drift = CHOP_ROT * drift * -1.35;
 		a *= 0.72;
 	}
-	return clamp(h * 1.15 + 0.12, 0.0, 1.0);
+	float raw = h * 1.15 + 0.12;
+	float inside = step(0.0, raw) * step(raw, 1.0);
+	return vec3(clamp(raw, 0.0, 1.0), dh * 1.15 * inside);
 }
 
 float swell(vec2 p, float t) {
@@ -110,13 +151,13 @@ void fragment() {
 	float gust = vnoise(p * 0.012 + vec2(t * 0.02, -t * 0.015));
 	gust = mix(gust, vnoise(p * 0.035 - t * 0.02), 0.35);
 
-	vec2 rp = p * ripple_scale;
-	float e = 0.12;
-	float h0 = chop(rp, t);
-	float hx = chop(rp + vec2(e, 0.0), t);
-	float hz = chop(rp + vec2(0.0, e), t);
+	// Beyond the fade distance the ripples contribute nothing but foam breakup.
+	vec3 ch = detail > 0.0 ? chop_layers(chop_warp(p * ripple_scale, t), t) : vec3(0.5, 0.0, 0.0);
+	float h0 = ch.x;
+	// Slope in ripple space (the warp varies slowly, so its own stretch is ignored).
+	vec2 slope = transpose(CHOP_ROT) * ch.yz;
 	float strength = ripple_strength * detail * mix(0.45, 1.25, gust);
-	vec3 wn = normalize(vec3(-(hx - h0) / e * strength, 1.0, -(hz - h0) / e * strength));
+	vec3 wn = normalize(vec3(-slope.x * strength, 1.0, -slope.y * strength));
 	NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
 
 	// Water column depth under this fragment.

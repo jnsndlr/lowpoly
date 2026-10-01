@@ -19,10 +19,16 @@ func setup(mesh: Mesh, truck: bool) -> void:
 	add_child(mi)
 
 
+func _ready() -> void:
+	# Parked and queued cars are most of the traffic; only moving ones need a tick.
+	set_process(not path.is_empty())
+
+
 func drive(points: PackedVector3Array, on_arrive := Callable(), start_delay := 0.0) -> void:
 	path = points
 	_on_arrive = on_arrive
 	delay = start_delay
+	set_process(not path.is_empty())
 
 
 func _process(delta: float) -> void:
@@ -39,6 +45,7 @@ func _process(delta: float) -> void:
 			step -= dist
 			path.remove_at(0)
 			if path.is_empty():
+				set_process(false)  # before the callback, which may drive() again
 				var cb := _on_arrive
 				_on_arrive = Callable()
 				if cb.is_valid():

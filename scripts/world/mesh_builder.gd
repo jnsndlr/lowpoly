@@ -42,6 +42,20 @@ func tri3(a: Vector3, b: Vector3, c: Vector3, ca: Color, cb: Color, cc: Color, o
 	colors.append(cb)
 
 
+## Fast path for an untransformed triangle whose unit normal `n` is already known and
+## already matches the right-hand winding of a, b, c (no xform, no winding test).
+func tri_raw(a: Vector3, b: Vector3, c: Vector3, n: Vector3, col: Color) -> void:
+	verts.append(a)
+	verts.append(c)
+	verts.append(b)
+	normals.append(n)
+	normals.append(n)
+	normals.append(n)
+	colors.append(col)
+	colors.append(col)
+	colors.append(col)
+
+
 func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, col: Color, outward := Vector3.ZERO) -> void:
 	tri(a, b, c, col, outward)
 	tri(a, c, d, col, outward)

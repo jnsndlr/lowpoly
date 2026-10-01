@@ -430,16 +430,23 @@ func _on_info_button() -> void:
 	_refresh_panels()
 
 
+## Refreshed four times a second, so existing labels are reused and only retexted.
 func _set_rows(rows: Array) -> void:
-	for c in _info_grid.get_children():
+	var need := rows.size() * 2
+	while _info_grid.get_child_count() > need:
+		var c := _info_grid.get_child(_info_grid.get_child_count() - 1)
+		_info_grid.remove_child(c)
 		c.queue_free()
-	for r in rows:
-		var name_l := _label(r[0], 13, MUTED)
-		var val := _label(r[1], 13, TEXT, true)
+	while _info_grid.get_child_count() < need:
+		var name_l := _label("", 13, MUTED)
+		var val := _label("", 13, TEXT, true)
 		val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		_info_grid.add_child(name_l)
 		_info_grid.add_child(val)
+	for i in rows.size():
+		(_info_grid.get_child(i * 2) as Label).text = rows[i][0]
+		(_info_grid.get_child(i * 2 + 1) as Label).text = rows[i][1]
 
 
 func _refresh_panels() -> void:
@@ -557,16 +564,20 @@ func _build_fleet_panel() -> void:
 
 
 func _rebuild_fleet() -> void:
-	for c in _fleet_list.get_children():
-		c.queue_free()
-	for f in sim.ferries:
-		var b := Button.new()
-		b.focus_mode = Control.FOCUS_NONE
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.text = "%s  ·  %d/%d  ·  %s" % [f.ferry_name, f.load_count(), Ferry.CAPACITY, f.status_text()]
-		b.add_theme_font_size_override("font_size", 13)
-		b.pressed.connect(select_ferry.bind(f))
-		_fleet_list.add_child(b)
+	if _fleet_list.get_child_count() != sim.ferries.size():
+		for c in _fleet_list.get_children():
+			_fleet_list.remove_child(c)
+			c.queue_free()
+		for f in sim.ferries:
+			var b := Button.new()
+			b.focus_mode = Control.FOCUS_NONE
+			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			b.add_theme_font_size_override("font_size", 13)
+			b.pressed.connect(select_ferry.bind(f))
+			_fleet_list.add_child(b)
+	for i in sim.ferries.size():
+		var f := sim.ferries[i]
+		(_fleet_list.get_child(i) as Button).text = "%s  ·  %d/%d  ·  %s" % [f.ferry_name, f.load_count(), Ferry.CAPACITY, f.status_text()]
 
 
 # --- Toast --------------------------------------------------------------------------
