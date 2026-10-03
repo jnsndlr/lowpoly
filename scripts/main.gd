@@ -56,6 +56,11 @@ func _ready() -> void:
 	day_cycle.sky_mat = sky_mat
 	day_cycle.water_mat = water_mat
 	add_child(day_cycle)
+	var wakes := WakeField.new()
+	wakes.name = "WakeField"
+	wakes.sim = sim
+	wakes.water_mat = water_mat
+	add_child(wakes)
 	day_cycle.apply(sim.hour())
 	hud = Hud.new()
 	add_child(hud)

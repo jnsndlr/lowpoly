@@ -35,15 +35,15 @@ const KEYS := [
 		"fog": Color(0.98, 0.56, 0.38), "exposure": 1.05,
 		"haze": 0.00014, "glow": 0.65, "saturation": 1.3, "sun_glow": 60.0},
 	{"elev": 14.0, # golden hour
-		"light": Color(1.0, 0.7, 0.42), "energy": 1.6,
+		"light": Color(1.0, 0.7, 0.42), "energy": 1.7,
 		"top": Color(0.3, 0.44, 0.72), "horizon": Color(0.98, 0.74, 0.54),
-		"ambient": Color(0.52, 0.6, 0.8), "ambient_energy": 0.58,
+		"ambient": Color(0.42, 0.52, 0.86), "ambient_energy": 0.52,
 		"fog": Color(0.92, 0.76, 0.64), "exposure": 1.0,
 		"haze": 0.00009, "glow": 0.4, "saturation": 1.18, "sun_glow": 40.0},
 	{"elev": 30.0, # day
-		"light": Color(1.0, 0.95, 0.86), "energy": 1.3,
+		"light": Color(1.0, 0.92, 0.8), "energy": 1.45,
 		"top": Color(0.36, 0.56, 0.8), "horizon": Color(0.74, 0.83, 0.9),
-		"ambient": Color(0.62, 0.72, 0.86), "ambient_energy": 0.6,
+		"ambient": Color(0.48, 0.62, 0.9), "ambient_energy": 0.52,
 		"fog": Color(0.74, 0.82, 0.88), "exposure": 1.0,
 		"haze": 0.00004, "glow": 0.25, "saturation": 1.12, "sun_glow": 30.0},
 ]
@@ -119,6 +119,8 @@ func apply(h: float) -> void:
 	sky_mat.sun_angle_max = p.sun_glow
 	if water_mat:
 		water_mat.set_shader_parameter("daylight", clampf(elev / 20.0, 0.0, 1.0))
+		water_mat.set_shader_parameter("sky_top_color", p.top)
+		water_mat.set_shader_parameter("sky_horizon_color", p.horizon)
 
 
 func _palette(elev: float) -> Dictionary:

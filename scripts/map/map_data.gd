@@ -56,6 +56,6 @@ class Route:
 
 
 var map_seed := 0
-var half_size := 360.0
+var half_size := 460.0
 var islands: Array[Island] = []
 var routes: Array[Route] = []

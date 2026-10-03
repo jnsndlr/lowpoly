@@ -15,6 +15,14 @@ const DISPATCH_GAP := 0.5
 const ROWS := [10.0, 7.5, 5.0, 2.5, 0.0, -2.5, -5.0, -7.5, -10.0]
 const COLS := [-2.25, -0.75, 0.75, 2.25]
 const END_Z := 14.0
+# Wake trail: a breadcrumb is dropped at the stern every WAKE_SPACING metres (or
+# sooner once the heading has swung WAKE_TURN, so bends stay smooth) and kept for
+# WAKE_LIFE seconds. WakeField hands the trail to the water shader.
+const HULL_HALF_LENGTH := 15.0
+const WAKE_SPACING := 8.0
+const WAKE_TURN := 0.07
+const WAKE_LIFE := 24.0
+const WAKE_CRUMBS := 46
 
 var sim: Simulation
 var route: MapData.Route
@@ -33,9 +41,13 @@ var _unload_queue: Array[Vehicle] = []
 var _dispatch_timer := 0.0
 var _state_time := 0.0
 var _bob_time := 0.0
-var _wake_back: MeshInstance3D
-var _wake_front: MeshInstance3D
-var _wake_mat: StandardMaterial3D
+var odometer := 0.0
+var _clock := 0.0
+var _crumbs: Array[Vector4] = []   # (x, z, odometer, time dropped), newest first
+var _crumb_speed: Array[float] = []
+var _heading := Vector3.FORWARD
+var _crumb_heading := Vector3.FORWARD
+var _last_pos := Vector3.ZERO
 
 
 func setup(s: Simulation, r: MapData.Route, nm: String) -> void:
@@ -51,15 +63,6 @@ func setup(s: Simulation, r: MapData.Route, nm: String) -> void:
 	var hull := MeshInstance3D.new()
 	hull.mesh = Models.ferry()
 	add_child(hull)
-	_wake_mat = Models.unshaded_material()
-	_wake_back = MeshInstance3D.new()
-	_wake_back.mesh = Models.wake()
-	_wake_back.material_override = _wake_mat
-	_wake_back.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_wake_back)
-	_wake_front = _wake_back.duplicate() as MeshInstance3D
-	_wake_front.rotation.y = PI
-	add_child(_wake_front)
 	_place(0.0)
 
 
@@ -117,11 +120,7 @@ func _process(delta: float) -> void:
 			_tick_loading(delta)
 		State.SAILING:
 			_tick_sailing(delta)
-	var c := _wake_mat.albedo_color
-	c.a = clampf(speed / CRUISE, 0.0, 1.0) * 0.8
-	_wake_mat.albedo_color = c
-	_wake_back.visible = state == State.SAILING and at_a
-	_wake_front.visible = state == State.SAILING and not at_a
+	_update_trail(delta)
 
 
 func _begin_unloading() -> void:
@@ -175,6 +174,11 @@ func _tick_loading(delta: float) -> void:
 		state = State.SAILING
 		traveled = 0.0
 		_state_time = 0.0
+		# The last crossing's wake has long faded by now, and it lies along the same
+		# water, so start a fresh trail.
+		odometer = 0.0
+		_crumbs.clear()
+		_crumb_speed.clear()
 
 
 func _drive_on(car: Vehicle, term: Terminal) -> void:
@@ -222,6 +226,57 @@ func _place(s: float) -> void:
 	if d.length_squared() < 1e-6:
 		return
 	global_transform = Transform3D(Basis.looking_at(-d.normalized(), Vector3.UP), Vector3(p.x, 0.0, p.z))
+
+
+func _update_trail(delta: float) -> void:
+	_clock += delta
+	# Taken from the actual movement, so it can't disagree with which end leads.
+	var moved := global_position - _last_pos
+	moved.y = 0.0
+	var moving := moved.length_squared() > 1e-8
+	if moving:
+		_heading = moved.normalized()
+	_last_pos = global_position
+	odometer += speed * delta
+	var gap := INF if _crumbs.is_empty() else odometer - _crumbs[0].z
+	var turned := _heading.angle_to(_crumb_heading) >= WAKE_TURN and gap >= 1.5
+	# Only once the ferry is actually under way: on the frame it casts off the
+	# heading still points the way it arrived, which would put the first crumb at
+	# the wrong end of the hull and fold the trail back on itself.
+	if state == State.SAILING and moving and (gap >= WAKE_SPACING or turned):
+		_crumb_heading = _heading
+		var stern := global_position - _heading * HULL_HALF_LENGTH
+		_crumbs.push_front(Vector4(stern.x, stern.z, odometer, _clock))
+		_crumb_speed.push_front(speed / CRUISE)
+	while not _crumbs.is_empty() and (_crumbs.size() > WAKE_CRUMBS or _clock - _crumbs.back().w > WAKE_LIFE):
+		_crumbs.pop_back()
+		_crumb_speed.pop_back()
+
+
+## Appends the wake trail to `pts` as (x, z, distance along, age) from bow to stern
+## and back along the breadcrumbs, with speed fractions in `spd`. Returns the
+## number of points written (0 when there is no wake).
+func pack_wake(pts: PackedVector4Array, spd: PackedFloat32Array, at: int) -> int:
+	if _crumbs.is_empty():
+		return 0
+	var h := _heading
+	var s := speed / CRUISE
+	var bow := global_position + h * HULL_HALF_LENGTH
+	var stern := global_position - h * HULL_HALF_LENGTH
+	pts[at] = Vector4(bow.x, bow.z, odometer + HULL_HALF_LENGTH * 2.0, 0.0)
+	pts[at + 1] = Vector4(stern.x, stern.z, odometer, 0.0)
+	spd[at] = s
+	spd[at + 1] = s
+	var n := 2
+	for i in _crumbs.size():
+		var c := _crumbs[i]
+		# The newest crumb can sit right at the stern; skip it to avoid a zero-length segment.
+		if odometer - c.z < 1.0:
+			continue
+		pts[at + n] = Vector4(c.x, c.y, c.z, _clock - c.w)
+		spd[at + n] = _crumb_speed[i]
+		n += 1
+	return n
 
 
 func load_count() -> int:

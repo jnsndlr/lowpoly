@@ -42,9 +42,9 @@ static func pine_tree() -> ArrayMesh:
 	return _cached("pine", func():
 		var mb := MeshBuilder.new()
 		mb.cylinder(Vector3(0, -0.4, 0), 0.28, 0.2, 1.6, 5, Color(0.36, 0.25, 0.17))
-		mb.cylinder(Vector3(0, 0.9, 0), 1.6, 0.0, 2.4, 6, Color(0.16, 0.34, 0.19), Color(-1, 0, 0), 0.3)
-		mb.cylinder(Vector3(0, 2.2, 0), 1.25, 0.0, 2.1, 6, Color(0.19, 0.39, 0.21), Color(-1, 0, 0), 0.8)
-		mb.cylinder(Vector3(0, 3.4, 0), 0.85, 0.0, 1.8, 6, Color(0.22, 0.44, 0.23), Color(-1, 0, 0), 0.1)
+		mb.cylinder(Vector3(0, 0.9, 0), 1.6, 0.0, 2.4, 6, Color(0.16, 0.34, 0.22), Color(-1, 0, 0), 0.3)
+		mb.cylinder(Vector3(0, 2.2, 0), 1.25, 0.0, 2.1, 6, Color(0.25, 0.42, 0.2), Color(-1, 0, 0), 0.8)
+		mb.cylinder(Vector3(0, 3.4, 0), 0.85, 0.0, 1.8, 6, Color(0.34, 0.5, 0.19), Color(-1, 0, 0), 0.1)
 		return mb.commit())
 
 
@@ -52,7 +52,7 @@ static func round_tree() -> ArrayMesh:
 	return _cached("round", func():
 		var mb := MeshBuilder.new()
 		mb.cylinder(Vector3(0, -0.4, 0), 0.26, 0.2, 1.8, 5, Color(0.38, 0.27, 0.18))
-		var c := Color(0.3, 0.5, 0.2)
+		var c := Color(0.4, 0.53, 0.19)
 		mb.cylinder(Vector3(0, 1.2, 0), 0.9, 1.5, 0.9, 7, c)
 		mb.cylinder(Vector3(0, 2.1, 0), 1.5, 0.6, 1.2, 7, c.lightened(0.08))
 		return mb.commit())
@@ -61,8 +61,8 @@ static func round_tree() -> ArrayMesh:
 static func rock() -> ArrayMesh:
 	return _cached("rock", func():
 		var mb := MeshBuilder.new()
-		mb.cylinder(Vector3(0, -0.6, 0), 1.0, 0.55, 1.4, 5, Color(0.5, 0.48, 0.45), Color(0.58, 0.56, 0.52), 0.4)
-		mb.cylinder(Vector3(0.6, -0.5, 0.3), 0.6, 0.25, 0.9, 5, Color(0.45, 0.43, 0.41), Color(-1, 0, 0), 1.1)
+		mb.cylinder(Vector3(0, -0.6, 0), 1.0, 0.55, 1.4, 5, Color(0.56, 0.47, 0.46), Color(0.68, 0.58, 0.52), 0.4)
+		mb.cylinder(Vector3(0.6, -0.5, 0.3), 0.6, 0.25, 0.9, 5, Color(0.5, 0.42, 0.42), Color(-1, 0, 0), 1.1)
 		return mb.commit())
 
 
@@ -173,29 +173,6 @@ static func ferry() -> ArrayMesh:
 			for z: float in [-3.2, 3.2]:
 				mb.box(Vector3(x, 6.5, z), Vector3(0.8, 0.5, 2.2), Color(0.95, 0.45, 0.12))
 		return mb.commit())
-
-
-## Foam trail behind a ferry, pointing towards -Z from the stern.
-static func wake() -> ArrayMesh:
-	return _cached("wake", func():
-		var mb := MeshBuilder.new()
-		var near := Color(1, 1, 1, 0.3)
-		var far := Color(1, 1, 1, 0.0)
-		var z0 := -13.5
-		var z1 := -50.0
-		var a := Vector3(-3.0, 0.3, z0)
-		var b := Vector3(3.0, 0.3, z0)
-		var c := Vector3(5.5, 0.3, z1)
-		var d := Vector3(-5.5, 0.3, z1)
-		mb.tri3(a, b, c, near, near, far, Vector3.UP)
-		mb.tri3(a, c, d, near, far, far, Vector3.UP)
-		# Kelvin wake arms
-		for s: float in [-1.0, 1.0]:
-			var p0 := Vector3(3.8 * s, 0.3, -11.0)
-			var p1 := Vector3(15.0 * s, 0.3, -40.0)
-			var p2 := Vector3(13.8 * s, 0.3, -40.5)
-			mb.tri3(p0, p1, p2, Color(1, 1, 1, 0.3), far, far, Vector3.UP)
-		return mb.commit(null))
 
 
 static func sailboat() -> ArrayMesh:

@@ -65,7 +65,7 @@ func _place_islands() -> void:
 		var ok := true
 		for o in map.islands:
 			var reach := o.radius * (0.72 if o.is_mainland else 1.0)
-			if c.distance_to(o.center) < r + reach + 22.0:
+			if c.distance_to(o.center) < r + reach + 60.0:
 				ok = false
 				break
 		if ok:
@@ -95,7 +95,7 @@ func _plan_routes() -> void:
 	for i in mains.size():
 		for j in range(i + 1, mains.size()):
 			var d := mains[i].center.distance_to(mains[j].center)
-			if d < 340.0:
+			if d < 430.0:
 				edges.append([d, i, j])
 	edges.sort_custom(func(a, b): return a[0] < b[0])
 
@@ -118,7 +118,7 @@ func _plan_routes() -> void:
 	for e in edges:
 		var a: int = e[1]
 		var b: int = e[2]
-		if chosen.has(e) or e[0] > 200.0 or degree[a] >= 2 or degree[b] >= 2:
+		if chosen.has(e) or e[0] > 260.0 or degree[a] >= 2 or degree[b] >= 2:
 			continue
 		if rng.randf() < 0.6:
 			chosen.append(e)
@@ -245,7 +245,7 @@ func _route_clear(c: Curve3D) -> bool:
 
 ## Small rocky islets for scenery, kept away from shipping lanes and docks.
 func _place_islets() -> void:
-	var target := rng.randi_range(8, 14)
+	var target := rng.randi_range(12, 20)
 	var placed := 0
 	var limit := map.half_size - 40.0
 	for attempt in 1500:

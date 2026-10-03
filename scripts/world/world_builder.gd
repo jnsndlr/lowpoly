@@ -12,6 +12,8 @@ const WALLS := [Color(0.93, 0.89, 0.8), Color(0.94, 0.94, 0.92), Color(0.62, 0.7
 	Color(0.66, 0.74, 0.62), Color(0.66, 0.38, 0.3), Color(0.92, 0.82, 0.52)]
 const ROOFS := [Color(0.72, 0.26, 0.2), Color(0.28, 0.3, 0.34), Color(0.25, 0.36, 0.52),
 	Color(0.45, 0.3, 0.22), Color(0.2, 0.45, 0.42)]
+# Alternatives: water_gem.gdshader, water_sharp.gdshader, water_fold.gdshader, water_reference.gdshader.
+const WATER_SHADER := "res://shaders/water.gdshader"
 
 var map: MapData
 var terrain: Terrain
@@ -146,12 +148,12 @@ func _ground_color(h: float, ny: float, sx: float, sz: float) -> Color:
 	if h < -0.3:
 		col = Color(0.66, 0.63, 0.47).darkened(clampf(-h * 0.07, 0.0, 0.45))
 	elif ny < 0.72:
-		col = Color(0.47, 0.45, 0.42).lerp(Color(0.58, 0.55, 0.5), r)
+		col = Color(0.5, 0.43, 0.42).lerp(Color(0.63, 0.54, 0.49), r)
 	elif h < 1.15:
 		col = Color(0.8, 0.73, 0.54)
 	else:
 		var g := clampf((h - 1.2) / 8.0, 0.0, 1.0)
-		col = Color(0.44, 0.62, 0.26).lerp(Color(0.26, 0.45, 0.2), g)
+		col = Color(0.52, 0.6, 0.25).lerp(Color(0.33, 0.46, 0.2), g)
 	return col.darkened(r * 0.08)
 
 
@@ -159,7 +161,14 @@ func _ground_color(h: float, ny: float, sx: float, sz: float) -> Color:
 
 func _build_water() -> void:
 	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/water.gdshader")
+	mat.shader = load(WATER_SHADER)
+	# Float heights retain negative seabed elevations. The shader interpolates the
+	# same triangles as Terrain, so shallow colours stay attached to the shore.
+	var heights := Image.create_from_data(terrain.n + 1, terrain.n + 1,
+		false, Image.FORMAT_RF, terrain.h_grid.to_byte_array())
+	mat.set_shader_parameter("seabed_height", ImageTexture.create_from_image(heights))
+	mat.set_shader_parameter("terrain_half_size", terrain.half_size)
+	mat.set_shader_parameter("terrain_cell", Terrain.CELL)
 	var inner := map.half_size + 100.0
 	mat.set_shader_parameter("swell_extent", inner)
 	water_material = mat
