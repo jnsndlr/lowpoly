@@ -1,7 +1,8 @@
 class_name WorldBuilder
 extends RefCounted
 ## Turns MapData + Terrain into renderable nodes: terrain, water, terminals, roads,
-## towns, forests, rocks, boats and the route overlay. Pure presentation — no sim state.
+## towns, forests, rocks, boats, the route overlay and all of their night lights.
+## Pure presentation — no sim state.
 
 const ASPHALT := Color(0.26, 0.27, 0.29)
 const CONCRETE := Color(0.62, 0.62, 0.6)
@@ -14,6 +15,11 @@ const ROOFS := [Color(0.72, 0.26, 0.2), Color(0.28, 0.3, 0.34), Color(0.25, 0.36
 	Color(0.45, 0.3, 0.22), Color(0.2, 0.45, 0.42)]
 # Alternatives: water_gem.gdshader, water_sharp.gdshader, water_fold.gdshader, water_reference.gdshader.
 const WATER_SHADER := "res://shaders/water.gdshader"
+# Scale of the caged lamps on the ramp lift towers.
+const LIFT_LAMP := 1.6
+# Scale of the 360° lanterns on top of the lift and on the dolphins.
+const LIFT_LANTERN := 1.3
+const DOLPHIN_LANTERN := 1.3
 
 var map: MapData
 var terrain: Terrain
@@ -21,6 +27,8 @@ var rng := RandomNumberGenerator.new()
 var root: Node3D
 var route_overlay: MeshInstance3D
 var water_material: ShaderMaterial
+var night_lights: MeshInstance3D
+var glows := GlowBuilder.new()
 var _blocked := {}
 
 
@@ -42,6 +50,8 @@ func build() -> Node3D:
 	_build_vegetation()
 	_build_boats()
 	_build_route_overlay()
+	night_lights = _add_mesh(glows.commit(), "NightLights", false)
+	night_lights.visible = false
 	return root
 
 
@@ -200,6 +210,7 @@ func _build_terminals() -> void:
 			continue
 		var mb := MeshBuilder.new()
 		mb.xform = isl.terminal_xform()
+		glows.xform = mb.xform
 		var hw := isl.lot_half_width
 		var ly := Layout.LOT_Y
 		var mid_u := (Layout.LOT_FRONT + Layout.LOT_BACK) * 0.5
@@ -219,12 +230,12 @@ func _build_terminals() -> void:
 			u += 2.4
 
 		for i in isl.slips.size():
-			_build_slip(mb, isl.slip_offset(i))
+			_build_slip(mb, isl.slip_offset(i), i > 0)
 
 		# Terminal building beside the lot
 		var bv := hw + 5.0
 		mb.box(Vector3(bv, ly + 1.2, -12.0), Vector3(7.0, 3.4, 12.0), Color(0.9, 0.9, 0.87))
-		mb.box(Vector3(bv, ly + 1.6, -12.0), Vector3(7.1, 0.9, 10.5), Models.GLASS)
+		mb.box(Vector3(bv, ly + 1.6, -12.0), Vector3(7.1, 0.9, 10.5), Models.WINDOW_LIT)
 		mb.box(Vector3(bv, ly + 3.1, -12.0), Vector3(7.8, 0.4, 12.8), Models.WSF_GREEN)
 		mb.box(Vector3(bv - 3.9, ly + 3.4, -6.0), Vector3(0.12, 5.0, 0.12), Color(0.8, 0.8, 0.8))
 		mb.box(Vector3(bv - 3.9, ly + 5.6, -5.55), Vector3(0.05, 0.6, 0.9), Models.WSF_GREEN)
@@ -233,15 +244,24 @@ func _build_terminals() -> void:
 		var tu := Layout.LOT_BACK - 3.0
 		for v: float in [-2.7, 2.7]:
 			mb.box(Vector3(v, ly + 0.4, tu), Vector3(1.1, 2.6, 1.8), Color(0.92, 0.92, 0.9))
-			mb.box(Vector3(v, ly + 0.9, tu), Vector3(1.15, 0.6, 1.3), Models.GLASS)
+			mb.box(Vector3(v, ly + 0.9, tu), Vector3(1.15, 0.6, 1.3), Models.WINDOW_LIT)
 			mb.box(Vector3(v * 1.45, ly + 1.1, tu), Vector3(0.3, 4.0, 0.3), Color(0.85, 0.85, 0.85))
 		mb.box(Vector3(0, ly + 3.25, tu), Vector3(8.6, 0.35, 3.4), Models.WSF_GREEN)
+		for v: float in [-2.7, 0.0, 2.7]:
+			mb.box(Vector3(v, ly + 3.06, tu), Vector3(0.7, 0.04, 0.7), Models.lamp_glass(GlowBuilder.LED))
+			glows.glow(Vector3(v, ly + 3.0, tu), GlowBuilder.LED, 0.16, 4.0, false, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+		glows.pool(Vector3(0, ly + 0.05, tu), GlowBuilder.SODIUM, 5.5, 0.3)
+		glows.glow(Vector3(bv - 3.9, ly + 5.6, -5.55), GlowBuilder.GREEN, 0.3, 2.5)
+		glows.pool(Vector3(bv - 4.5, ly + 0.05, -12.0), GlowBuilder.WARM, 4.5, 0.3)
 
 		# Light poles
 		for v: float in [-hw + 0.4, hw - 0.4]:
 			for pu: float in [Layout.LOT_FRONT - 1.0, Layout.LOT_BACK + 1.0]:
 				mb.box(Vector3(v, ly + 2.5, pu), Vector3(0.18, 5.0, 0.18), Color(0.35, 0.36, 0.38))
 				mb.box(Vector3(v, ly + 5.0, pu), Vector3(0.6, 0.18, 0.6), Color(0.95, 0.95, 0.8))
+				mb.box(Vector3(v, ly + 4.87, pu), Vector3(0.48, 0.08, 0.48), Models.lamp_glass(GlowBuilder.SODIUM))
+				glows.glow(Vector3(v, ly + 4.85, pu), GlowBuilder.SODIUM, 0.3, 6.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+				glows.pool(Vector3(v * 0.7, ly + 0.05, pu), GlowBuilder.SODIUM, 8.0, 0.22)
 
 		_add_mesh(mb.commit(), isl.name + " Terminal")
 
@@ -256,7 +276,9 @@ func _build_terminals() -> void:
 			bu += 1.5
 
 
-func _build_slip(mb: MeshBuilder, v: float) -> void:
+## `shared_dolphin`: the slip before this one already put a dolphin where this
+## slip's port-side one would go (they're SLIP_SPACING apart), so don't double it.
+func _build_slip(mb: MeshBuilder, v: float, shared_dolphin: bool) -> void:
 	var ly := Layout.LOT_Y
 	var pe := Layout.PIER_END
 	var lf := Layout.LOT_FRONT
@@ -271,10 +293,32 @@ func _build_slip(mb: MeshBuilder, v: float) -> void:
 	for side: float in [-2.9, 2.9]:
 		mb.box(Vector3(v + side, 2.8, pe - 1.0), Vector3(0.5, 5.6, 0.5), Models.WSF_GREEN)
 	mb.box(Vector3(v, 5.4, pe - 1.0), Vector3(6.3, 0.5, 0.5), Models.WSF_GREEN)
+	# Steady red 360° light on top of the lift, for ferries lining up at night.
+	var top := Vector3(v, 5.65, pe - 1.0)
+	Models.add_cage_lantern(mb, top, GlowBuilder.RED, LIFT_LANTERN)
+	glows.glow(Models.cage_lantern_glow_at(top, LIFT_LANTERN), GlowBuilder.RED, 0.2, 7.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
 	for side: float in [-1.0, 1.0]:
 		mb.box(Vector3(v + side * 4.95, 0.3, pe + 5.0), Vector3(0.9, 4.0, 9.0), Models.WOOD)
-		mb.cylinder(Vector3(v + side * 5.7, -2.0, pe + 21.0), 1.0, 0.85, 4.6, 7, Models.WOOD, Color(0.85, 0.85, 0.8))
-		Models.add_buoy(mb, Vector3(v + side * 8.0, 0.0, pe + 44.0), Color(0.2, 0.55, 0.3) if side < 0 else Color(0.8, 0.2, 0.15))
+		var mark := GlowBuilder.GREEN if side < 0 else GlowBuilder.RED
+		# Dolphin, with a lantern on its cap.
+		if not (shared_dolphin and side < 0):
+			var dolphin := Vector3(v + side * 5.7, -2.0, pe + 21.0)
+			mb.cylinder(dolphin, 1.0, 0.85, 4.6, 7, Models.WOOD, Color(0.85, 0.85, 0.8))
+			var cap := dolphin + Vector3(0, 4.6, 0)
+			Models.add_cage_lantern(mb, cap, mark, DOLPHIN_LANTERN)
+			glows.glow(Models.cage_lantern_glow_at(cap, DOLPHIN_LANTERN), mark, 0.14, 3.5, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+		# Channel buoy, flashing.
+		var buoy := Vector3(v + side * 8.0, 0.0, pe + 44.0)
+		var phase := Models.blink_phase_at(mb.xform * buoy)
+		Models.add_buoy(mb, buoy, Color(0.2, 0.55, 0.3) if side < 0 else Color(0.8, 0.2, 0.15), mark, phase)
+		glows.glow(Models.buoy_glow_at(buoy), mark, 0.22, 7.0, true, Models.blink_of(phase), Vector3.ZERO, Models.LAMP_ON_AT)
+		# A caged lamp on the inside of each lift tower, lighting the ramp.
+		var lamp := Vector3(v + side * 2.65, 4.6, pe - 1.0)
+		var out := Vector3(-side, 0, 0)
+		Models.add_bulkhead_lamp(mb, lamp, out, GlowBuilder.WARM, LIFT_LAMP)
+		glows.glow(Models.bulkhead_glow_at(lamp, out, LIFT_LAMP), GlowBuilder.WARM,
+			Models.bulkhead_glow_size(LIFT_LAMP), 5.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+	glows.pool(Vector3(v, ly + 0.05, pe - 3.0), GlowBuilder.SODIUM, 3.5, 0.3)
 
 
 # --- Roads & towns ------------------------------------------------------------------
@@ -292,7 +336,36 @@ func _build_roads() -> void:
 			mb.ribbon(line, 3.4, ROAD)
 			for p in line:
 				_block(p, 3.0)
+			_street_lamps(mb, line)
 	_add_mesh(mb.commit(), "Roads", false)
+
+
+## Sodium lamps every LAMP_GAP along a road, alternating sides.
+func _street_lamps(mb: MeshBuilder, line: PackedVector3Array) -> void:
+	const LAMP_GAP := 16.0
+	glows.xform = Transform3D.IDENTITY
+	var next := LAMP_GAP * 0.5
+	var walked := 0.0
+	var side := 1.0
+	for i in line.size() - 1:
+		var a := line[i]
+		var b := line[i + 1]
+		var lat := (b - a).cross(Vector3.UP)
+		lat.y = 0.0
+		var seg := Vector3(b.x - a.x, 0.0, b.z - a.z).length()
+		if seg < 0.01:
+			continue
+		lat = lat.normalized()
+		while next <= walked + seg:
+			var p := a.lerp(b, (next - walked) / seg) + lat * 2.2 * side
+			mb.box(p + Vector3(0, 1.7, 0), Vector3(0.12, 3.8, 0.12), Color(0.3, 0.31, 0.33))
+			mb.box(p + Vector3(0, 3.6, 0), Vector3(0.4, 0.14, 0.4), Color(0.25, 0.26, 0.28))
+			mb.box(p + Vector3(0, 3.5, 0), Vector3(0.3, 0.07, 0.3), Models.lamp_glass(GlowBuilder.SODIUM))
+			glows.glow(p + Vector3(0, 3.45, 0), GlowBuilder.SODIUM, 0.22, 5.0, p.y < 4.0, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+			glows.pool(p + Vector3(0, 0.12, 0) - lat * 1.2 * side, GlowBuilder.SODIUM, 5.0, 0.22)
+			side = -side
+			next += LAMP_GAP
+		walked += seg
 
 
 func _build_towns() -> void:
@@ -350,12 +423,29 @@ func _build_towns() -> void:
 				if r < town_r * 0.4 and isl.population > 3500 and rng.randf() < 0.5:
 					vi = 10 + rng.randi_range(0, 1)
 				var bucket: Array[Transform3D] = per_variant[vi]
-				bucket.append(Transform3D(basis, Vector3(p.x, hmin - 0.05, p.z)))
+				var xf := Transform3D(basis, Vector3(p.x, hmin - 0.05, p.z))
+				bucket.append(xf)
+				_porch_light(xf, vi >= 10, h < 5.0)
 				_block(p, 2.6)
 	var no_colors: Array[Color] = []
 	for i in variants.size():
 		var xforms: Array[Transform3D] = per_variant[i]
 		_multimesh(variants[i], xforms, no_colors, "Houses%d" % i)
+
+
+## A lamp by the door and the light it throws on the path; waterfront ones are
+## reflected in the water.
+func _porch_light(xf: Transform3D, block: bool, waterfront: bool) -> void:
+	glows.xform = xf
+	# In the fixture Models.house() / block() put by the door.
+	var lamp := Models.BLOCK_LAMP if block else Models.HOUSE_LAMP
+	var s := Models.BLOCK_LAMP_SCALE if block else Models.HOUSE_LAMP_SCALE
+	glows.glow(Models.bulkhead_glow_at(lamp, Vector3.BACK, s), GlowBuilder.WARM, Models.bulkhead_glow_size(s),
+		4.0 if block else 3.5, waterfront, 0.0, Vector3(0, 0, 1), Models.LAMP_ON_AT)
+	if block:
+		glows.pool(Vector3(0.0, 0.2, 3.6), GlowBuilder.WARM, 2.6, 0.35)
+	else:
+		glows.pool(Vector3(0.6, 0.2, 2.5), GlowBuilder.WARM, 1.8, 0.3)
 
 
 func _build_lighthouses() -> void:
@@ -374,6 +464,11 @@ func _build_lighthouses() -> void:
 		if h < 1.2 or _is_blocked(p.x, p.z):
 			continue
 		Models.add_lighthouse(mb, Vector3(p.x, h - 0.1, p.z))
+		var lamp := Vector3(p.x, h + 7.4, p.z)
+		var beacon := Color(1.0, 0.92, 0.75)
+		glows.xform = Transform3D.IDENTITY
+		glows.glow(lamp, beacon, 0.8, 9.0, true, 0.0, Vector3.ZERO, 0.0)
+		glows.beam(lamp, beacon, 2.2, 75.0, 0.5, 0.3, _hash(p.x, p.z) * TAU)
 		_block(p, 6.0)
 	_add_mesh(mb.commit(), "Lighthouses")
 
@@ -460,22 +555,32 @@ func _build_boats() -> void:
 				ok = false
 				break
 		if ok:
-			boats.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU), p))
+			var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU), p)
+			boats.append(xf)
+			# Anchor light at the masthead.
+			glows.xform = xf
+			glows.glow(Models.lantern_glow_at(Models.SAIL_MAST_TOP, Models.SAIL_LANTERN), GlowBuilder.LED,
+				0.13, 4.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
 	var no_colors: Array[Color] = []
 	_multimesh(Models.sailboat(), boats, no_colors, "Sailboats")
 
 
 func _build_route_overlay() -> void:
 	var mb := MeshBuilder.new()
-	var col := Color(1, 1, 1, 0.85)
+	var col := Color(0.92, 0.96, 1.0, 0.1)
 	for r in map.routes:
 		var s := 14.0
 		while s < r.length - 16.0:
 			var a := r.curve.sample_baked(s)
-			var b := r.curve.sample_baked(s + 2.6)
-			var lat := (b - a).normalized().cross(Vector3.UP) * 0.35
-			a.y = 0.55
-			b.y = 0.55
+			var b := r.curve.sample_baked(s + 2.4)
+			var lat := (b - a).normalized().cross(Vector3.UP) * 0.25
+			# High enough to clear the swell so waves don't swallow dashes.
+			a.y = 0.8
+			b.y = 0.8
 			mb.quad(a - lat, a + lat, b + lat, b - lat, col, Vector3.UP)
 			s += 5.5
-	route_overlay = _add_mesh(mb.commit(Models.unshaded_material()), "RouteOverlay", false)
+	# Water is also transparent and both meshes sit centred on the origin, so depth
+	# sorting between them flips with the camera. Force the overlay to draw after it.
+	var mat := Models.unshaded_material()
+	mat.render_priority = 5
+	route_overlay = _add_mesh(mb.commit(mat), "RouteOverlay", false)

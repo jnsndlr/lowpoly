@@ -33,6 +33,8 @@ scripts/
   world/world_builder.gd  MapData → meshes (terrain, water, terminals, towns, forests)
   world/models.gd         procedural low-poly meshes (trees, houses, cars, ferry…)
   world/mesh_builder.gd   flat-shaded vertex-coloured mesh helper
+  world/glow_builder.gd   night-light quads (glows, pools, beams, reflections) for glow.gdshader
+  world/night_lights.gd   dusk-to-dawn switching, car head/tail lights, ferry nav lights, bokeh focus
   sim/simulation.gd       clock (1 s = 1 game min), demand curve, fares, satisfaction
   sim/terminal.gd         spawning, lane queues, boarding/exit paths
   sim/ferry.gd            load → sail → unload state machine along a Curve3D
@@ -41,6 +43,7 @@ scripts/
   camera/camera_rig.gd    RTS orbit camera
   ui/hud.gd               all UI, built in code
 shaders/water.gdshader    depth-based shallow/deep colour + shoreline foam
+shaders/glow.gdshader     screen-space night lights with distance bokeh and water reflections
 ```
 
 `MapData` is the seam for a future **map builder**: the generator only produces

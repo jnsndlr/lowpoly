@@ -34,6 +34,7 @@ func _ready() -> void:
 	var builder := WorldBuilder.new(map, terrain)
 	add_child(builder.build())
 	route_overlay = builder.route_overlay
+	var fixed_lights := builder.night_lights
 	water_mat = builder.water_material
 	print("Map %d built in %d ms: %d islands, %d routes" % [map_seed, Time.get_ticks_msec() - t0, map.islands.size(), map.routes.size()])
 
@@ -61,6 +62,9 @@ func _ready() -> void:
 	wakes.sim = sim
 	wakes.water_mat = water_mat
 	add_child(wakes)
+	var lights := NightLights.new()
+	add_child(lights)
+	lights.setup(sim, rig, day_cycle, fixed_lights)
 	day_cycle.apply(sim.hour())
 	hud = Hud.new()
 	add_child(hud)

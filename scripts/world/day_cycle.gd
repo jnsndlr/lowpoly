@@ -9,6 +9,11 @@ extends Node
 
 const SUNRISE := 5.5
 const SUNSET := 20.5
+# The night lights switch on over LIGHTS_FADE hours from LIGHTS_ON, a few at a
+# time, and are all off again by LIGHTS_OFF.
+const LIGHTS_ON := 20.0
+const LIGHTS_OFF := 6.5
+const LIGHTS_FADE := 0.5
 const MAX_ELEVATION := 62.0
 const NOON_YAW := -35.0
 
@@ -54,6 +59,8 @@ var env: Environment
 var sky_mat: ProceduralSkyMaterial
 var water_mat: ShaderMaterial
 
+## 0 by day .. 1 at night: lights come on from LIGHTS_ON and are off by LIGHTS_OFF.
+var night := 0.0
 var override_hour := -1.0
 var _applied := -100.0
 
@@ -90,6 +97,10 @@ func apply(h: float) -> void:
 		var from_horizon := minf(fposmod(h - SUNSET, 24.0), fposmod(SUNRISE - h, 24.0))
 		elev = -12.0 * clampf(from_horizon / 1.5, 0.0, 1.0)
 	var p := _palette(elev)
+	var lit_for := fposmod(h - LIGHTS_ON, 24.0)
+	var left := fposmod(LIGHTS_OFF - LIGHTS_ON, 24.0) - lit_for
+	night = smoothstep(0.0, LIGHTS_FADE, lit_for) * smoothstep(0.0, LIGHTS_FADE, left)
+	RenderingServer.global_shader_parameter_set("night_lights", night)
 
 	# Above the horizon the light is the sun sweeping east to west; below it, a moon
 	# riding high opposite. Energy is zero at the horizon so the swap never pops.

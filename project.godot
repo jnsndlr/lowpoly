@@ -44,3 +44,11 @@ sun_direction={
 "type": "vec3",
 "value": Vector3(0, 1, 0)
 }
+night_lights={
+"type": "float",
+"value": 0.0
+}
+focus_distance={
+"type": "float",
+"value": 380.0
+}

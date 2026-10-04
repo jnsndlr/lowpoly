@@ -9,6 +9,12 @@ enum State { UNLOADING, LOADING, SAILING }
 const CAPACITY := 36
 const CRUISE := 9.0
 const ACCEL := 1.4
+# Arrival: ferries ease off to APPROACH_SPEED along the run-in, then from the
+# moment the bow passes the outer dolphins the forward prop reverse-thrusts them
+# to a stop at the dock (the stern props backing off).
+const DECEL := 0.5
+const APPROACH_SPEED := 3.2
+const OUTER_DOLPHIN_U := Layout.PIER_END + 21.0
 const MIN_DWELL := 10.0
 const MAX_DWELL := 24.0
 const DISPATCH_GAP := 0.5
@@ -31,6 +37,7 @@ var term_a: Terminal
 var term_b: Terminal
 var state := State.LOADING
 var at_a := true        # docked at A, or departed from A while sailing
+var hull: MeshInstance3D
 var traveled := 0.0
 var speed := 0.0
 var trips := 0
@@ -46,8 +53,10 @@ var _clock := 0.0
 var _crumbs: Array[Vector4] = []   # (x, z, odometer, time dropped), newest first
 var _crumb_speed: Array[float] = []
 var _heading := Vector3.FORWARD
+var _thrust := 0.0   # forward prop reverse thrust while braking, 0..1
 var _crumb_heading := Vector3.FORWARD
 var _last_pos := Vector3.ZERO
+var _tracking := false
 
 
 func setup(s: Simulation, r: MapData.Route, nm: String) -> void:
@@ -60,7 +69,7 @@ func setup(s: Simulation, r: MapData.Route, nm: String) -> void:
 	term_a.ferry_for[r.id] = self
 	term_b.ferry_for[r.id] = self
 	_slots.resize(CAPACITY)
-	var hull := MeshInstance3D.new()
+	hull = MeshInstance3D.new()
 	hull.mesh = Models.ferry()
 	add_child(hull)
 	_place(0.0)
@@ -120,6 +129,9 @@ func _process(delta: float) -> void:
 			_tick_loading(delta)
 		State.SAILING:
 			_tick_sailing(delta)
+	if state != State.SAILING:
+		# Holds the ferry against the dock for a moment after arriving.
+		_thrust = move_toward(_thrust, 0.0, delta * 0.4)
 	_update_trail(delta)
 
 
@@ -204,7 +216,17 @@ func _on_boarded(car: Vehicle, slot: int) -> void:
 
 func _tick_sailing(delta: float) -> void:
 	var remaining := route.length - traveled
-	speed = minf(CRUISE, minf(sqrt(2.0 * ACCEL * traveled) + 0.8, sqrt(2.0 * ACCEL * maxf(remaining, 0.0)) + 0.4))
+	var accel_v := sqrt(2.0 * ACCEL * traveled) + 0.8
+	# Distance from the bow reaching the outer dolphins to being docked.
+	var zone := OUTER_DOLPHIN_U + HULL_HALF_LENGTH - Layout.DOCK_U
+	var rem := maxf(remaining, 0.0)
+	var brake_v: float
+	if rem > zone:
+		brake_v = APPROACH_SPEED + sqrt(2.0 * DECEL * (rem - zone))
+	else:
+		brake_v = 0.3 + (APPROACH_SPEED - 0.3) * sqrt(rem / zone)
+	speed = minf(CRUISE, minf(accel_v, brake_v))
+	_thrust = move_toward(_thrust, 1.0 if rem < zone and rem > 0.5 else 0.0, delta * 0.8)
 	traveled = minf(traveled + speed * delta, route.length)
 	_place(traveled if at_a else route.length - traveled)
 	_bob_time += delta
@@ -233,7 +255,9 @@ func _update_trail(delta: float) -> void:
 	# Taken from the actual movement, so it can't disagree with which end leads.
 	var moved := global_position - _last_pos
 	moved.y = 0.0
-	var moving := moved.length_squared() > 1e-8
+	# The first frame has nothing to compare against.
+	var moving := _tracking and moved.length_squared() > 1e-8
+	_tracking = true
 	if moving:
 		_heading = moved.normalized()
 	_last_pos = global_position
@@ -247,10 +271,33 @@ func _update_trail(delta: float) -> void:
 		_crumb_heading = _heading
 		var stern := global_position - _heading * HULL_HALF_LENGTH
 		_crumbs.push_front(Vector4(stern.x, stern.z, odometer, _clock))
-		_crumb_speed.push_front(speed / CRUISE)
-	while not _crumbs.is_empty() and (_crumbs.size() > WAKE_CRUMBS or _clock - _crumbs.back().w > WAKE_LIFE):
+		# The stern props ease off while the forward prop brakes.
+		_crumb_speed.push_front(speed / CRUISE * (1.0 - 0.6 * _thrust))
+	while not _crumbs.is_empty() and _clock - _crumbs.back().w > WAKE_LIFE:
 		_crumbs.pop_back()
 		_crumb_speed.pop_back()
+	# Tight turns drop crumbs quickly. Rather than cutting off the oldest while
+	# its foam is still showing (which loses a whole stretch at once), thin out
+	# whichever crumb least changes the trail's shape.
+	while _crumbs.size() > WAKE_CRUMBS:
+		_thin_crumbs()
+
+
+## Drops the interior crumb whose removal moves the trail least (the smallest
+## triangle it makes with its neighbours).
+func _thin_crumbs() -> void:
+	var best := 1
+	var best_area := INF
+	for i in range(1, _crumbs.size() - 1):
+		var a := _crumbs[i - 1]
+		var b := _crumbs[i]
+		var c := _crumbs[i + 1]
+		var area := absf((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y))
+		if area < best_area:
+			best_area = area
+			best = i
+	_crumbs.remove_at(best)
+	_crumb_speed.remove_at(best)
 
 
 ## Appends the wake trail to `pts` as (x, z, distance along, age) from bow to stern
@@ -260,7 +307,7 @@ func pack_wake(pts: PackedVector4Array, spd: PackedFloat32Array, at: int) -> int
 	if _crumbs.is_empty():
 		return 0
 	var h := _heading
-	var s := speed / CRUISE
+	var s := speed / CRUISE * (1.0 - 0.6 * _thrust)
 	var bow := global_position + h * HULL_HALF_LENGTH
 	var stern := global_position - h * HULL_HALF_LENGTH
 	pts[at] = Vector4(bow.x, bow.z, odometer + HULL_HALF_LENGTH * 2.0, 0.0)
@@ -277,6 +324,11 @@ func pack_wake(pts: PackedVector4Array, spd: PackedFloat32Array, at: int) -> int
 		spd[at + n] = _crumb_speed[i]
 		n += 1
 	return n
+
+
+## Reverse thrust from the forward prop, 0..1 (braking for, or holding at, the dock).
+func front_thrust() -> float:
+	return _thrust
 
 
 func load_count() -> int:

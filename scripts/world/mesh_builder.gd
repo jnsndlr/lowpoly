@@ -149,4 +149,30 @@ func commit(material: Material = null) -> ArrayMesh:
 	arr[Mesh.ARRAY_COLOR] = colors
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 	mesh.surface_set_material(0, material if material else Models.vc_material())
+	mesh.shadow_mesh = _shadow_mesh()
 	return mesh
+
+
+## Shadow maps and the depth prepass only need positions. Flat shading gives every
+## triangle its own three vertices; welded and position-only, those passes fetch a
+## fraction of the data.
+func _shadow_mesh() -> ArrayMesh:
+	var index := {}
+	var welded := PackedVector3Array()
+	var tris := PackedInt32Array()
+	tris.resize(verts.size())
+	for i in verts.size():
+		var p := verts[i]
+		var k: int = index.get(p, -1)
+		if k < 0:
+			k = welded.size()
+			index[p] = k
+			welded.append(p)
+		tris[i] = k
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = welded
+	arr[Mesh.ARRAY_INDEX] = tris
+	var shadow := ArrayMesh.new()
+	shadow.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return shadow
