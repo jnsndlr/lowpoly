@@ -26,6 +26,7 @@ extends RefCounted
 ##   helm_role(other) -> String           why it must keep clear of `other`
 ##                                        (a Vessel or a Wildlife.Visit), or "" if
 ##                                        it is the stand-on vessel
+##   helm_turn_rate() -> float            how fast it swings round (rad/s)
 
 const DECIDE_EVERY := 0.25
 const HORIZON := 30.0
@@ -47,7 +48,8 @@ const WILDLIFE_RADIUS := 15.0
 # A stand-on vessel only acts once a pass is this close and this soon.
 const STAND_ON_KEEP := 2.0
 const STAND_ON_SOON := 8.0
-const SHOAL := -1.3
+# Water kept under the keel.
+const UNDER_KEEL := 0.3
 
 var v: Vessel
 var traffic: MarineTraffic
@@ -64,6 +66,7 @@ var blocked_land := false          # its course is closed by land just ahead
 var _timer := 0.0
 var _replan := 0.0
 var _last := 0.0
+var _slow := 0.0                   # how long it has been barely making way
 
 
 func _init(vessel: Vessel, t: MarineTraffic, large := false) -> void:
@@ -104,6 +107,7 @@ func _plan(avoid: Array[Vector3] = []) -> bool:
 
 ## Call every frame; re-decides every DECIDE_EVERY seconds.
 func update(delta: float) -> void:
+	_slow = _slow + delta if v.speed < 0.3 else 0.0
 	_replan -= delta
 	if _replan <= 0.0:
 		_plan()
@@ -167,6 +171,12 @@ func _decide() -> void:
 		var o := angle_difference(base_yaw, h)
 		if absf(o) > 1.0:
 			cands.append([h, 2.0 + absf(o) * 0.5, o])
+	# Hard up against another hull, it can only go where the hull check lets it
+	# (MarineTraffic: no nearer than it is); and if that one is waiting for it to
+	# get out of the way, sitting still settles nothing.
+	var now_gap := traffic.hull_gap(v, p, v.heading2())
+	var pinned := now_gap < 2.0
+	var deadlock := v.blocked_by_hull and is_instance_valid(v.blocker) and v.blocker.waits_for(v)
 	for round in 2:
 		var factors := [1.0] if round == 0 else SLOWER
 		for c: Array in cands:
@@ -174,13 +184,18 @@ func _decide() -> void:
 			var o: float = c[2]
 			var top := v.helm_speed(h)
 			var land := _land_cost(p, h, top)
+			if pinned:
+				var d := Vector2(sin(h), cos(h))
+				if traffic.hull_gap(v, p + d, d) < minf(0.3, now_gap) - 0.001:
+					land += 20.0
 			for f: float in factors:
 				var sp := top * f
 				var cost: float = c[1] + (1.0 - f) * 1.5 + land
 				cost += absf(angle_difference(h, _last)) * 0.5
-				# Barely making way (in irons, say) is no way to get anywhere.
+				# Barely making way (in irons, say) is no way to get anywhere, and
+				# the longer it goes on the more it is worth a big turn to get going.
 				if sp < 0.4:
-					cost += 1.5
+					cost += 1.5 + minf(_slow * 0.15, 4.0) + (6.0 if deadlock else 0.0)
 				var worst := 0.0
 				var worst_t: Threat = null
 				for t: Threat in threats:
@@ -249,7 +264,7 @@ func _threats(p: Vector2) -> Array[Threat]:
 			var d := osp * k * STEP_T if moving else 0.0
 			var c := o.ahead(d) if moving else q
 			var f := o.heading2()
-			if moving:
+			if moving and not o.crabbing():
 				var g := o.ahead(d + 1.0) - o.ahead(maxf(d - 1.0, 0.0))
 				if g.length_squared() > 1e-6:
 					f = g.normalized() * signf(g.normalized().dot(f) + 1e-3)
@@ -281,7 +296,7 @@ func _threats(p: Vector2) -> Array[Threat]:
 ## Turning takes time, so it reckons on holding its present heading for the first
 ## part of the turn.
 func _pass_cost(p: Vector2, yaw: float, h: float, sp: float, my_r: float, t: Threat) -> float:
-	var turn_t := absf(angle_difference(yaw, h)) / 0.6
+	var turn_t := absf(angle_difference(yaw, h)) / v.helm_turn_rate()
 	var d0 := Vector2(sin(yaw), cos(yaw))
 	var d1 := Vector2(sin(h), cos(h))
 	var stand_on := t.why == ""
@@ -318,15 +333,18 @@ func _land_cost(p: Vector2, h: float, sp: float) -> float:
 	var here := nav.cell(p)
 	# (Its routes may run a little way off the edge of the map, round an island.)
 	var bound := traffic.nav.ext - NavGrid.CELL * 2.0
+	# Measured from just behind the bow, however long the hull.
+	var lead := maxf(v.spec.half_length - 2.0, 0.0)
+	var shoal := -v.spec.draft - UNDER_KEEL
 	var s := 2.0
 	while s <= look:
-		var q := p + d * s
+		var q := p + d * (s + lead)
 		var blocked := absf(q.x) > bound or absf(q.y) > bound
 		if not blocked and nav.cell(q) != here:
 			blocked = not nav.open_at(q, big)
 		# Rocks and shoals too small for the grid to see.
 		if not blocked:
-			blocked = nav.terrain.height_at(q.x, q.y) > SHOAL
+			blocked = nav.terrain.height_at(q.x, q.y) > shoal
 		if blocked:
 			# Right ahead, it's out of the question.
 			return 4.0 * (1.0 - s / (look + 3.0)) + 0.5 + (30.0 if s <= 6.0 else 0.0)

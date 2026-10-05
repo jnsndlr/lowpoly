@@ -482,34 +482,8 @@ const CONTAINERS := [Color(0.62, 0.2, 0.15), Color(0.18, 0.33, 0.6), Color(0.2, 
 static func cargo_ship(variant: int) -> ArrayMesh:
 	return _cached("cargo_%d" % variant, func():
 		var mb := MeshBuilder.new()
-		var hull := PackedVector2Array([Vector2(-5.6, -30), Vector2(-4.8, -32), Vector2(4.8, -32), Vector2(5.6, -30),
-			Vector2(5.6, 20), Vector2(4.2, 27), Vector2(1.6, 31), Vector2(0, 32), Vector2(-1.6, 31), Vector2(-4.2, 27),
-			Vector2(-5.6, 20)])
-		mb.extrude(hull, -2.6, 0.25, Color(0.55, 0.14, 0.12), Color(0, 0, 0, 0), 0.85)
-		mb.extrude(hull, 0.25, 3.2, Color(0.12, 0.16, 0.24), Color(0.4, 0.42, 0.43))
-		mb.extrude(hull, 0.18, 0.32, WHITE, Color(0, 0, 0, 0))
-		# Forecastle and the breakwater behind it.
-		mb.box(Vector3(0, 3.6, 26.0), Vector3(8.0, 0.8, 5.0), Color(0.12, 0.16, 0.24))
-		mb.box(Vector3(0, 4.4, 23.4), Vector3(10.4, 1.6, 0.25), WHITE)
-		# Accommodation block, bridge with its wings, and the funnel.
-		mb.box(Vector3(0, 7.2, -25.0), Vector3(10.0, 8.0, 6.0), WHITE)
-		for y: float in [5.2, 7.4, 9.6]:
-			mb.box(Vector3(0, y, -25.0), Vector3(10.1, 0.6, 6.1), WINDOW)
-		mb.box(Vector3(0, 11.6, -24.0), Vector3(12.4, 1.4, 3.2), WHITE)
-		mb.box(Vector3(0, 11.7, -24.0), Vector3(12.5, 0.5, 3.3), WINDOW_LIT)
-		mb.box(Vector3(0, 12.4, -24.0), Vector3(12.8, 0.2, 3.6), Color(0.3, 0.32, 0.34))
-		mb.box(Vector3(0, 14.0, -24.0), Vector3(0.25, 3.0, 0.25), WHITE)
-		add_lantern(mb, CARGO_AFT_MAST, GlowBuilder.LED, CARGO_LANTERN)
-		var funnel: Color = CARGO_FUNNELS[variant % CARGO_FUNNELS.size()]
-		mb.box(Vector3(0, 13.4, -28.6), Vector3(2.6, 3.6, 2.8), funnel)
-		mb.box(Vector3(0, 15.45, -28.6), Vector3(2.65, 0.5, 2.85), Color(0.1, 0.1, 0.1))
-		# Port (+X) red, starboard green, on the bridge wings' ends.
-		for x: float in [-1.0, 1.0]:
-			mb.box(Vector3(x * CARGO_SIDELIGHT.x, CARGO_SIDELIGHT.y, CARGO_SIDELIGHT.z), Vector3(0.2, 0.35, 0.45),
-				lamp_glass(GlowBuilder.RED if x > 0.0 else GlowBuilder.GREEN))
-		# Foremast.
-		mb.box(Vector3(0, 6.1, 28.5), Vector3(0.3, 5.8, 0.3), Color(0.85, 0.75, 0.2))
-		add_lantern(mb, CARGO_FORE_MAST, GlowBuilder.LED, CARGO_LANTERN)
+		var topsides := Color(0.12, 0.16, 0.24)
+		_cargo_hull(mb, topsides, Color(0.4, 0.42, 0.43), CARGO_FUNNELS[variant % CARGO_FUNNELS.size()])
 		# Containers: seven bays of four stacks, one to three high.
 		var r := RandomNumberGenerator.new()
 		r.seed = 4111 + variant * 97
@@ -522,6 +496,136 @@ static func cargo_ship(variant: int) -> ArrayMesh:
 					var c: Color = CONTAINERS[r.randi_range(0, CONTAINERS.size() - 1)]
 					mb.box(Vector3(x, 3.2 + 1.25 + t * 2.5, z), Vector3(2.4, 2.45, 6.0), c.darkened(r.randf() * 0.12))
 		return mb.commit())
+
+
+# Tankers: dark topsides over a deck painted green or oxide red, by variant.
+const TANKER_TOPSIDES := [Color(0.1, 0.1, 0.11), Color(0.42, 0.11, 0.1), Color(0.12, 0.2, 0.3)]
+const TANKER_DECKS := [Color(0.3, 0.42, 0.3), Color(0.3, 0.42, 0.3), Color(0.5, 0.22, 0.17)]
+const TANKER_FUNNELS := [Color(0.85, 0.15, 0.12), Color(0.92, 0.92, 0.9), Color(0.9, 0.72, 0.18)]
+
+
+## A tanker on the same hull as the container ship: a flat deck with its cargo
+## lines and the catwalk running fore and aft, the manifold and its hose crane
+## amidships.
+static func tanker(variant: int) -> ArrayMesh:
+	return _cached("tanker_%d" % variant, func():
+		var mb := MeshBuilder.new()
+		var deck: Color = TANKER_DECKS[variant % TANKER_DECKS.size()]
+		_cargo_hull(mb, TANKER_TOPSIDES[variant % TANKER_TOPSIDES.size()], deck,
+			TANKER_FUNNELS[variant % TANKER_FUNNELS.size()])
+		var pipe := Color(0.62, 0.64, 0.6)
+		var steel := Color(0.3, 0.32, 0.33)
+		var z0 := -21.6
+		var z1 := 22.8
+		var zc := (z0 + z1) * 0.5
+		var span := z1 - z0
+		# Cargo lines along the deck either side of the centreline.
+		for x: float in [-2.0, -1.4, 1.4, 2.0]:
+			mb.box(Vector3(x, 3.5, zc), Vector3(0.3, 0.3, span), pipe)
+		# The catwalk on its posts, high over the lines.
+		mb.box(Vector3(0, 5.0, zc), Vector3(1.1, 0.12, span), WHITE)
+		for i in 9:
+			mb.box(Vector3(0, 4.1, z0 + 1.0 + i * (span - 2.0) / 8.0), Vector3(0.2, 1.8, 0.2), WHITE)
+		# Tank hatches and vent posts down either side.
+		for i in 6:
+			var z := -17.0 + i * 7.0
+			for x: float in [-3.6, 3.6]:
+				mb.cylinder(Vector3(x, 3.2, z), 0.55, 0.55, 0.4, 8, steel)
+				mb.box(Vector3(x * 0.8, 4.0, z + 2.0), Vector3(0.16, 1.6, 0.16), pipe)
+		# The manifold athwartships, with its hose crane.
+		for dz: float in [-0.6, 0.6]:
+			mb.box(Vector3(0, 3.6, dz), Vector3(10.4, 0.36, 0.36), pipe)
+		for x: float in [-5.0, 5.0]:
+			mb.box(Vector3(x, 3.9, 0), Vector3(0.6, 1.1, 2.0), steel)
+		mb.cylinder(Vector3(0, 3.2, -2.6), 0.4, 0.35, 4.4, 8, Color(0.88, 0.72, 0.2))
+		var a := Vector3(0, 7.4, -2.6)
+		var b := Vector3(3.6, 4.6, 3.0)
+		mb.xform = Transform3D(Basis.looking_at(b - a), (a + b) * 0.5)
+		mb.box(Vector3.ZERO, Vector3(0.36, 0.36, a.distance_to(b)), Color(0.88, 0.72, 0.2))
+		mb.xform = Transform3D.IDENTITY
+		# Fire monitors on their platform before the bridge.
+		mb.box(Vector3(0, 5.6, -20.2), Vector3(4.0, 0.15, 1.4), WHITE)
+		for x: float in [-1.4, 1.4]:
+			mb.box(Vector3(x, 5.9, -20.2), Vector3(0.3, 0.5, 0.6), Color(0.75, 0.15, 0.13))
+		return mb.commit())
+
+
+# Bulk carriers: topsides, hatch covers and deck cranes, by variant.
+const BULKER_TOPSIDES := [Color(0.14, 0.22, 0.34), Color(0.2, 0.21, 0.22), Color(0.48, 0.15, 0.12)]
+const BULKER_HATCHES := [Color(0.55, 0.18, 0.14), Color(0.2, 0.42, 0.3), Color(0.18, 0.3, 0.5)]
+const BULKER_CRANES := [Color(0.9, 0.74, 0.2), Color(0.92, 0.92, 0.9), Color(0.9, 0.74, 0.2)]
+const BULKER_FUNNELS := [Color(0.15, 0.35, 0.65), Color(0.85, 0.55, 0.12), Color(0.94, 0.95, 0.94)]
+
+
+## A geared bulk carrier on the same hull: five big hatches under folding
+## covers, and four deck cranes between them with their jibs stowed forward.
+static func bulk_carrier(variant: int) -> ArrayMesh:
+	return _cached("bulker_%d" % variant, func():
+		var mb := MeshBuilder.new()
+		var topsides: Color = BULKER_TOPSIDES[variant % BULKER_TOPSIDES.size()]
+		var hatch: Color = BULKER_HATCHES[variant % BULKER_HATCHES.size()]
+		var crane: Color = BULKER_CRANES[variant % BULKER_CRANES.size()]
+		_cargo_hull(mb, topsides, Color(0.45, 0.2, 0.16), BULKER_FUNNELS[variant % BULKER_FUNNELS.size()])
+		var hatch_z := [-17.0, -8.2, 0.6, 9.4, 18.2]
+		for z: float in hatch_z:
+			# The coaming, and the two cover panels meeting on the centreline in
+			# a shallow ridge.
+			mb.box(Vector3(0, 3.95, z), Vector3(8.2, 1.5, 7.0), topsides.lightened(0.15))
+			for x: float in [-1.0, 1.0]:
+				mb.quad(Vector3(x * 4.0, 4.7, z - 3.4), Vector3(x * 4.0, 4.7, z + 3.4),
+					Vector3(0, 5.2, z + 3.4), Vector3(0, 5.2, z - 3.4), hatch, Vector3(x * 0.2, 1, 0))
+				for dz: float in [-1.7, 0.0, 1.7]:
+					mb.box(Vector3(x * 2.0, 4.95, z + dz), Vector3(3.9, 0.12, 0.14), hatch.darkened(0.25))
+			mb.tri(Vector3(-4.0, 4.7, z + 3.4), Vector3(4.0, 4.7, z + 3.4), Vector3(0, 5.2, z + 3.4), hatch.darkened(0.15), Vector3.BACK)
+			mb.tri(Vector3(-4.0, 4.7, z - 3.4), Vector3(4.0, 4.7, z - 3.4), Vector3(0, 5.2, z - 3.4), hatch.darkened(0.15), Vector3.FORWARD)
+		# Cranes between the hatches, jibs stowed forward and a touch outboard,
+		# alternately to port and starboard.
+		for i in 4:
+			var z: float = (hatch_z[i] + hatch_z[i + 1]) * 0.5
+			var side := 1.0 if i % 2 == 0 else -1.0
+			mb.cylinder(Vector3(0, 3.2, z), 0.75, 0.65, 3.4, 8, crane)
+			mb.box(Vector3(0, 7.3, z), Vector3(2.0, 1.6, 2.2), crane)
+			mb.box(Vector3(side * 0.6, 7.5, z + 1.12), Vector3(0.7, 0.6, 0.06), GLASS)
+			var a := Vector3(side * 0.5, 7.6, z + 0.6)
+			var b := Vector3(side * 2.2, 9.8, z + 9.0)
+			mb.xform = Transform3D(Basis.looking_at(b - a), (a + b) * 0.5)
+			mb.box(Vector3.ZERO, Vector3(0.45, 0.5, a.distance_to(b)), crane)
+			mb.xform = Transform3D.IDENTITY
+			mb.box(Vector3(0, 8.5, z - 0.4), Vector3(0.3, 1.0, 0.3), crane)
+		return mb.commit())
+
+
+## What every cargo ship has in common, 64 m long and 11 m in the beam: the
+## hull, forecastle, the accommodation block aft with its bridge and funnel,
+## the masts and the sidelights.
+static func _cargo_hull(mb: MeshBuilder, topsides: Color, deck: Color, funnel: Color) -> void:
+	var hull := PackedVector2Array([Vector2(-5.6, -30), Vector2(-4.8, -32), Vector2(4.8, -32), Vector2(5.6, -30),
+		Vector2(5.6, 20), Vector2(4.2, 27), Vector2(1.6, 31), Vector2(0, 32), Vector2(-1.6, 31), Vector2(-4.2, 27),
+		Vector2(-5.6, 20)])
+	mb.extrude(hull, -2.6, 0.25, Color(0.55, 0.14, 0.12), Color(0, 0, 0, 0), 0.85)
+	mb.extrude(hull, 0.25, 3.2, topsides, deck)
+	mb.extrude(hull, 0.18, 0.32, WHITE, Color(0, 0, 0, 0))
+	# Forecastle and the breakwater behind it.
+	mb.box(Vector3(0, 3.6, 26.0), Vector3(8.0, 0.8, 5.0), topsides)
+	mb.box(Vector3(0, 4.4, 23.4), Vector3(10.4, 1.6, 0.25), WHITE)
+	# Accommodation block, bridge with its wings, and the funnel.
+	mb.box(Vector3(0, 7.2, -25.0), Vector3(10.0, 8.0, 6.0), WHITE)
+	for y: float in [5.2, 7.4, 9.6]:
+		mb.box(Vector3(0, y, -25.0), Vector3(10.1, 0.6, 6.1), WINDOW)
+	mb.box(Vector3(0, 11.6, -24.0), Vector3(12.4, 1.4, 3.2), WHITE)
+	mb.box(Vector3(0, 11.7, -24.0), Vector3(12.5, 0.5, 3.3), WINDOW_LIT)
+	mb.box(Vector3(0, 12.4, -24.0), Vector3(12.8, 0.2, 3.6), Color(0.3, 0.32, 0.34))
+	mb.box(Vector3(0, 14.0, -24.0), Vector3(0.25, 3.0, 0.25), WHITE)
+	add_lantern(mb, CARGO_AFT_MAST, GlowBuilder.LED, CARGO_LANTERN)
+	mb.box(Vector3(0, 13.4, -28.6), Vector3(2.6, 3.6, 2.8), funnel)
+	mb.box(Vector3(0, 15.45, -28.6), Vector3(2.65, 0.5, 2.85), Color(0.1, 0.1, 0.1))
+	# Port (+X) red, starboard green, on the bridge wings' ends.
+	for x: float in [-1.0, 1.0]:
+		mb.box(Vector3(x * CARGO_SIDELIGHT.x, CARGO_SIDELIGHT.y, CARGO_SIDELIGHT.z), Vector3(0.2, 0.35, 0.45),
+			lamp_glass(GlowBuilder.RED if x > 0.0 else GlowBuilder.GREEN))
+	# Foremast.
+	mb.box(Vector3(0, 6.1, 28.5), Vector3(0.3, 5.8, 0.3), Color(0.85, 0.75, 0.2))
+	add_lantern(mb, CARGO_FORE_MAST, GlowBuilder.LED, CARGO_LANTERN)
 
 
 ## Masthead, stern and sidelights and the lit bridge's reflection, in the ship's frame.
@@ -539,6 +643,161 @@ static func cargo_ship_lights() -> ArrayMesh:
 				gb.reflection(Vector3(x, 11.7, -25.4 + i * 0.7), window, 0.3, 2.2, Vector3(signf(x), 0, 0))
 		for x in 7:
 			gb.reflection(Vector3(-4.5 + x * 1.5, 11.7, -22.3), window, 0.3, 2.2, Vector3(0, 0, 1))
+		return gb.commit())
+
+
+# Stern trawler (+Z is the bow): about 20 m long and 6.4 m in the beam, the
+# wheelhouse forward and the working deck aft under a gantry. The mast carries
+# the trawling lights (green over white) and the masthead light.
+const TRAWLER_DECK := 1.6
+const TRAWLER_MAST := Vector3(0, 8.6, 1.3)       # the white lantern's foot
+const TRAWLER_MAST_GREEN := Vector3(0, 9.6, 1.3)
+const TRAWLER_LANTERN := 1.2
+const TRAWLER_SIDELIGHT := Vector3(2.35, 4.45, 5.4)
+const TRAWLER_GANTRY_Z := -9.3
+const TRAWLER_GANTRY_TOP := 6.6
+const TRAWLER_HULLS := [Color(0.12, 0.2, 0.36), Color(0.13, 0.33, 0.24), Color(0.58, 0.15, 0.12)]
+const TRAWLER_GANTRIES := [Color(0.92, 0.52, 0.12), Color(0.9, 0.78, 0.2), Color(0.92, 0.52, 0.12)]
+const TRAWLER_NETS := [Color(0.2, 0.55, 0.35), Color(0.85, 0.42, 0.15), Color(0.25, 0.4, 0.62)]
+
+
+static func _trawler_outline(grow := 0.0) -> PackedVector2Array:
+	var pts := PackedVector2Array([Vector2(-2.9, -10), Vector2(2.9, -10), Vector2(3.2, -8), Vector2(3.2, 3),
+		Vector2(2.65, 6.5), Vector2(1.45, 8.8), Vector2(0, 10), Vector2(-1.45, 8.8), Vector2(-2.65, 6.5),
+		Vector2(-3.2, 3), Vector2(-3.2, -8)])
+	if grow != 0.0:
+		for i in pts.size():
+			pts[i] = pts[i] * Vector2((3.2 + grow) / 3.2, (10.0 + grow) / 10.0)
+	return pts
+
+
+## A stern trawler; `variant` picks its colours.
+static func trawler(variant: int) -> ArrayMesh:
+	return _cached("trawler_%d" % variant, func():
+		var mb := MeshBuilder.new()
+		var hull_col: Color = TRAWLER_HULLS[variant % TRAWLER_HULLS.size()]
+		var gantry: Color = TRAWLER_GANTRIES[variant % TRAWLER_GANTRIES.size()]
+		var net: Color = TRAWLER_NETS[variant % TRAWLER_NETS.size()]
+		var deck_col := Color(0.42, 0.43, 0.42)
+		var steel := Color(0.22, 0.23, 0.25)
+		var d := TRAWLER_DECK
+		var outline := _trawler_outline()
+		mb.extrude(outline, -2.0, 0.05, Color(0.55, 0.14, 0.12), Color(0, 0, 0, 0), 0.7)
+		mb.extrude(outline, 0.05, d, hull_col, deck_col)
+		mb.extrude(_trawler_outline(0.06), d - 0.2, d - 0.05, WHITE, Color(0, 0, 0, 0))
+		# Bulwarks down either side of the working deck, the transom's open aft.
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * 3.12, d + 0.4, -3.0), Vector3(0.14, 0.8, 12.0), hull_col)
+			mb.box(Vector3(x * 3.12, d + 0.82, -3.0), Vector3(0.2, 0.06, 12.0), WHITE)
+		# The raised foredeck.
+		var fore := PackedVector2Array([Vector2(-3.2, 3), Vector2(3.2, 3), Vector2(2.65, 6.5), Vector2(1.45, 8.8),
+			Vector2(0, 10), Vector2(-1.45, 8.8), Vector2(-2.65, 6.5)])
+		mb.extrude(fore, d, d + 1.0, hull_col, deck_col)
+		mb.box(Vector3(0, d + 1.15, 6.6), Vector3(0.6, 0.3, 0.8), steel)
+		# Deckhouse and the wheelhouse on top of it, windows all round.
+		mb.box(Vector3(0, d + 1.0, 2.0), Vector3(4.8, 2.0, 4.6), WHITE)
+		mb.box(Vector3(0, d + 2.0 + 0.9, 3.3), Vector3(4.4, 1.8, 3.4), WHITE)
+		mb.box(Vector3(0, d + 2.0 + 1.15, 3.3), Vector3(4.46, 0.6, 3.46), WINDOW_LIT)
+		mb.box(Vector3(0, d + 2.0 + 1.85, 3.3), Vector3(4.9, 0.12, 3.9), WHITE)
+		mb.box(Vector3(0, d + 1.1, 2.0), Vector3(4.86, 0.5, 2.2), WINDOW)
+		# Sidelights in their screens on the wheelhouse sides.
+		for x: float in [-1.0, 1.0]:
+			var sl := Vector3(x * TRAWLER_SIDELIGHT.x, TRAWLER_SIDELIGHT.y, TRAWLER_SIDELIGHT.z)
+			mb.box(sl + Vector3(0, 0, -0.25), Vector3(0.3, 0.32, 0.06), LAMP_DARK)
+			mb.box(sl, Vector3(0.18, 0.24, 0.3), lamp_glass(GlowBuilder.RED if x > 0.0 else GlowBuilder.GREEN))
+		# Mast with its crosstree and lights, the radar, the exhaust stack.
+		var mast_base := d + 2.0 + 1.9
+		mb.box(Vector3(0, (mast_base + TRAWLER_MAST_GREEN.y) * 0.5, TRAWLER_MAST.z), Vector3(0.18, TRAWLER_MAST_GREEN.y - mast_base, 0.18), WHITE)
+		mb.box(Vector3(0, 7.6, TRAWLER_MAST.z), Vector3(2.4, 0.1, 0.1), WHITE)
+		add_lantern(mb, TRAWLER_MAST, GlowBuilder.LED, TRAWLER_LANTERN)
+		add_lantern(mb, TRAWLER_MAST_GREEN, GlowBuilder.GREEN, TRAWLER_LANTERN)
+		mb.box(Vector3(0, mast_base + 0.45, 2.6), Vector3(0.25, 0.5, 0.25), steel)
+		mb.box(Vector3(0, mast_base + 0.75, 2.6), Vector3(2.2, 0.12, 0.3), WHITE)
+		mb.cylinder(Vector3(1.6, d + 2.0, 0.4), 0.22, 0.2, 3.6, 8, Color(0.85, 0.85, 0.83))
+		mb.cylinder(Vector3(1.6, d + 5.6, 0.4), 0.21, 0.21, 0.4, 8, Color(0.08, 0.08, 0.08))
+		mb.cylinder(Vector3(-1.5, d + 2.0 + 1.9, 2.2), 0.3, 0.3, 0.7, 8, WHITE)
+		# The working deck: fish hatch, net drum, and the gantry over the stern
+		# with the trawl doors hung either side.
+		mb.box(Vector3(0, d + 0.25, -2.6), Vector3(1.8, 0.5, 1.8), steel)
+		var saved := mb.xform
+		mb.xform = saved * Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(1.8, d + 1.1, -6.4))
+		mb.cylinder(Vector3.ZERO, 0.85, 0.85, 3.6, 10, net)
+		mb.cylinder(Vector3(0, -0.06, 0), 1.05, 1.05, 0.12, 10, steel)
+		mb.cylinder(Vector3(0, 3.54, 0), 1.05, 1.05, 0.12, 10, steel)
+		mb.xform = saved
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * 1.95, d + 0.55, -6.4), Vector3(0.2, 1.1, 0.4), steel)
+			mb.box(Vector3(x * 2.7, (d + TRAWLER_GANTRY_TOP) * 0.5, TRAWLER_GANTRY_Z), Vector3(0.32, TRAWLER_GANTRY_TOP - d, 0.32), gantry)
+			mb.box(Vector3(x * 3.32, d + 0.9, -8.4), Vector3(0.14, 1.1, 1.7), steel)
+			mb.box(Vector3(x * 2.95, d + 1.6, -8.4), Vector3(0.6, 0.06, 0.06), steel)
+		mb.box(Vector3(0, TRAWLER_GANTRY_TOP, TRAWLER_GANTRY_Z), Vector3(5.8, 0.34, 0.4), gantry)
+		for x: float in [-1.4, 1.4]:
+			mb.box(Vector3(x, TRAWLER_GANTRY_TOP - 0.45, TRAWLER_GANTRY_Z), Vector3(0.3, 0.5, 0.25), steel)
+		# Tyres slung along the topsides for coming alongside.
+		for x: float in [-1.0, 1.0]:
+			for z: float in [-6.5, -3.0, 0.5, 4.0]:
+				mb.box(Vector3(x * 3.28, d - 0.35, z), Vector3(0.18, 0.6, 0.6), Color(0.08, 0.08, 0.09))
+		# The stern light.
+		mb.box(Vector3(0, d + 0.15, -10.02), Vector3(0.22, 0.2, 0.08), lamp_glass(GlowBuilder.LED))
+		return mb.commit())
+
+
+## The trawl warps, out from the gantry's blocks and down into the water astern
+## (shown while the net is out).
+static func trawler_warps() -> ArrayMesh:
+	return _cached("trawler_warps", func():
+		var mb := MeshBuilder.new()
+		for x: float in [-1.4, 1.4]:
+			var a := Vector3(x, TRAWLER_GANTRY_TOP - 0.7, TRAWLER_GANTRY_Z)
+			var b := Vector3(x * 1.6, -0.6, TRAWLER_GANTRY_Z - 8.5)
+			mb.xform = Transform3D(Basis.looking_at(b - a), (a + b) * 0.5)
+			mb.box(Vector3.ZERO, Vector3(0.07, 0.07, a.distance_to(b)), Color(0.15, 0.15, 0.16))
+		return mb.commit())
+
+
+## The lit wheelhouse's reflection, drawn by NightLights on each trawler.
+static func trawler_lights() -> ArrayMesh:
+	return _cached("trawler_lights", func():
+		var gb := GlowBuilder.new()
+		var window := Color(1.0, 0.74, 0.42)
+		for x: float in [-2.25, 2.25]:
+			for i in 3:
+				gb.reflection(Vector3(x, TRAWLER_DECK + 3.15, 2.4 + i * 0.9), window, 0.26, 1.8, Vector3(signf(x), 0, 0))
+		for i in 4:
+			gb.reflection(Vector3(-1.5 + i, TRAWLER_DECK + 3.15, 5.05), window, 0.26, 1.8, Vector3(0, 0, 1))
+		return gb.commit())
+
+
+## Sidelights and stern light, shown under way.
+static func trawler_nav_lights() -> ArrayMesh:
+	return _cached("trawler_nav", func():
+		var gb := GlowBuilder.new()
+		gb.glow(Vector3(TRAWLER_SIDELIGHT.x, TRAWLER_SIDELIGHT.y, TRAWLER_SIDELIGHT.z + 0.1), GlowBuilder.RED, 0.2, 6.0, true, 0.0, Vector3(1, 0, 0.8), 0.0)
+		gb.glow(Vector3(-TRAWLER_SIDELIGHT.x, TRAWLER_SIDELIGHT.y, TRAWLER_SIDELIGHT.z + 0.1), GlowBuilder.GREEN, 0.2, 6.0, true, 0.0, Vector3(-1, 0, 0.8), 0.0)
+		gb.glow(Vector3(0, TRAWLER_DECK + 0.15, -10.1), GlowBuilder.LED, 0.16, 4.0, true, 0.0, Vector3(0, 0, -1), 0.0)
+		return gb.commit())
+
+
+## The masthead light, shown steaming.
+static func trawler_steaming_lights() -> ArrayMesh:
+	return _cached("trawler_steaming", func():
+		var gb := GlowBuilder.new()
+		gb.glow(lantern_glow_at(TRAWLER_MAST, TRAWLER_LANTERN), GlowBuilder.LED, 0.22, 7.0, true, 0.0, Vector3.ZERO, 0.0)
+		return gb.commit())
+
+
+## Trawling: green over white all round, and the working deck floodlit from the
+## gantry and the back of the wheelhouse.
+static func trawler_working_lights() -> ArrayMesh:
+	return _cached("trawler_working", func():
+		var gb := GlowBuilder.new()
+		gb.glow(lantern_glow_at(TRAWLER_MAST_GREEN, TRAWLER_LANTERN), GlowBuilder.GREEN, 0.24, 7.0, true, 0.0, Vector3.ZERO, 0.0)
+		gb.glow(lantern_glow_at(TRAWLER_MAST, TRAWLER_LANTERN), GlowBuilder.LED, 0.22, 7.0, true, 0.0, Vector3.ZERO, 0.0)
+		for x: float in [-1.4, 1.4]:
+			gb.glow(Vector3(x, TRAWLER_GANTRY_TOP - 0.55, TRAWLER_GANTRY_Z + 0.15), GlowBuilder.LED, 0.3, 6.0, true, 0.0, Vector3(0, -0.5, 1), 0.0)
+		gb.glow(Vector3(0, TRAWLER_DECK + 3.7, 1.55), GlowBuilder.LED, 0.28, 5.0, false, 0.0, Vector3(0, -0.4, -1), 0.0)
+		gb.pool(Vector3(0, TRAWLER_DECK + 0.05, -5.0), GlowBuilder.LED, 4.2, 0.5, 0.0)
+		gb.pool(Vector3(0, 0.05, -12.0), GlowBuilder.LED, 4.0, 0.1, 0.0)
 		return gb.commit())
 
 

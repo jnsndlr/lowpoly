@@ -33,6 +33,20 @@ const MARINA_BACKOUT_U := 29.0     # where a departing boat stops reversing
 const MARINA_APPROACH_U := 33.0    # where an arriving boat lines up for its berth
 
 
+# Fish quay frame, like a marina's. A jetty runs out to a wharf along v whose
+# seaward face (at QUAY_FACE_U) the boats lie alongside, bow to stern, pointing
+# the quay's `side` along v. They come and go along the lane QUAY_LANE_U out,
+# running QUAY_RUN either side of the wharf, crabbing between it and the berth.
+const QUAY_JETTY_END := 7.0
+const QUAY_FACE_U := 13.0
+const QUAY_HALF := 24.0            # the wharf's half length along v
+const QUAY_BERTHS := 2
+const QUAY_BERTH_SPACING := 23.0
+const QUAY_FENDER := 0.5           # between the face and a hull lying alongside
+const QUAY_LANE_U := 30.0
+const QUAY_RUN := 60.0
+
+
 ## Lateral lane positions grouped per slip (left → right), clear of the exit lane.
 static func lane_positions(half_width: float, slip_count: int) -> Array[PackedFloat32Array]:
 	var all: Array[float] = []

@@ -2,7 +2,7 @@ class_name NavGrid
 extends RefCounted
 ## Coarse water grids that sailboats and cargo ships plan their passages on. A cell
 ## is open when it is far enough from land for that class of boat; ferry terminals
-## and marina piers are closed off, and ferry lanes cost extra so other traffic
+## marina piers and fish quays are closed off, and ferry lanes cost extra so other traffic
 ## crosses them rather than following them. Paths come back string-pulled, in
 ## world x, z; finish() shifts them to keep right and rounds their corners.
 
@@ -51,6 +51,7 @@ func _init(map: MapData, t: Terrain) -> void:
 	_mark_lanes(map)
 	_close_terminals(map)
 	_close_marinas(map)
+	_close_quays(map)
 
 
 func cell(p: Vector2) -> Vector2i:
@@ -150,6 +151,22 @@ func _close_marinas(map: MapData) -> void:
 				var c := cell(Vector2(p.x, p.z))
 				large.set_point_solid(c)
 				if u <= Layout.MARINA_BERTH_U + 3.0 and absf(v) <= Layout.MARINA_HEAD_HALF + 2.0:
+					small.set_point_solid(c)
+				v += 3.0
+			u += 3.0
+
+
+## The jetty and wharf, and (for ships) the lane off it the fishing boats use.
+func _close_quays(map: MapData) -> void:
+	for q in map.quays:
+		var u := -2.0
+		while u <= Layout.QUAY_LANE_U + 16.0:
+			var v := -Layout.QUAY_RUN - 10.0
+			while v <= Layout.QUAY_RUN + 10.0:
+				var p := q.at(u, v)
+				var c := cell(Vector2(p.x, p.z))
+				large.set_point_solid(c)
+				if u <= Layout.QUAY_FACE_U + 2.0 and absf(v) <= Layout.QUAY_HALF + 2.0:
 					small.set_point_solid(c)
 				v += 3.0
 			u += 3.0

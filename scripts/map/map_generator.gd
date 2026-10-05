@@ -14,6 +14,7 @@ var _route_samples := PackedVector3Array()
 var _slip_zones: Array = []   # [shore, dock_dir, lateral, slip offset, route id]
 
 const DOCK_MIN_ANGLE := deg_to_rad(35.0)   # no two docks face within this of each other
+const QUAY_DEPTH := -2.9      # the shallowest water a fish quay's boats come and go through
 
 
 func generate(map_seed: int) -> MapData:
@@ -30,6 +31,7 @@ func generate(map_seed: int) -> MapData:
 	_place_islets()
 	terrain.finalize()
 	_place_marinas(map_seed)
+	_place_quays(map_seed)
 	_flatten_terminals()
 	_name_islands()
 	_layout_towns()
@@ -509,6 +511,94 @@ func _marina_site(isl: MapData.Island, n3: Vector3) -> Variant:
 			var p := _route_samples[i]
 			if Vector2(p.x - q.x, p.z - q.z).length_squared() < 34.0 * 34.0:
 				return null
+	return [s3, n3]
+
+
+## A fish quay on a few islands, for the fishing boats to work from: a stretch of
+## shore with land behind and deep water along its face and the lane off it, well
+## clear of terminals, marinas, ferry routes and each other. Its own RNG, so the
+## rest of the map stays the same for a given seed.
+func _place_quays(map_seed: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = map_seed * 23 + 9
+	var islands := _main_islands()
+	for i in range(islands.size() - 1, 0, -1):
+		var j := r.randi_range(0, i)
+		var t := islands[i]
+		islands[i] = islands[j]
+		islands[j] = t
+	# Most maps get one; now and then a second.
+	var want := 2 if r.randf() < 0.35 else 1
+	for isl in islands:
+		if map.quays.size() >= want:
+			break
+		var sites: Array = []
+		var start := r.randf() * TAU
+		for k in 36:
+			var ang := start + TAU * k / 36.0
+			var site: Variant = _quay_site(isl, Vector3(cos(ang), 0.0, sin(ang)))
+			if site != null:
+				sites.append(site)
+		if sites.is_empty():
+			continue
+		var pick: Array = sites[r.randi_range(0, sites.size() - 1)]
+		var q := MapData.FishQuay.new()
+		q.id = map.quays.size()
+		q.island = isl.id
+		q.shore = pick[0]
+		q.dir = pick[1]
+		q.side = 1.0 if r.randf() < 0.5 else -1.0
+		map.quays.append(q)
+
+
+## [shore, dir] if a fish quay fits where the ray from the island's centre along
+## `dir` meets the sea, else null.
+func _quay_site(isl: MapData.Island, n3: Vector3) -> Variant:
+	var c := Vector3(isl.center.x, 0.0, isl.center.y)
+	var shore := -1.0
+	var rr := 0.0
+	while rr < isl.radius * 1.8:
+		if terrain.height_v(c + n3 * rr) < 0.3:
+			shore = rr
+			break
+		rr += 0.5
+	if shore < 8.0:
+		return null
+	var s3 := c + n3 * shore
+	var lat := Vector3.UP.cross(n3)
+	for v: float in [-6.0, 0.0, 6.0]:
+		if _h(s3 - n3 * 5.0 + lat * v) < 0.4:
+			return null
+	# The wharf stands over the water (or the foreshore), not dug into the hill.
+	var wv := -Layout.QUAY_HALF
+	while wv <= Layout.QUAY_HALF:
+		if _h(s3 + n3 * (Layout.QUAY_JETTY_END - 2.0) + lat * wv) > 0.6:
+			return null
+		wv += 4.0
+	# Deep enough for a trawler along the face, the lane and the runs either side.
+	for u in range(int(Layout.QUAY_FACE_U) + 2, int(Layout.QUAY_LANE_U) + 14, 4):
+		var v := -Layout.QUAY_RUN - 8.0
+		while v <= Layout.QUAY_RUN + 8.0:
+			if _h(s3 + n3 * float(u) + lat * v) > QUAY_DEPTH:
+				return null
+			v += 6.0
+	var reach := s3 + n3 * Layout.QUAY_LANE_U
+	for o in map.islands:
+		if o.has_terminal and (s3.distance_to(o.shore) < 60.0 or reach.distance_to(o.shore + o.dock_dir * 40.0) < 65.0):
+			return null
+	for m in map.marinas:
+		if s3.distance_to(m.shore) < 60.0 or reach.distance_to(m.at(Layout.MARINA_APPROACH_U, 0.0)) < 55.0:
+			return null
+	for q in map.quays:
+		if s3.distance_to(q.shore) < 160.0:
+			return null
+	for u: float in [0.0, Layout.QUAY_LANE_U]:
+		for v: float in [-Layout.QUAY_RUN, 0.0, Layout.QUAY_RUN]:
+			var p := s3 + n3 * u + lat * v
+			for i in range(0, _route_samples.size(), 4):
+				var rp := _route_samples[i]
+				if Vector2(rp.x - p.x, rp.z - p.z).length_squared() < 34.0 * 34.0:
+					return null
 	return [s3, n3]
 
 

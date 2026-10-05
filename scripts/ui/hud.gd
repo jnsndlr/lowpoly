@@ -21,7 +21,7 @@ var route_overlay: Node3D
 var routes_forced := false
 var selected_island: MapData.Island
 var selected_ferry: Ferry
-var selected_vessel: Vessel   # a sailboat or cargo ship
+var selected_vessel: Vessel   # a sailboat, fishing boat or cargo ship
 
 var root: Control
 var font: SystemFont
@@ -385,13 +385,13 @@ func select_ferry(f: Ferry) -> void:
 	_refresh_panels()
 
 
-## A sailboat or cargo ship: shows its panel and follows it.
+## A sailboat, fishing boat or cargo ship: shows its panel and follows it.
 func select_vessel(v: Vessel) -> void:
 	selected_vessel = v
 	selected_island = null
 	selected_ferry = null
 	rig.follow = v
-	var near := 60.0 if v is Sailboat else 140.0
+	var near := 60.0 if v is Sailboat else (90.0 if v is FishingBoat else 140.0)
 	if rig.target_dist > near * 1.6:
 		rig.target_dist = near
 	_refresh_panels()
@@ -521,6 +521,11 @@ func _refresh_panels() -> void:
 		if v is Sailboat:
 			_info_sub.text = "%s · out of %s" % [v.type_text(), (v as Sailboat).marina_name((v as Sailboat).marina)]
 			rows.append(["Passages", str((v as Sailboat).trips)])
+		elif v is FishingBoat:
+			var f := v as FishingBoat
+			_info_sub.text = "%s · out of %s" % [v.type_text(), f.quay_name()]
+			rows.append(["Hold", "%d%% full" % roundi(f.fish_hold * 100.0)])
+			rows.append(["Trips", str(f.trips)])
 		else:
 			_info_sub.text = "%s · transiting" % v.type_text()
 			rows.append(["Distance to go", "%.1f km" % (v.path_left() / 1000.0)])

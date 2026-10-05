@@ -15,6 +15,7 @@ var weight := 1.0               # how often it turns up among its class
 var half_length := 1.8
 var half_beam := 0.62
 var pad := 0.0
+var draft := 1.0                # depth of water it floats in
 
 # Handling. A sailboat's `cruise` is on a beam reach in a moderate breeze; it
 # motors at `motor_speed`.
@@ -74,6 +75,7 @@ func scaled(f: float, new_id: String, new_name: String) -> VesselSpec:
 	s.half_length *= f
 	s.half_beam *= f
 	s.pad *= f
+	s.draft *= f
 	s.cruise *= sqrt(f)
 	s.motor_speed *= sqrt(f)
 	s.turn /= sqrt(f)

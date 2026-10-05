@@ -5,13 +5,17 @@ extends Node3D
 ##
 ## Each gull sits for a while (facing into the wind, much longer at night), then
 ## either flies to another free perch nearby, wheels about for a bit, or tails a
-## sailing ferry. Taking off, it may call up to a few perched neighbours to come
-## along; they fly in loose formation off the leader and, when it comes down, look
-## for spots near it. Followers drift off on their own now and then, and loners
-## sometimes tag onto a passing group. Gulls on a ferry leave when it sails, and
-## ones floating on the water get out of a ferry's way.
+## sailing ferry. A fishing boat out at work is better than any of that: gulls
+## that notice one go out to it, follow it over its wake (all the more when it is
+## hauling, or steaming home with the catch) and drop onto the water astern, then
+## go after it again; once it is tied up they lose interest. Taking off, a gull may
+## call up to a few perched neighbours to come along; they fly in loose formation
+## off the leader and, when it comes down, look for spots near it. Followers drift
+## off on their own now and then, and loners sometimes tag onto a passing group.
+## Gulls on a ferry leave when it sails, and ones floating on the water get out of
+## a vessel's way.
 
-enum Kind { LAMP, LIFT, DOLPHIN, ROOF, LIGHTHOUSE, FERRY, WATER }
+enum Kind { LAMP, LIFT, DOLPHIN, ROOF, LIGHTHOUSE, FERRY, BOAT, WATER }
 enum State { PERCHED, FLY, ROAM, FOLLOW, LAND }
 
 # Kept off the minimap, like the clouds.
@@ -19,10 +23,11 @@ const LAYER := 1 << (CloudLayer.VISUAL_LAYER - 1)
 # Bigger than life (~1.4 m across unscaled) so they read at a distance.
 const SCALE := 1.5
 const PER_TERMINAL := 10
-const MAX_GULLS := 90
+const PER_QUAY := 10
+const MAX_GULLS := 110
 # Weight of each kind of perch when picking where to go; distance falls off on top.
 const APPEAL := {Kind.LAMP: 0.5, Kind.LIFT: 1.4, Kind.DOLPHIN: 1.2, Kind.ROOF: 1.0,
-	Kind.LIGHTHOUSE: 1.0, Kind.FERRY: 2.0}
+	Kind.LIGHTHOUSE: 1.0, Kind.FERRY: 2.0, Kind.BOAT: 1.6}
 const WATER_APPEAL := 0.35
 # Gulls like company: each one already on a perch (up to 4) adds this much appeal.
 const COMPANY := 0.8
@@ -40,6 +45,21 @@ const FERRY_PERCHES := [
 	[Vector3(0, 9.05, -1.1), Vector3(0, 9.05, 1.1), 0.0],
 	[Vector3(3.5, 6.75, 2.3), Vector3(3.5, 6.75, 4.1), 0.0], [Vector3(-3.5, 6.75, -2.3), Vector3(-3.5, 6.75, -4.1), 0.0],
 ]
+# Trawler-local perches (Models.trawler), used while it lies alongside: the
+# wheelhouse roof, the gantry's crossbar, the bulwark rails and the foredeck.
+const TRAWLER_PERCHES := [
+	[Vector3(0, 5.52, 2.0), Vector3(0, 5.52, 4.6), 1.6],
+	[Vector3(-2.6, 6.78, -9.3), Vector3(2.6, 6.78, -9.3), 0.0],
+	[Vector3(3.12, 2.48, -8.5), Vector3(3.12, 2.48, 2.5), 0.0], [Vector3(-3.12, 2.48, -8.5), Vector3(-3.12, 2.48, 2.5), 0.0],
+	[Vector3(0, 2.62, 5.2), Vector3(0, 2.62, 7.6), 1.2],
+]
+# A fishing boat at work draws gulls from this far (further when it is hauling or
+# steaming home with the catch: there's fish to be had), and they follow it this
+# much more readily than anything else.
+const FISH_ATTENTION := 220.0
+const FISH_ATTENTION_FED := 340.0
+const FISH_CHANCE := 0.8
+const FISH_RESTLESS := 0.12     # chance a second a perched gull within reach gets up for it
 # Spread of a raft of gulls on the water.
 const RAFT := 6.0
 # Height of the body's origin above the perch point (water: sitting in it).
@@ -61,10 +81,11 @@ const JOIN_RADIUS := 35.0
 ## strip `spread` either side of it (a roof), or a disc of radius `spread` around
 ## `a` (a raft on the water). Each gull takes its own seat on it.
 class Perch:
-	var a: Vector3          # world, or local to `ferry`
+	var a: Vector3          # world, or local to `ferry` / `boat`
 	var b: Vector3
 	var spread := 0.0
 	var ferry: Ferry = null
+	var boat: FishingBoat = null
 	var kind := Kind.LAMP
 	var gulls: Array[Gull] = []
 	var capacity := 1
@@ -79,12 +100,16 @@ class Perch:
 		capacity = maxi(1, floori((length + 1.0) * (2.0 * spread + 1.0) / 2.2) if spread > 0.0 else floori(length / 1.1) + 1)
 
 	func to_world(p: Vector3) -> Vector3:
-		return ferry.global_transform * p if ferry else p
+		if ferry:
+			return ferry.global_transform * p
+		return boat.global_transform * p if boat else p
 
 	func center() -> Vector3:
 		return to_world((a + b) * 0.5)
 
 	func usable() -> bool:
+		if boat:
+			return boat.state == FishingBoat.State.ALONGSIDE
 		return ferry == null or ferry.state != Ferry.State.SAILING
 
 	func _across() -> Vector3:
@@ -136,7 +161,7 @@ class Gull:
 	var orbit := Vector3.ZERO   # roam: centre of the circle (y = height)
 	var orbit_r := 20.0
 	var orbit_dir := 1.0
-	var escort: Ferry = null    # roam: the ferry it's tailing
+	var escort: Vessel = null   # roam: the ferry or fishing boat it's tailing
 	var boost := 0.0            # seconds of hard flapping left after take-off
 	var flap_phase := 0.0
 	var flap_amp := 0.0
@@ -175,6 +200,11 @@ func setup(s: Simulation, d: DayCycle, perches: Array[Perch]) -> void:
 	for f in sim.ferries:
 		for fp: Array in FERRY_PERCHES:
 			_perches.append(Perch.new(fp[0], fp[1], fp[2], Kind.FERRY, f))
+	for b in sim.marine.fishing_boats:
+		for bp: Array in TRAWLER_PERCHES:
+			var p := Perch.new(bp[0], bp[1], bp[2], Kind.BOAT)
+			p.boat = b
+			_perches.append(p)
 	_build_pool()
 
 
@@ -191,15 +221,23 @@ func _build_pool() -> void:
 	mmi.layers = LAYER
 	add_child(mmi)
 
-	var terms: Array = sim.terminals.values()
-	var count := mini(PER_TERMINAL * terms.size() + 8, MAX_GULLS)
+	var homes: Array[Vector3] = []
+	for t: Terminal in sim.terminals.values():
+		for k in PER_TERMINAL:
+			homes.append(t.global_position)
+	for q in sim.map.quays:
+		for k in PER_QUAY:
+			homes.append(q.at(Layout.QUAY_FACE_U, 0.0))
+	if homes.is_empty():
+		homes.append(Vector3.ZERO)
+	var count := mini(homes.size() + 8, MAX_GULLS)
 	for i in count:
 		var g := Gull.new()
 		g.facing = _pick_facing()
 		g.size = rng.randf_range(0.88, 1.08)
 		g.flap_phase = rng.randf() * TAU
 		_gulls.append(g)
-		var home: Vector3 = (terms[i % terms.size()] as Terminal).global_position if terms.size() > 0 else Vector3.ZERO
+		var home: Vector3 = homes[i % homes.size()]
 		if rng.randf() < 0.75 and _claim(g, home, PERCH_RANGE):
 			g.pos = _seat_world(g)
 			g.yaw = _wind_yaw + g.facing
@@ -257,8 +295,8 @@ func _tick_perched(g: Gull, dt: float) -> void:
 		g.bob += dt
 		g.pos.y += sin(g.bob * 1.6) * 0.06
 		g.yaw += sin(g.bob * 0.3) * 0.1 * dt
-		# Paddle out of the way of a ferry.
-		if g.timer > 1.0 and _ferry_near(g.pos, 34.0) != null:
+		# Paddle out of the way of a ferry, or a fishing boat coming back over them.
+		if g.timer > 1.0 and (_ferry_near(g.pos, 34.0) != null or _boat_bearing_down(g.pos)):
 			g.timer = rng.randf_range(0.0, 0.8)
 	else:
 		g.yaw = lerp_angle(g.yaw, _wind_yaw + g.facing, 1.0 - exp(-dt * 1.5))
@@ -267,6 +305,11 @@ func _tick_perched(g: Gull, dt: float) -> void:
 	# The ferry's leaving: everyone off, not quite all at once.
 	if not p.usable() and g.timer > 1.6:
 		g.timer = rng.randf_range(0.1, 1.5)
+	# A fishing boat at work in sight: time to go and see.
+	if g.think <= 0.0:
+		g.think = rng.randf_range(1.0, 3.0)
+		if g.timer > 3.0 and rng.randf() < FISH_RESTLESS * 2.0 * (1.0 - day_cycle.night) and _fish_near(g.pos) != null:
+			g.timer = rng.randf_range(0.2, 3.0)
 	# Now and then a stretch of the wings.
 	if g.stretch <= 0.0 and rng.randf() < dt * 0.02:
 		g.stretch = rng.randf_range(0.6, 1.2)
@@ -283,7 +326,7 @@ func _tick_perched(g: Gull, dt: float) -> void:
 	g.timer -= dt
 	if g.timer > 0.0:
 		return
-	var carrier := p.ferry if not p.usable() else null
+	var carrier: Vessel = p.ferry if not p.usable() else null
 	_take_off(g)
 	if g.leader != null:
 		if _airborne(g.leader):
@@ -323,6 +366,10 @@ func _recruit(g: Gull) -> void:
 
 ## Where a solo gull (or a group's leader) goes next.
 func _decide(g: Gull) -> void:
+	var fish := _fish_near(g.pos)
+	if fish != null and rng.randf() < FISH_CHANCE:
+		_start_roam(g, fish)
+		return
 	var r := rng.randf()
 	var f := _ferry_near(g.pos, 150.0)
 	if f != null and r < ESCORT_CHANCE:
@@ -365,11 +412,15 @@ func _tick_fly(g: Gull, dt: float) -> void:
 	_steer(g, (aim - g.pos).normalized() * SPEED, ACCEL, dt)
 
 
-func _start_roam(g: Gull, escort: Ferry = null) -> void:
+func _start_roam(g: Gull, escort: Vessel = null) -> void:
 	g.state = State.ROAM
 	g.escort = escort
 	g.timer = rng.randf_range(8.0, 25.0) if escort else rng.randf_range(5.0, 15.0)
 	g.offset = Vector3(rng.randf_range(-7.0, 7.0), rng.randf_range(5.0, 12.0), rng.randf_range(14.0, 26.0))
+	if escort is FishingBoat:
+		# A loose, low, squabbling crowd over the wake.
+		g.timer = rng.randf_range(15.0, 45.0)
+		g.offset = Vector3(rng.randf_range(-12.0, 12.0), rng.randf_range(3.0, 10.0), rng.randf_range(8.0, 34.0))
 	var a := rng.randf() * TAU
 	var c := g.pos + Vector3(cos(a), 0.0, sin(a)) * rng.randf_range(10.0, 40.0)
 	g.orbit = Vector3(c.x, rng.randf_range(10.0, 35.0), c.z)
@@ -381,10 +432,17 @@ func _start_roam(g: Gull, escort: Ferry = null) -> void:
 func _tick_roam(g: Gull, dt: float) -> void:
 	g.timer -= dt
 	var f := g.escort
-	if f != null and f.state != Ferry.State.SAILING:
+	if f != null and not _escorting(f):
 		# Arrived with it: likely drops onto it or nearby.
 		g.timer = minf(g.timer, 0.0)
 	if g.timer <= 0.0:
+		if f is FishingBoat and _escorting(f):
+			# Down onto the water in its wake for a bit, or round again.
+			if rng.randf() < 0.45 and _claim_wake(g, f):
+				_fly_to(g)
+			else:
+				_start_roam(g, f)
+			return
 		if _claim(g, f.global_position if f else g.pos, PERCH_RANGE):
 			_fly_to(g)
 		else:
@@ -392,9 +450,13 @@ func _tick_roam(g: Gull, dt: float) -> void:
 		return
 	if f != null:
 		# Hang off the stern quarter, over the wake.
-		var dir := f.global_transform.basis.z * (1.0 if f.at_a else -1.0)
+		var dir := _escort_dir(f)
 		var side := dir.cross(Vector3.UP)
 		var aim := f.global_position - dir * g.offset.z + side * g.offset.x + Vector3.UP * g.offset.y
+		if f is FishingBoat:
+			# Wheeling about over it rather than holding station.
+			var wob := g.timer * 0.7 + g.flap_phase
+			aim += Vector3(sin(wob) * 6.0, sin(wob * 1.3) * 2.0, cos(wob * 0.8) * 6.0)
 		var want := dir * f.speed + (aim - g.pos) * 0.5
 		_steer(g, want.limit_length(SPEED * 1.4), ACCEL, dt)
 	else:
@@ -571,6 +633,76 @@ func _perch_time(p: Perch) -> float:
 		t *= 0.6
 	# Roosting: they mostly stay put through the night.
 	return t * lerpf(1.0, 5.0, day_cycle.night)
+
+
+## Whether `v` is still worth tailing: a ferry under way, or a fishing boat out
+## on the water.
+func _escorting(v: Vessel) -> bool:
+	if v is Ferry:
+		return (v as Ferry).state == Ferry.State.SAILING
+	if v is FishingBoat:
+		return is_instance_valid(v) and (v as FishingBoat).free_nav
+	return false
+
+
+## The way it is heading (a ferry's bow is whichever end it is sailing towards).
+func _escort_dir(v: Vessel) -> Vector3:
+	if v is Ferry:
+		return v.global_transform.basis.z * (1.0 if (v as Ferry).at_a else -1.0)
+	var h := v.heading2()
+	return Vector3(h.x, 0.0, h.y)
+
+
+## The nearest fishing boat out at work that a gull at `p` would notice.
+func _fish_near(p: Vector3) -> FishingBoat:
+	var best: FishingBoat = null
+	var best_d := INF
+	for b in sim.marine.fishing_boats:
+		if not b.free_nav:
+			continue
+		var fed: bool = (b.fishing() and b.work == FishingBoat.Work.HAULING) or b.state == FishingBoat.State.HOMEWARD
+		var reach := FISH_ATTENTION_FED if fed else FISH_ATTENTION
+		var d := b.global_position.distance_to(p)
+		if d < reach and d < best_d:
+			best = b
+			best_d = d
+	return best
+
+
+## A fishing boat under way heading for a gull sitting on the water at `p`.
+func _boat_bearing_down(p: Vector3) -> bool:
+	for b in sim.marine.fishing_boats:
+		if b.speed < 0.3 or b.global_position.distance_squared_to(p) > 30.0 * 30.0:
+			continue
+		var to := Vector2(p.x - b.global_position.x, p.z - b.global_position.z)
+		if to.dot(b.heading2()) > 0.0:
+			return true
+	return false
+
+
+## A seat on the water astern of fishing boat `b`, among the others there.
+func _claim_wake(g: Gull, b: FishingBoat) -> bool:
+	var h := b.heading2()
+	var stern := b.global_position - Vector3(h.x, 0.0, h.y) * (b.spec.half_length + rng.randf_range(6.0, 22.0))
+	for p in _perches:
+		if p.kind == Kind.WATER and p.gulls.size() < p.capacity and Vector2(p.a.x - stern.x, p.a.z - stern.z).length() < 14.0:
+			var seat: Variant = _find_seat(p)
+			if seat != null:
+				p.gulls.append(g)
+				g.perch = p
+				g.seat = seat
+				return true
+	if sim.terrain.height_at(stern.x, stern.z) > -1.5:
+		return false
+	var raft := Perch.new(Vector3(stern.x, 0.0, stern.z), Vector3(stern.x, 0.0, stern.z), RAFT, Kind.WATER)
+	var s0: Variant = _find_seat(raft)
+	if s0 == null:
+		return false
+	_perches.append(raft)
+	raft.gulls.append(g)
+	g.perch = raft
+	g.seat = s0
+	return true
 
 
 func _ferry_near(p: Vector3, radius: float) -> Ferry:

@@ -44,6 +44,12 @@ func path_left() -> float:
 	return 0.0
 
 
+## Moving sideways along its path (a fishing boat coming alongside), rather than
+## ahead or astern.
+func crabbing() -> bool:
+	return false
+
+
 func pos2() -> Vector2:
 	return Vector2(global_position.x, global_position.z)
 
@@ -116,6 +122,11 @@ func helm_courses(bearing: float) -> Array:
 ## Best speed on heading `yaw`.
 func helm_speed(_yaw: float) -> float:
 	return cruise
+
+
+## How fast it can swing round, rad/s (the helm reckons on it to judge a turn).
+func helm_turn_rate() -> float:
+	return 0.6
 
 
 ## Why it must keep clear of `other` (a Vessel or a Wildlife.Visit), or "" if it

@@ -48,8 +48,9 @@ class Island:
 		return shore + dock_dir * Layout.DOCK_U + lateral() * slip_offset(slip_index(route_id))
 
 
-## A small-boat pier with a T-head (see Layout's marina frame).
-class Marina:
+## Somewhere boats tie up along a shore. Its frame is like a terminal's: origin
+## where the pier meets the shore, +Z ("u") out to sea, +X ("v") lateral.
+class Harbour:
 	var id := 0
 	var island := 0                 # island id
 	var shore := Vector3.ZERO       # where the pier meets land, y = 0
@@ -64,8 +65,59 @@ class Marina:
 	func at(u: float, v: float) -> Vector3:
 		return shore + dir * u + lateral() * v
 
+	func berths() -> int:
+		return 0
+
+	## Where a boat lines up to come in (u, v).
+	func approach() -> Vector2:
+		return Vector2.ZERO
+
+	## Where boats waiting to come in may hold: no nearer the shore than `x`, and
+	## no nearer the centre line than `y` (to keep out of the approach).
+	func wait_bounds() -> Vector2:
+		return Vector2.ZERO
+
+	## How far apart boats waiting here hold station.
+	func wait_spacing() -> float:
+		return 7.0
+
+
+## A small-boat pier with a T-head (see Layout's marina frame).
+class Marina extends Harbour:
 	func berth_v(i: int) -> float:
 		return (i - (Layout.MARINA_BERTHS - 1) * 0.5) * Layout.MARINA_BERTH_SPACING
+
+	func berths() -> int:
+		return Layout.MARINA_BERTHS
+
+	func approach() -> Vector2:
+		return Vector2(Layout.MARINA_APPROACH_U, 0.0)
+
+	func wait_bounds() -> Vector2:
+		return Vector2(40.0, Layout.MARINA_HEAD_HALF + 12.0)
+
+
+## A fishing boats' wharf (see Layout's quay frame): a jetty out to a wharf whose
+## seaward face the boats lie alongside, bow to stern, all pointing `side` along
+## v. They come in along the lane off the face from astern and crab in sideways,
+## and leave the same way round: crab out, then ahead along the lane.
+class FishQuay extends Harbour:
+	var side := 1.0
+
+	func berth_v(i: int) -> float:
+		return (i - (Layout.QUAY_BERTHS - 1) * 0.5) * Layout.QUAY_BERTH_SPACING
+
+	func berths() -> int:
+		return Layout.QUAY_BERTHS
+
+	func approach() -> Vector2:
+		return Vector2(Layout.QUAY_LANE_U, -side * Layout.QUAY_RUN)
+
+	func wait_bounds() -> Vector2:
+		return Vector2(Layout.QUAY_LANE_U + 20.0, 0.0)
+
+	func wait_spacing() -> float:
+		return 32.0
 
 
 class Route:
@@ -81,3 +133,4 @@ var half_size := 460.0
 var islands: Array[Island] = []
 var routes: Array[Route] = []
 var marinas: Array[Marina] = []
+var quays: Array[FishQuay] = []

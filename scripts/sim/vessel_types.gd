@@ -18,7 +18,11 @@ static func cargo_ships() -> Array[VesselSpec]:
 	var container := _container_ship()
 	var feeder := container.scaled(0.7, "feeder", "Feeder ship")
 	feeder.weight = 0.6
-	return [container, feeder]
+	return [container, feeder, _tanker(container), _bulk_carrier(container)]
+
+
+static func fishing_boats() -> Array[VesselSpec]:
+	return [_trawler()]
 
 
 ## One of `types`, picked by weight.
@@ -86,5 +90,58 @@ static func _container_ship() -> VesselSpec:
 	s.shape = Vector4(12.0, 0.0, 2.0, 0.86)
 	s.model = func(v: int) -> ArrayMesh: return Models.cargo_ship(v)
 	s.lights = func(_v: int) -> ArrayMesh: return Models.cargo_ship_lights()
+	s.variants = 3
+	return s
+
+
+## A tanker on the container ship's hull, a little bigger and deep laden: she
+## makes less way and pushes up a heavier wash.
+static func _tanker(container: VesselSpec) -> VesselSpec:
+	var s := container.scaled(1.15, "tanker", "Tanker")
+	s.cruise = 4.4
+	s.accel = 0.1
+	s.wash = 1.5
+	s.model = func(v: int) -> ArrayMesh: return Models.tanker(v)
+	s.weight = 0.7
+	return s
+
+
+## A geared bulk carrier, also on the container ship's hull.
+static func _bulk_carrier(container: VesselSpec) -> VesselSpec:
+	var s := container.scaled(1.1, "bulk_carrier", "Bulk carrier")
+	s.cruise = 4.6
+	s.accel = 0.1
+	s.wash = 1.4
+	s.model = func(v: int) -> ArrayMesh: return Models.bulk_carrier(v)
+	s.weight = 0.7
+	return s
+
+
+static func _trawler() -> VesselSpec:
+	var s := VesselSpec.new()
+	s.id = "trawler"
+	s.kind = "Fishing boat"
+	s.type_name = "Trawler"
+	s.half_length = 10.0
+	s.half_beam = 3.2
+	s.pad = 0.5
+	s.draft = 2.2
+	s.cruise = 3.6
+	s.motor_speed = 2.0
+	s.accel = 0.16
+	s.decel = 0.3
+	s.turn = 0.2
+	s.motor_turn = 0.18
+	s.wake_spacing = 5.0
+	s.wake_life = 26.0
+	s.wake_crumbs = 44
+	# A single big prop driving a heavy hull: more wash than a yacht, and a
+	# full-bodied wave train for her size.
+	s.wash = 0.6
+	s.kelvin = 0.55
+	# A bluff bow narrowing over its last 5 m, and a broad transom.
+	s.shape = Vector4(5.5, 0.15, 1.5, 0.85)
+	s.model = func(v: int) -> ArrayMesh: return Models.trawler(v)
+	s.lights = func(_v: int) -> ArrayMesh: return Models.trawler_lights()
 	s.variants = 3
 	return s

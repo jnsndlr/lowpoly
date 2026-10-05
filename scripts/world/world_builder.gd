@@ -47,6 +47,7 @@ func build() -> Node3D:
 	_build_water()
 	_build_terminals()
 	_build_marinas()
+	_build_quays()
 	_build_roads()
 	_build_towns()
 	_build_lighthouses()
@@ -600,6 +601,127 @@ func _build_marinas() -> void:
 		while bu < 2.0:
 			for bv: float in [-3.0, -1.5, 0.0, 1.5, 3.0]:
 				_block(m.at(bu, bv), 1.0)
+			bu += 1.5
+
+
+## A timber jetty out to a wharf the fishing boats lie alongside (the boats
+## themselves are MarineTraffic's): bollards and tyre fenders along its face, a
+## fish shed and stacked totes on it, a hoist over the water, and floodlights for
+## landing the catch in the dark.
+func _build_quays() -> void:
+	var plank := Color(0.5, 0.42, 0.33)
+	var cap := Color(0.6, 0.6, 0.57)
+	var tyre := Color(0.1, 0.1, 0.11)
+	var steel := Color(0.35, 0.36, 0.38)
+	var shed_wall := Color(0.6, 0.24, 0.19)
+	var trim := Color(0.9, 0.89, 0.84)
+	var totes := [Color(0.18, 0.38, 0.66), Color(0.9, 0.48, 0.14), Color(0.86, 0.86, 0.82)]
+	var r := RandomNumberGenerator.new()
+	for q in map.quays:
+		r.seed = map.map_seed * 13 + q.id
+		var mb := MeshBuilder.new()
+		mb.xform = q.xform()
+		glows.xform = mb.xform
+		var deck := 1.2
+		var face := Layout.QUAY_FACE_U
+		var back := Layout.QUAY_JETTY_END - 2.0
+		var hh := Layout.QUAY_HALF
+		# The jetty, on its pilings.
+		mb.box(Vector3(0, deck - 0.15, (back - 2.0) * 0.5), Vector3(4.0, 0.3, back + 2.0), plank)
+		var u := 0.0
+		while u < back:
+			for side: float in [-1.8, 1.8]:
+				mb.box(Vector3(side, -1.6, u), Vector3(0.3, 5.4, 0.3), Models.WOOD)
+			u += 3.0
+		# The wharf: a heavy timber deck with a concrete cap along its face.
+		var mid := (back + face) * 0.5
+		mb.box(Vector3(0, deck - 0.2, mid), Vector3(hh * 2.0, 0.4, face - back), plank)
+		mb.box(Vector3(0, deck + 0.02, face - 0.35), Vector3(hh * 2.0, 0.14, 0.7), cap)
+		mb.box(Vector3(0, deck - 0.9, face - 0.08), Vector3(hh * 2.0, 1.2, 0.16), Models.WOOD)
+		var v := -hh + 0.4
+		while v <= hh - 0.3:
+			mb.box(Vector3(v, -1.8, face - 0.2), Vector3(0.36, 5.6, 0.36), Models.WOOD)
+			mb.box(Vector3(v, -1.6, back + 0.3), Vector3(0.32, 5.4, 0.32), Models.WOOD)
+			v += 3.2
+		# Tyre fenders hung along the face, and bollards for the boats' lines.
+		v = -hh + 1.5
+		while v < hh - 1.0:
+			mb.box(Vector3(v, 0.3, face + 0.12), Vector3(0.75, 0.75, 0.26), tyre)
+			mb.box(Vector3(v, 0.3, face + 0.26), Vector3(0.4, 0.4, 0.04), Color(0.03, 0.03, 0.03))
+			v += 3.6 + r.randf() * 1.2
+		for b in Layout.QUAY_BERTHS:
+			for o: float in [-8.5, 0.0, 8.5]:
+				var bp := Vector3(q.berth_v(b) + o, deck + 0.09, face - 0.45)
+				mb.cylinder(bp, 0.17, 0.15, 0.4, 8, Color(0.16, 0.17, 0.18))
+				mb.cylinder(bp + Vector3(0, 0.4, 0), 0.24, 0.24, 0.07, 8, Color(0.16, 0.17, 0.18))
+		# The fish shed at one end, its big door onto the wharf.
+		var sv := -q.side * (hh - 8.0)
+		var sz := Vector3(11.0, 3.0, 4.6)
+		var sc := Vector3(sv, deck + sz.y * 0.5, back + sz.z * 0.5 + 0.3)
+		mb.box(sc, sz, shed_wall)
+		mb.box(sc + Vector3(0, -0.35, sz.z * 0.5 + 0.01), Vector3(3.2, 2.3, 0.04), shed_wall.darkened(0.45))
+		for wv: float in [-3.8, 3.8]:
+			mb.box(sc + Vector3(wv, 0.4, sz.z * 0.5 + 0.01), Vector3(1.0, 0.7, 0.04), Models.WINDOW)
+		mb.box(sc + Vector3(0, sz.y * 0.5 - 0.06, 0), Vector3(sz.x + 0.1, 0.12, sz.z + 0.1), trim)
+		var ry := deck + sz.y
+		var rx := sz.x * 0.5 + 0.25
+		var rz := sz.z * 0.5 + 0.35
+		var roof := Color(0.3, 0.31, 0.33)
+		var l0 := sc + Vector3(-rx, ry - sc.y, -rz)
+		var l1 := sc + Vector3(rx, ry - sc.y, -rz)
+		var f0 := sc + Vector3(-rx, ry - sc.y, rz)
+		var f1 := sc + Vector3(rx, ry - sc.y, rz)
+		var t0 := sc + Vector3(-rx, ry - sc.y + 1.5, 0)
+		var t1 := sc + Vector3(rx, ry - sc.y + 1.5, 0)
+		mb.quad(l0, t0, t1, l1, roof, Vector3(0, 1, -1))
+		mb.quad(f0, f1, t1, t0, roof, Vector3(0, 1, 1))
+		mb.quad(l0, l1, f1, f0, roof.darkened(0.4), Vector3.DOWN)
+		for e: float in [-1.0, 1.0]:
+			var ex := sc.x + e * sz.x * 0.5
+			mb.tri(Vector3(ex, ry, sc.z - sz.z * 0.5), Vector3(ex, ry, sc.z + sz.z * 0.5),
+				Vector3(ex, ry + 1.4, sc.z), shed_wall, Vector3(e, 0, 0))
+		_perch(mb.xform * Vector3(sc.x - rx + 0.6, ry + 1.5, sc.z), mb.xform * Vector3(sc.x + rx - 0.6, ry + 1.5, sc.z), 0.0, Seagulls.Kind.ROOF)
+		# Fish totes stacked about the wharf.
+		for k in 9:
+			var tv := r.randf_range(-hh + 3.0, hh - 3.0)
+			if absf(tv - sv) < sz.x * 0.5 + 1.5:
+				continue
+			var tu := r.randf_range(back + 1.0, face - 2.2)
+			var high := r.randi_range(1, 4)
+			var col: Color = totes[r.randi_range(0, totes.size() - 1)]
+			for t in high:
+				mb.box(Vector3(tv, deck + 0.3 + t * 0.55, tu), Vector3(1.2, 0.52, 0.8), col.darkened(r.randf() * 0.15))
+		# A hoist for landing the catch, its boom out over the berths.
+		var hv := q.side * 2.0
+		mb.box(Vector3(hv, deck + 2.6, face - 1.2), Vector3(0.35, 5.2, 0.35), Color(0.85, 0.72, 0.18))
+		var saved := mb.xform
+		mb.xform = saved * Transform3D(Basis(Vector3.RIGHT, -0.55), Vector3(hv, deck + 1.0, face - 1.2))
+		mb.box(Vector3(0, 0, 3.0), Vector3(0.24, 0.24, 6.4), Color(0.85, 0.72, 0.18))
+		mb.xform = saved
+		mb.box(Vector3(hv, deck + 2.8, face + 4.0), Vector3(0.03, 1.4, 0.03), Color(0.2, 0.2, 0.2))
+		var hook := mb.xform * Vector3(hv, deck + 5.2, face - 1.2)
+		_perch(hook, hook, 0.0, Seagulls.Kind.LAMP)
+		# Floodlights on poles, lighting the wharf and the boats alongside.
+		for fv: float in [-hh + 4.0, hh - 4.0]:
+			var pole := Vector3(fv, deck, back + 0.6)
+			mb.box(pole + Vector3(0, 3.5, 0), Vector3(0.2, 7.0, 0.2), steel)
+			mb.box(pole + Vector3(0, 7.0, 0.3), Vector3(0.9, 0.35, 0.5), Color(0.25, 0.26, 0.27))
+			mb.box(pole + Vector3(0, 6.86, 0.42), Vector3(0.75, 0.08, 0.3), Models.lamp_glass(GlowBuilder.LED))
+			glows.glow(pole + Vector3(0, 6.85, 0.45), GlowBuilder.LED, 0.32, 7.0, true, 0.0, Vector3(0, 0, 1), Models.LAMP_ON_AT)
+			glows.pool(Vector3(fv * 0.85, deck + 0.05, (back + face) * 0.5 + 1.0), GlowBuilder.LED, 7.5, 0.22)
+			var top := mb.xform * (pole + Vector3(0, 7.2, 0.3))
+			_perch(top, top, 0.0, Seagulls.Kind.LAMP)
+		_perch(mb.xform * Vector3(-hh + 1.0, deck + 0.16, face - 0.35), mb.xform * Vector3(hh - 1.0, deck + 0.16, face - 0.35),
+			0.0, Seagulls.Kind.DOLPHIN)
+		_add_mesh(mb.commit(), map.islands[q.island].name + " Fish Quay")
+		# Keep trees and houses off the wharf and the jetty's landing.
+		var bu := -10.0
+		while bu < face:
+			var half := hh + 1.5 if bu >= back - 1.0 else 4.5
+			var bv := -half
+			while bv <= half:
+				_block(q.at(bu, bv), 1.0)
+				bv += 1.5
 			bu += 1.5
 
 
