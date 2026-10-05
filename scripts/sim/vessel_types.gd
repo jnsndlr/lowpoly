@@ -1,0 +1,90 @@
+class_name VesselTypes
+extends RefCounted
+## The catalogue of vessel types MarineTraffic puts on the water. Each class has a
+## base type and its variants; a new size is one scaled() line, a new type (with
+## its own model) a new function. `weight` sets how often each turns up.
+
+
+static func sailboats() -> Array[VesselSpec]:
+	var sloop := _sloop()
+	var day_sailer := sloop.scaled(0.85, "day_sailer", "Day sailer")
+	day_sailer.weight = 0.8
+	var cruiser := sloop.scaled(1.3, "cruiser", "Cruising yacht")
+	cruiser.weight = 0.5
+	return [sloop, day_sailer, cruiser]
+
+
+static func cargo_ships() -> Array[VesselSpec]:
+	var container := _container_ship()
+	var feeder := container.scaled(0.7, "feeder", "Feeder ship")
+	feeder.weight = 0.6
+	return [container, feeder]
+
+
+## One of `types`, picked by weight.
+static func pick(types: Array[VesselSpec], rng: RandomNumberGenerator) -> VesselSpec:
+	var total := 0.0
+	for t in types:
+		total += t.weight
+	var r := rng.randf() * total
+	for t in types:
+		r -= t.weight
+		if r <= 0.0:
+			return t
+	return types.back()
+
+
+# --- Base types -----------------------------------------------------------------------
+
+static func _sloop() -> VesselSpec:
+	var s := VesselSpec.new()
+	s.id = "sloop"
+	s.kind = "Sailboat"
+	s.type_name = "Sloop"
+	s.half_length = 1.8
+	s.half_beam = 0.62
+	s.pad = 0.28
+	s.cruise = 3.0
+	s.motor_speed = 2.0
+	s.accel = 0.35
+	s.decel = 0.6
+	s.turn = 0.45
+	s.motor_turn = 0.8
+	s.wake_spacing = 2.0
+	s.wake_life = 14.0
+	s.wake_crumbs = 44
+	# No prop under sail: just a faint ribbon of disturbed water and little waves.
+	s.wash = 0.3
+	s.kelvin = 0.28
+	# Pointed forward, a broad transom aft.
+	s.shape = Vector4(1.4, 0.0, 0.3, 0.9)
+	s.model = func(_v: int) -> ArrayMesh: return Models.sailboat()
+	s.model_alt = func(_v: int) -> ArrayMesh: return Models.sailboat_furled()
+	s.lights = func(_v: int) -> ArrayMesh: return Models.sailboat_lights()
+	return s
+
+
+static func _container_ship() -> VesselSpec:
+	var s := VesselSpec.new()
+	s.id = "container"
+	s.kind = "Cargo ship"
+	s.type_name = "Container ship"
+	s.half_length = 32.0
+	s.half_beam = 5.6
+	s.cruise = 5.0
+	s.accel = 0.12
+	s.decel = 0.25
+	s.turn = 0.08
+	# A long, slow trail: the big single prop's wash lingers well astern, and
+	# boils harder than a ferry's; its wake's waves run longer and taller.
+	s.wake_spacing = 12.0
+	s.wake_life = 40.0
+	s.wake_crumbs = 46
+	s.wash = 1.3
+	s.kelvin = 1.6
+	# A fine bow drawn to a point over its last 12 m, and a near-square transom.
+	s.shape = Vector4(12.0, 0.0, 2.0, 0.86)
+	s.model = func(v: int) -> ArrayMesh: return Models.cargo_ship(v)
+	s.lights = func(_v: int) -> ArrayMesh: return Models.cargo_ship_lights()
+	s.variants = 3
+	return s

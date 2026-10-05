@@ -1,0 +1,106 @@
+extends SceneTree
+## Headless soak test for traffic afloat: runs a map at 4x for many game hours and
+## reports any two hulls touching, any vessel aground, and any vessel held up for
+## more than STALL game minutes (with what it is waiting for). For sailboats it also
+## counts how often they come to a stop out on the water (and what they were
+## doing), how long the last-resort hull check held them back, and their closest
+## pass to another hull.
+##
+##   godot --headless --path . --fixed-fps 30 --script tools/vessel_soak_test.gd -- --seed=123 --frames=20000
+
+const STALL := 45.0
+
+var main: Node
+var frames := 0
+var max_frames := 20000
+var overlaps := {}
+var aground := {}
+var stall := {}
+var reported := {}
+var closest := INF
+var stop_why := {}
+var sail_stops := 0
+var _was_stopped := {}
+
+
+func _initialize() -> void:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--frames="):
+			max_frames = int(a.substr(9))
+	main = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+
+
+func _process(delta: float) -> bool:
+	frames += 1
+	if frames == 5:
+		Engine.time_scale = 4.0
+	if frames < 5:
+		return false
+	var sim: Simulation = main.sim
+	var vs: Array[Vessel] = sim.marine.vessels
+	for i in vs.size():
+		var a := vs[i]
+		var pa := a.pos2()
+		var ha := a.heading2() * a.half_seg
+		for j in range(i + 1, vs.size()):
+			var b := vs[j]
+			var pb := b.pos2()
+			if pa.distance_to(pb) > a.half_seg + b.half_seg + a.hull_radius + b.hull_radius + 2.0:
+				continue
+			var hb := b.heading2() * b.half_seg
+			var gap := MarineTraffic._seg_dist(pa - ha, pa + ha, pb - hb, pb + hb) - a.hull_radius - b.hull_radius
+			if a is Sailboat or b is Sailboat:
+				closest = minf(closest, gap)
+			var key := a.vessel_name + " / " + b.vessel_name
+			if gap < 0.0 and not overlaps.has(key):
+				overlaps[key] = true
+				print("OVERLAP %.2f m at %s: %s (%s) / %s (%s)" % [gap, sim.clock_text(), a.vessel_name, a.status_text(),
+					b.vessel_name, b.status_text()])
+		if not (a is Ferry):
+			for e in [pa - ha, pa + ha, pa]:
+				if sim.terrain.height_at(e.x, e.y) > -0.6 and not aground.has(a.vessel_name):
+					aground[a.vessel_name] = true
+					print("AGROUND %s at %s: %s" % [a.vessel_name, e, a.status_text()])
+		# A sailboat brought to a stop out on the water.
+		if a is Sailboat and a.state == Sailboat.State.SAILING:
+			var stopped: bool = a.speed < 0.2
+			if stopped and not _was_stopped.get(a, false):
+				sail_stops += 1
+				var st: String = a.status_text().split(" ·")[0]
+				stop_why[st] = stop_why.get(st, 0) + 1
+			_was_stopped[a] = stopped
+		if a.wants_to_move() and a.speed < 0.05:
+			stall[a] = stall.get(a, 0.0) + delta
+			if stall[a] > STALL and not reported.has(a):
+				reported[a] = true
+				var extra := ""
+				if a is Sailboat and a.dest:
+					var h: Sailboat = sim.marine.lock_holder(a.dest)
+					extra = " [lock: %s]" % ("none" if h == null else "%s %s at %s" % [h.vessel_name, h.status_text(), h.pos2()])
+					if a.helm:
+						var hm: Helm = a.helm
+						extra += " [helm: heading %.2f, wants %.2f at %.1f m/s, aiming at %s, land ahead %s]" % [
+							a.helm_yaw(), hm.want_yaw, hm.want_speed, hm.aim(), hm.blocked_land]
+				print("STALL %s (%s) at %s: %s%s" % [a.vessel_name, a.kind_text(), pa, a.status_text(), extra])
+		else:
+			stall[a] = 0.0
+			reported.erase(a)
+	if frames < max_frames:
+		return false
+	var sail := 0
+	for b in sim.marine.sailboats:
+		sail += b.trips
+	var ferry := 0
+	for f in sim.ferries:
+		ferry += f.trips
+	var brake := 0.0
+	for b in sim.marine.sailboats:
+		brake += b.brake_time
+	print("DONE day %d %s: sail trips %d, ferry trips %d, overlaps %d, aground %d" % [
+		sim.day, sim.clock_text(), sail, ferry, overlaps.size(), aground.size()])
+	print("     sailboats: stops under way %d, hull-check braking %.0f s, closest pass %.2f m" % [
+		sail_stops, brake, closest])
+	for k in stop_why:
+		print("       stopped while: %s (%d)" % [k, stop_why[k]])
+	return true

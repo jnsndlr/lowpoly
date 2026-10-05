@@ -29,9 +29,11 @@ func generate(map_seed: int) -> MapData:
 	_plan_routes()
 	_place_islets()
 	terrain.finalize()
+	_place_marinas(map_seed)
 	_flatten_terminals()
 	_name_islands()
 	_layout_towns()
+	_roll_wildlife_appeal(map_seed)
 	return map
 
 
@@ -286,6 +288,23 @@ func _route_curve(pa: Vector3, na: Vector3, pb: Vector3, nb: Vector3, need_clear
 		var c := _curve_from(pa, cand[1], pb, cand[2])
 		if _route_clear(c) and (route_id < 0 or _clear_of_slips(c, route_id)):
 			return c
+	# Nothing standard keeps out of every other slip: try longer straight runs out
+	# of either end and wider turns before settling for crossing one (a ferry
+	# would then have to wait whenever that slip is occupied).
+	if route_id >= 0:
+		var more := []
+		for ra: float in [SHORT_RUN_IN, RUN_IN, 45.0, 60.0, 80.0]:
+			for rb: float in [SHORT_RUN_IN, RUN_IN, 45.0, 60.0, 80.0]:
+				for radius: float in [TIGHT_RADIUS, TURN_RADIUS, WIDE_RADIUS, 60.0]:
+					var p0 := Vector2(pa.x, pa.z) + h0 * ra
+					var p1 := Vector2(pb.x, pb.z) - h1 * rb
+					for path in _turn_paths(p0, h0, p1, h1, radius):
+						more.append([path[0] + ra + rb, path[1], ra, rb])
+		more.sort_custom(func(x, y): return x[0] < y[0])
+		for cand in more:
+			var c := _curve_from(pa, cand[1], pb, cand[2], cand[3])
+			if _route_clear(c) and _clear_of_slips(c, route_id):
+				return c
 	if need_clear or candidates.is_empty():
 		return null
 	return _curve_from(pa, candidates[0][1], pb, candidates[0][2])
@@ -333,7 +352,9 @@ static func _arc(pts: PackedVector2Array, c: Vector2, h: Vector2, sgn: float, ra
 		pts.append(c - _left(hh) * sgn * radius)
 
 
-func _curve_from(pa: Vector3, mid: PackedVector2Array, pb: Vector3, run_in: float) -> Curve3D:
+## Straight out of `pa` for `run_in`, along `mid`, and straight into `pb` for
+## `run_out` (the same as `run_in` if not given).
+func _curve_from(pa: Vector3, mid: PackedVector2Array, pb: Vector3, run_in: float, run_out := -1.0) -> Curve3D:
 	var c := Curve3D.new()
 	c.bake_interval = 1.0
 	var a2 := Vector2(pa.x, pa.z)
@@ -344,6 +365,7 @@ func _curve_from(pa: Vector3, mid: PackedVector2Array, pb: Vector3, run_in: floa
 		c.add_point(Vector3(q.x, 0.0, q.y))
 	for q in mid:
 		c.add_point(Vector3(q.x, 0.0, q.y))
+	steps = ceili((run_in if run_out < 0.0 else run_out) / 2.0)
 	for i in range(1, steps + 1):
 		var q := mid[mid.size() - 1].lerp(b2, float(i) / steps)
 		c.add_point(Vector3(q.x, 0.0, q.y))
@@ -422,6 +444,74 @@ func _place_islets() -> void:
 			placed += 1
 
 
+## A small-boat marina on most inhabited islands: a stretch of shore with land
+## behind, deep water out past the T-head and its approach, and well clear of the
+## ferry terminals, their lanes and each other. Its own RNG, so the rest of the
+## map stays the same for a given seed.
+func _place_marinas(map_seed: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = map_seed * 17 + 3
+	for isl in _main_islands():
+		if r.randf() > 0.85:
+			continue
+		var sites: Array = []
+		var start := r.randf() * TAU
+		for k in 32:
+			var ang := start + TAU * k / 32.0
+			var site: Variant = _marina_site(isl, Vector3(cos(ang), 0.0, sin(ang)))
+			if site != null:
+				sites.append(site)
+		if sites.is_empty():
+			continue
+		var pick: Array = sites[r.randi_range(0, sites.size() - 1)]
+		var m := MapData.Marina.new()
+		m.id = map.marinas.size()
+		m.island = isl.id
+		m.shore = pick[0]
+		m.dir = pick[1]
+		map.marinas.append(m)
+
+
+## [shore, dir] if a marina fits where the ray from the island's centre along `dir`
+## meets the sea, else null.
+func _marina_site(isl: MapData.Island, n3: Vector3) -> Variant:
+	var c := Vector3(isl.center.x, 0.0, isl.center.y)
+	var shore := -1.0
+	var rr := 0.0
+	while rr < isl.radius * 1.8:
+		if terrain.height_v(c + n3 * rr) < 0.3:
+			shore = rr
+			break
+		rr += 0.5
+	if shore < 8.0:
+		return null
+	var s3 := c + n3 * shore
+	if _h(s3 - n3 * 4.0) < 0.3 or _h(s3 - n3 * 8.0) < 0.5:
+		return null
+	var lat := Vector3.UP.cross(n3)
+	if _h(s3 + n3 * 6.0) > -0.3:
+		return null
+	for u in range(12, 50, 4):
+		for v: float in [-11.0, -5.0, 0.0, 5.0, 11.0]:
+			if _h(s3 + n3 * float(u) + lat * v) > -2.0:
+				return null
+	var reach := s3 + n3 * Layout.MARINA_APPROACH_U
+	for o in map.islands:
+		if o.has_terminal and (s3.distance_to(o.shore) < 80.0 or reach.distance_to(o.shore + o.dock_dir * 40.0) < 80.0):
+			return null
+	for m in map.marinas:
+		if s3.distance_to(m.shore) < 60.0:
+			return null
+	for u: float in [0.0, 15.0, 30.0, 45.0]:
+		var q := s3 + n3 * u
+		# Baked about a metre apart; every few is plenty at this distance.
+		for i in range(0, _route_samples.size(), 4):
+			var p := _route_samples[i]
+			if Vector2(p.x - q.x, p.z - q.z).length_squared() < 34.0 * 34.0:
+				return null
+	return [s3, n3]
+
+
 func _flatten_terminals() -> void:
 	for isl in map.islands:
 		if not isl.has_terminal:
@@ -445,6 +535,21 @@ func _name_islands() -> void:
 		k += 1
 		isl.population = int(rng.randf_range(900.0, 6500.0) / 10.0) * 10
 		isl.growth = rng.randf_range(-0.5, 4.5)
+
+
+## Some islands are wildlife hotspots, most are middling, a few rarely see any.
+## Its own RNG, so the rest of the map stays the same for a given seed.
+func _roll_wildlife_appeal(map_seed: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = map_seed * 31 + 7
+	for isl in _main_islands():
+		var tier := r.randf()
+		if tier < 0.25:
+			isl.wildlife_appeal = r.randf_range(2.0, 3.2)
+		elif tier < 0.75:
+			isl.wildlife_appeal = r.randf_range(0.7, 1.4)
+		else:
+			isl.wildlife_appeal = r.randf_range(0.2, 0.5)
 
 
 func _h(p: Vector3) -> float:

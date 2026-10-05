@@ -1,7 +1,7 @@
 class_name NightLights
 extends Node3D
 ## Switches the night lights on from dusk to dawn and keeps the moving ones in place.
-## The map's fixed lights are one mesh (WorldBuilder), each ferry carries its own,
+## The map's fixed lights are one mesh (WorldBuilder), each vessel carries its own,
 ## and every car on the road is an instance of one multimesh refilled each frame
 ## from the traffic. The camera's focus distance goes to the glow shader for bokeh.
 
@@ -58,6 +58,7 @@ func _set_on(on: bool) -> void:
 	_car_mmi.visible = on
 	for mi in _ferry_lights:
 		mi.visible = on
+	_vessel_lights(on)
 	if not on:
 		_cars.visible_instance_count = 0
 
@@ -67,6 +68,8 @@ func _process(_delta: float) -> void:
 	if not _on:
 		return
 	RenderingServer.global_shader_parameter_set("focus_distance", rig.distance)
+	# Cargo ships come and go through the night.
+	_vessel_lights(true)
 	for i in sim.ferries.size():
 		var f := sim.ferries[i]
 		# Sidelights: only the bow end's pair is lit, +Z heading A → B, -Z on the way back.
@@ -74,6 +77,13 @@ func _process(_delta: float) -> void:
 		_ferry_lights[i].set_instance_shader_parameter("nav_flip", flip)
 		f.hull.set_instance_shader_parameter("nav_flip", flip)
 	_update_cars()
+
+
+## Sailboats' and cargo ships' own lights.
+func _vessel_lights(on: bool) -> void:
+	for v in sim.marine.vessels:
+		if v.lights:
+			v.lights.visible = on
 
 
 ## Cars still on the road (not parked on a ferry deck): one instance each, with the

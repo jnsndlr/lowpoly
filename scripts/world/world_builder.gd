@@ -1,7 +1,7 @@
 class_name WorldBuilder
 extends RefCounted
 ## Turns MapData + Terrain into renderable nodes: terrain, water, terminals, roads,
-## towns, forests, rocks, boats, the route overlay and all of their night lights.
+## towns, forests, rocks, marinas, the route overlay and all of their night lights.
 ## Pure presentation — no sim state.
 
 const ASPHALT := Color(0.26, 0.27, 0.29)
@@ -29,6 +29,8 @@ var route_overlay: MeshInstance3D
 var water_material: ShaderMaterial
 var night_lights: MeshInstance3D
 var glows := GlowBuilder.new()
+## Places seagulls can sit (where the feet go, in world space).
+var gull_perches: Array[Seagulls.Perch] = []
 var _blocked := {}
 
 
@@ -44,11 +46,11 @@ func build() -> Node3D:
 	_build_terrain()
 	_build_water()
 	_build_terminals()
+	_build_marinas()
 	_build_roads()
 	_build_towns()
 	_build_lighthouses()
 	_build_vegetation()
-	_build_boats()
 	_build_route_overlay()
 	night_lights = _add_mesh(glows.commit(), "NightLights", false)
 	night_lights.visible = false
@@ -92,6 +94,11 @@ func _block(p: Vector3, radius: float) -> void:
 	for dz in range(-r, r + 1):
 		for dx in range(-r, r + 1):
 			_blocked[Vector2i(cx + dx, cz + dz)] = true
+
+
+## A perch along a → b, `spread` either side of it (see Seagulls.Perch).
+func _perch(a: Vector3, b: Vector3, spread: float, kind: int) -> void:
+	gull_perches.append(Seagulls.Perch.new(a, b, spread, kind))
 
 
 func _is_blocked(x: float, z: float) -> bool:
@@ -239,6 +246,7 @@ func _build_terminals() -> void:
 		mb.box(Vector3(bv, ly + 3.1, -12.0), Vector3(7.8, 0.4, 12.8), Models.WSF_GREEN)
 		mb.box(Vector3(bv - 3.9, ly + 3.4, -6.0), Vector3(0.12, 5.0, 0.12), Color(0.8, 0.8, 0.8))
 		mb.box(Vector3(bv - 3.9, ly + 5.6, -5.55), Vector3(0.05, 0.6, 0.9), Models.WSF_GREEN)
+		_perch(mb.xform * Vector3(bv, ly + 3.3, -17.6), mb.xform * Vector3(bv, ly + 3.3, -6.4), 3.3, Seagulls.Kind.ROOF)
 
 		# Toll plaza on the approach road
 		var tu := Layout.LOT_BACK - 3.0
@@ -262,6 +270,8 @@ func _build_terminals() -> void:
 				mb.box(Vector3(v, ly + 4.87, pu), Vector3(0.48, 0.08, 0.48), Models.lamp_glass(GlowBuilder.SODIUM))
 				glows.glow(Vector3(v, ly + 4.85, pu), GlowBuilder.SODIUM, 0.3, 6.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
 				glows.pool(Vector3(v * 0.7, ly + 0.05, pu), GlowBuilder.SODIUM, 8.0, 0.22)
+				var top := mb.xform * Vector3(v, ly + 5.09, pu)
+				_perch(top, top, 0.0, Seagulls.Kind.LAMP)
 
 		_add_mesh(mb.commit(), isl.name + " Terminal")
 
@@ -297,6 +307,10 @@ func _build_slip(mb: MeshBuilder, v: float, shared_dolphin: bool) -> void:
 	var top := Vector3(v, 5.65, pe - 1.0)
 	Models.add_cage_lantern(mb, top, GlowBuilder.RED, LIFT_LANTERN)
 	glows.glow(Models.cage_lantern_glow_at(top, LIFT_LANTERN), GlowBuilder.RED, 0.2, 7.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+	# Along the lift's cross beam, either side of the lantern.
+	for side: float in [-1.0, 1.0]:
+		_perch(mb.xform * Vector3(v + side * 0.45, 5.65, pe - 1.0), mb.xform * Vector3(v + side * 2.9, 5.65, pe - 1.0),
+			0.0, Seagulls.Kind.LIFT)
 	for side: float in [-1.0, 1.0]:
 		mb.box(Vector3(v + side * 4.95, 0.3, pe + 5.0), Vector3(0.9, 4.0, 9.0), Models.WOOD)
 		var mark := GlowBuilder.GREEN if side < 0 else GlowBuilder.RED
@@ -307,6 +321,9 @@ func _build_slip(mb: MeshBuilder, v: float, shared_dolphin: bool) -> void:
 			var cap := dolphin + Vector3(0, 4.6, 0)
 			Models.add_cage_lantern(mb, cap, mark, DOLPHIN_LANTERN)
 			glows.glow(Models.cage_lantern_glow_at(cap, DOLPHIN_LANTERN), mark, 0.14, 3.5, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+			for dz: float in [-0.55, 0.55]:
+				var seat := mb.xform * (cap + Vector3(0, 0, dz))
+				_perch(seat, seat, 0.0, Seagulls.Kind.DOLPHIN)
 		# Channel buoy, flashing.
 		var buoy := Vector3(v + side * 8.0, 0.0, pe + 44.0)
 		var phase := Models.blink_phase_at(mb.xform * buoy)
@@ -363,6 +380,7 @@ func _street_lamps(mb: MeshBuilder, line: PackedVector3Array) -> void:
 			mb.box(p + Vector3(0, 3.5, 0), Vector3(0.3, 0.07, 0.3), Models.lamp_glass(GlowBuilder.SODIUM))
 			glows.glow(p + Vector3(0, 3.45, 0), GlowBuilder.SODIUM, 0.22, 5.0, p.y < 4.0, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
 			glows.pool(p + Vector3(0, 0.12, 0) - lat * 1.2 * side, GlowBuilder.SODIUM, 5.0, 0.22)
+			_perch(p + Vector3(0, 3.67, 0), p + Vector3(0, 3.67, 0), 0.0, Seagulls.Kind.LAMP)
 			side = -side
 			next += LAMP_GAP
 		walked += seg
@@ -464,6 +482,10 @@ func _build_lighthouses() -> void:
 		if h < 1.2 or _is_blocked(p.x, p.z):
 			continue
 		Models.add_lighthouse(mb, Vector3(p.x, h - 0.1, p.z))
+		for k in 3:
+			var a := ang + PI + (k - 1) * 0.9
+			var seat := Vector3(p.x + cos(a) * 1.1, h + 6.95, p.z + sin(a) * 1.1)
+			_perch(seat, seat, 0.0, Seagulls.Kind.LIGHTHOUSE)
 		var lamp := Vector3(p.x, h + 7.4, p.z)
 		var beacon := Color(1.0, 0.92, 0.75)
 		glows.xform = Transform3D.IDENTITY
@@ -537,32 +559,48 @@ func _build_vegetation() -> void:
 	_multimesh(Models.rock(), rocks, no_colors, "Rocks")
 
 
-func _build_boats() -> void:
-	var samples := PackedVector3Array()
-	for r in map.routes:
-		samples.append_array(r.curve.get_baked_points())
-	var boats: Array[Transform3D] = []
-	var hs := terrain.half_size - 30.0
-	for attempt in 60:
-		if boats.size() >= 12:
-			break
-		var p := Vector3(rng.randf_range(-hs, hs), 0.0, rng.randf_range(-hs, hs))
-		if terrain.height_v(p) > -3.5:
-			continue
-		var ok := true
-		for s in samples:
-			if Vector2(s.x - p.x, s.z - p.z).length() < 22.0:
-				ok = false
-				break
-		if ok:
-			var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU), p)
-			boats.append(xf)
-			# Anchor light at the masthead.
-			glows.xform = xf
-			glows.glow(Models.lantern_glow_at(Models.SAIL_MAST_TOP, Models.SAIL_LANTERN), GlowBuilder.LED,
-				0.13, 4.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
-	var no_colors: Array[Color] = []
-	_multimesh(Models.sailboat(), boats, no_colors, "Sailboats")
+## A wooden pier out to a T-head float with berths along its seaward face (the
+## sailboats themselves are MarineTraffic's), a lamp at each end of the head.
+func _build_marinas() -> void:
+	var plank := Color(0.56, 0.46, 0.34)
+	var float_col := Color(0.66, 0.6, 0.5)
+	for m in map.marinas:
+		var mb := MeshBuilder.new()
+		mb.xform = m.xform()
+		glows.xform = mb.xform
+		var pe := Layout.MARINA_PIER_END
+		var hu := Layout.MARINA_HEAD_U
+		var hh := Layout.MARINA_HEAD_HALF
+		mb.box(Vector3(0, 0.75, (pe - 4.0) * 0.5), Vector3(1.8, 0.25, pe + 4.0), plank)
+		var u := -1.0
+		while u < pe:
+			for side: float in [-1.0, 1.0]:
+				mb.box(Vector3(side * 1.0, -1.3, u), Vector3(0.28, 4.3, 0.28), Models.WOOD)
+			u += 3.5
+		# The T-head, a little lower, its pilings standing proud.
+		mb.box(Vector3(0, 0.5, hu), Vector3(hh * 2.0, 0.3, 2.0), float_col)
+		mb.box(Vector3(0, 0.36, hu + 1.02), Vector3(hh * 2.0, 0.12, 0.08), Color(0.25, 0.25, 0.26))
+		for v: float in [-hh + 0.3, -1.5, 1.5, hh - 0.3]:
+			mb.cylinder(Vector3(v, -2.0, hu - 1.2), 0.2, 0.18, 3.6, 6, Models.WOOD, Color(0.4, 0.33, 0.27))
+		for b in Layout.MARINA_BERTHS:
+			# A cleat for each berth.
+			mb.box(Vector3(m.berth_v(b), 0.7, hu + 0.75), Vector3(0.35, 0.1, 0.12), Color(0.3, 0.3, 0.32))
+		for side: float in [-1.0, 1.0]:
+			var post := Vector3(side * (hh - 0.3), 0.65, hu)
+			mb.box(post + Vector3(0, 0.8, 0), Vector3(0.1, 1.6, 0.1), Color(0.25, 0.26, 0.28))
+			var lamp := post + Vector3(0, 1.6, 0)
+			Models.add_lantern(mb, lamp, GlowBuilder.WARM, 0.9)
+			glows.glow(Models.lantern_glow_at(lamp, 0.9), GlowBuilder.WARM, 0.16, 4.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+			glows.pool(Vector3(side * (hh - 1.2), 0.66, hu), GlowBuilder.WARM, 3.0, 0.25)
+			var top := mb.xform * (lamp + Vector3(0, 0.36, 0))
+			_perch(top, top, 0.0, Seagulls.Kind.LAMP)
+		_add_mesh(mb.commit(), map.islands[m.island].name + " Marina")
+		# Keep trees and houses off the pier's landing.
+		var bu := -8.0
+		while bu < 2.0:
+			for bv: float in [-3.0, -1.5, 0.0, 1.5, 3.0]:
+				_block(m.at(bu, bv), 1.0)
+			bu += 1.5
 
 
 func _build_route_overlay() -> void:

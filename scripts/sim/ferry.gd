@@ -1,5 +1,5 @@
 class_name Ferry
-extends Node3D
+extends Vessel
 ## A double-ended car ferry shuttling along one route. It never turns around: cars
 ## board at the end facing the pier, park on the deck (as children of the ferry, so
 ## they ride along) and drive off the opposite end at the destination.
@@ -13,6 +13,8 @@ const ACCEL := 1.4
 # moment the bow passes the outer dolphins the forward prop reverse-thrusts them
 # to a stop at the dock (the stern props backing off).
 const DECEL := 0.5
+# Braking to give way to other traffic.
+const YIELD_DECEL := 0.9
 const APPROACH_SPEED := 3.2
 const OUTER_DOLPHIN_U := Layout.PIER_END + 21.0
 const MIN_DWELL := 10.0
@@ -21,14 +23,8 @@ const DISPATCH_GAP := 0.5
 const ROWS := [10.0, 7.5, 5.0, 2.5, 0.0, -2.5, -5.0, -7.5, -10.0]
 const COLS := [-2.25, -0.75, 0.75, 2.25]
 const END_Z := 14.0
-# Wake trail: a breadcrumb is dropped at the stern every WAKE_SPACING metres (or
-# sooner once the heading has swung WAKE_TURN, so bends stay smooth) and kept for
-# WAKE_LIFE seconds. WakeField hands the trail to the water shader.
 const HULL_HALF_LENGTH := 15.0
-const WAKE_SPACING := 8.0
-const WAKE_TURN := 0.07
-const WAKE_LIFE := 24.0
-const WAKE_CRUMBS := 46
+const HULL_HALF_BEAM := 4.2
 
 var sim: Simulation
 var route: MapData.Route
@@ -39,7 +35,6 @@ var state := State.LOADING
 var at_a := true        # docked at A, or departed from A while sailing
 var hull: MeshInstance3D
 var traveled := 0.0
-var speed := 0.0
 var trips := 0
 var aboard: Array[Vehicle] = []
 var _slots: Array[Vehicle] = []
@@ -48,22 +43,26 @@ var _unload_queue: Array[Vehicle] = []
 var _dispatch_timer := 0.0
 var _state_time := 0.0
 var _bob_time := 0.0
-var odometer := 0.0
-var _clock := 0.0
-var _crumbs: Array[Vector4] = []   # (x, z, odometer, time dropped), newest first
-var _crumb_speed: Array[float] = []
-var _heading := Vector3.FORWARD
 var _thrust := 0.0   # forward prop reverse thrust while braking, 0..1
-var _crumb_heading := Vector3.FORWARD
 var _last_pos := Vector3.ZERO
 var _tracking := false
+var _waiting_for: Ferry = null   # holding off a corridor this ferry has reserved
+var _runs := {}                   # at_a -> _corridor_runs() for that direction
 
 
 func setup(s: Simulation, r: MapData.Route, nm: String) -> void:
 	sim = s
 	route = r
 	ferry_name = nm
+	vessel_name = nm
 	name = nm
+	cruise = CRUISE
+	yield_decel = YIELD_DECEL
+	# A capsule round the hull: its corners just touch, its ends cover the bows.
+	half_seg = HULL_HALF_LENGTH - 4.3
+	hull_radius = 4.3
+	claim_step = 4.0
+	wake = WakeTrail.new(HULL_HALF_LENGTH, 8.0, 24.0, 46)
 	term_a = sim.terminals[r.a]
 	term_b = sim.terminals[r.b]
 	term_a.ferry_for[r.id] = self
@@ -188,9 +187,7 @@ func _tick_loading(delta: float) -> void:
 		_state_time = 0.0
 		# The last crossing's wake has long faded by now, and it lies along the same
 		# water, so start a fresh trail.
-		odometer = 0.0
-		_crumbs.clear()
-		_crumb_speed.clear()
+		wake.clear()
 
 
 func _drive_on(car: Vehicle, term: Terminal) -> void:
@@ -216,7 +213,6 @@ func _on_boarded(car: Vehicle, slot: int) -> void:
 
 func _tick_sailing(delta: float) -> void:
 	var remaining := route.length - traveled
-	var accel_v := sqrt(2.0 * ACCEL * traveled) + 0.8
 	# Distance from the bow reaching the outer dolphins to being docked.
 	var zone := OUTER_DOLPHIN_U + HULL_HALF_LENGTH - Layout.DOCK_U
 	var rem := maxf(remaining, 0.0)
@@ -225,18 +221,163 @@ func _tick_sailing(delta: float) -> void:
 		brake_v = APPROACH_SPEED + sqrt(2.0 * DECEL * (rem - zone))
 	else:
 		brake_v = 0.3 + (APPROACH_SPEED - 0.3) * sqrt(rem / zone)
-	speed = minf(CRUISE, minf(accel_v, brake_v))
+	# Picks up from wherever it is (it may have stopped for traffic mid-crossing).
+	var target := minf(CRUISE, minf(brake_v, yield_speed()))
+	var wait := _corridor_wait()
+	hold = wait
+	target = minf(target, sqrt(2.0 * YIELD_DECEL * maxf(wait - 0.5, 0.0)))
+	speed = minf(target, speed + ACCEL * delta)
 	_thrust = move_toward(_thrust, 1.0 if rem < zone and rem > 0.5 else 0.0, delta * 0.8)
 	traveled = minf(traveled + speed * delta, route.length)
 	_place(traveled if at_a else route.length - traveled)
 	_bob_time += delta
 	position.y = sin(_bob_time * 1.3) * 0.07
 	if traveled >= route.length - 0.01:
+		_dock_corridors()
+		hold = INF
 		speed = 0.0
 		position.y = 0.0
 		at_a = not at_a
 		trips += 1
 		_begin_unloading()
+
+
+## The corridors this crossing passes through, in order, grouped into runs where
+## one starts before the last ends, as [start, end, [[end, corridor], ...]]
+## (distances along the crossing). A ferry takes a whole run at once, so under
+## way it never sits holding one corridor while it waits for the next, and no
+## ring of ferries can each be waiting on the one ahead.
+func _corridor_runs() -> Array:
+	if _runs.has(at_a):
+		return _runs[at_a]
+	var list := []
+	for c: MarineTraffic.Corridor in sim.marine.corridors[route.id]:
+		var span: Vector2 = c.span[route.id]
+		var t0 := span.x if at_a else route.length - span.y
+		var t1 := span.y if at_a else route.length - span.x
+		list.append([t0, t1, c])
+	list.sort_custom(func(a, b): return a[0] < b[0])
+	var runs := []
+	for e in list:
+		if not runs.is_empty() and e[0] <= runs[-1][1] + 1.0:
+			runs[-1][1] = maxf(runs[-1][1], e[1])
+			runs[-1][2].append([e[1], e[2]])
+		else:
+			runs.append([e[0], e[1], [[e[1], e[2]]]])
+	_runs[at_a] = runs
+	return runs
+
+
+## Distance to go before the next run of corridors another ferry holds part of
+## (INF if none). Reserves the next run when it is free and frees corridors as
+## the ferry leaves them behind.
+func _corridor_wait() -> float:
+	_waiting_for = null
+	for run in _corridor_runs():
+		for e in run[2]:
+			if traveled > e[0] and e[1].owner == self:
+				e[1].owner = null
+		if traveled > run[1]:
+			continue
+		if run[0] - traveled > self_look() + 10.0:
+			break
+		var holder := _run_holder(run, traveled)
+		if holder == null:
+			for e in run[2]:
+				if traveled <= e[0]:
+					e[1].owner = self
+		else:
+			_waiting_for = holder
+			return run[0] - traveled
+		break
+	return INF
+
+
+## Whether a ferry docked at the A end (`end_a`) or B end of the route is in the
+## way of another route in `run`.
+func _run_blocks_dock(run: Array, end_a: bool) -> bool:
+	for e in run[2]:
+		var d: Vector2i = e[1].docked[route.id]
+		if (d.x if end_a else d.y) == 1:
+			return true
+	return false
+
+
+## Another ferry (under way, or docked by it) holding a corridor of `run` this one
+## has still to pass, `at` along its crossing.
+func _run_holder(run: Array, at: float) -> Ferry:
+	for e in run[2]:
+		var c: MarineTraffic.Corridor = e[1]
+		if at <= e[0] and c.owner != null and c.owner != self:
+			return c.owner
+	return null
+
+
+## At the start of the game: a ferry docked at a slip some other route runs
+## through takes the run of corridors round it (as one arriving would have); one
+## mid-crossing takes the run it is in. If another ferry already has it, this one
+## drops back to wait outside, turned round to be arriving if it was docked.
+func claim_corridors_at_start() -> void:
+	var at := 0.0 if state != State.SAILING else traveled
+	for run in _corridor_runs():
+		if at < run[0] or at > run[1]:
+			continue
+		# Docked where it is in nobody's way: it takes the run when it leaves.
+		if state != State.SAILING and not _run_blocks_dock(run, at_a):
+			return
+		if _run_holder(run, at) == null:
+			for e in run[2]:
+				if at <= e[0]:
+					e[1].owner = self
+			return
+		if state != State.SAILING:
+			at_a = not at_a
+			state = State.SAILING
+			_state_time = 0.0
+			for r in _corridor_runs():
+				if r[1] >= route.length - 1.0:
+					at = r[0]
+		else:
+			at = run[0]
+		traveled = maxf(at - HULL_HALF_LENGTH, 0.0)
+		speed = 0.0
+		_place(traveled if at_a else route.length - traveled)
+		claim_corridors_at_start()
+		return
+
+
+## Docking: if another route runs so close past this slip that the docked ferry
+## is in its way, keeps the run of corridors round it (and takes back any of it
+## that it passed coming in and are free), so nothing comes by until it has left
+## again. Frees the rest.
+func _dock_corridors() -> void:
+	for run in _corridor_runs():
+		var keep: bool = run[1] >= route.length - 1.0 and _run_blocks_dock(run, not at_a)
+		for e in run[2]:
+			if keep:
+				# (Never from another ferry: one that has taken a corridor this one
+				# already passed keeps it.)
+				if e[1].owner == null:
+					e[1].owner = self
+			elif e[1].owner == self:
+				e[1].owner = null
+
+
+func wants_to_move() -> bool:
+	return state == State.SAILING
+
+
+func ahead(d: float) -> Vector2:
+	# Docked, `traveled` still counts the last crossing but at_a has flipped.
+	if state != State.SAILING:
+		return pos2()
+	var s := minf(traveled + d, route.length)
+	var p := route.curve.sample_baked(s if at_a else route.length - s)
+	return Vector2(p.x, p.z)
+
+
+func path_left() -> float:
+	return route.length - traveled if state == State.SAILING else 0.0
 
 
 ## Positions the ferry at distance s along the route. +Z always faces A → B.
@@ -251,79 +392,29 @@ func _place(s: float) -> void:
 
 
 func _update_trail(delta: float) -> void:
-	_clock += delta
-	# Taken from the actual movement, so it can't disagree with which end leads.
+	# Taken from the actual movement, so it can't disagree with which end leads
+	# (the ferry is double-ended).
 	var moved := global_position - _last_pos
 	moved.y = 0.0
 	# The first frame has nothing to compare against.
 	var moving := _tracking and moved.length_squared() > 1e-8
 	_tracking = true
-	if moving:
-		_heading = moved.normalized()
 	_last_pos = global_position
-	odometer += speed * delta
-	var gap := INF if _crumbs.is_empty() else odometer - _crumbs[0].z
-	var turned := _heading.angle_to(_crumb_heading) >= WAKE_TURN and gap >= 1.5
 	# Only once the ferry is actually under way: on the frame it casts off the
 	# heading still points the way it arrived, which would put the first crumb at
-	# the wrong end of the hull and fold the trail back on itself.
-	if state == State.SAILING and moving and (gap >= WAKE_SPACING or turned):
-		_crumb_heading = _heading
-		var stern := global_position - _heading * HULL_HALF_LENGTH
-		_crumbs.push_front(Vector4(stern.x, stern.z, odometer, _clock))
-		# The stern props ease off while the forward prop brakes.
-		_crumb_speed.push_front(speed / CRUISE * (1.0 - 0.6 * _thrust))
-	while not _crumbs.is_empty() and _clock - _crumbs.back().w > WAKE_LIFE:
-		_crumbs.pop_back()
-		_crumb_speed.pop_back()
-	# Tight turns drop crumbs quickly. Rather than cutting off the oldest while
-	# its foam is still showing (which loses a whole stretch at once), thin out
-	# whichever crumb least changes the trail's shape.
-	while _crumbs.size() > WAKE_CRUMBS:
-		_thin_crumbs()
+	# the wrong end of the hull and fold the trail back on itself. The stern
+	# props ease off while the forward prop brakes.
+	wake.update(delta, global_position, moved.normalized() if moving else Vector3.ZERO, speed * delta,
+			speed / CRUISE * (1.0 - 0.6 * _thrust), state == State.SAILING and moving)
 
 
-## Drops the interior crumb whose removal moves the trail least (the smallest
-## triangle it makes with its neighbours).
-func _thin_crumbs() -> void:
-	var best := 1
-	var best_area := INF
-	for i in range(1, _crumbs.size() - 1):
-		var a := _crumbs[i - 1]
-		var b := _crumbs[i]
-		var c := _crumbs[i + 1]
-		var area := absf((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y))
-		if area < best_area:
-			best_area = area
-			best = i
-	_crumbs.remove_at(best)
-	_crumb_speed.remove_at(best)
+func wake_shape() -> Vector4:
+	# Double-ended and blunt: both ends square off over the last few metres.
+	return Vector4(3.0, 0.62, 3.0, 0.62)
 
 
-## Appends the wake trail to `pts` as (x, z, distance along, age) from bow to stern
-## and back along the breadcrumbs, with speed fractions in `spd`. Returns the
-## number of points written (0 when there is no wake).
-func pack_wake(pts: PackedVector4Array, spd: PackedFloat32Array, at: int) -> int:
-	if _crumbs.is_empty():
-		return 0
-	var h := _heading
-	var s := speed / CRUISE * (1.0 - 0.6 * _thrust)
-	var bow := global_position + h * HULL_HALF_LENGTH
-	var stern := global_position - h * HULL_HALF_LENGTH
-	pts[at] = Vector4(bow.x, bow.z, odometer + HULL_HALF_LENGTH * 2.0, 0.0)
-	pts[at + 1] = Vector4(stern.x, stern.z, odometer, 0.0)
-	spd[at] = s
-	spd[at + 1] = s
-	var n := 2
-	for i in _crumbs.size():
-		var c := _crumbs[i]
-		# The newest crumb can sit right at the stern; skip it to avoid a zero-length segment.
-		if odometer - c.z < 1.0:
-			continue
-		pts[at + n] = Vector4(c.x, c.y, c.z, _clock - c.w)
-		spd[at + n] = _crumb_speed[i]
-		n += 1
-	return n
+func wake_hull() -> Vector4:
+	return Vector4(HULL_HALF_BEAM, HULL_HALF_LENGTH * 2.0, 1.0, 1.0)
 
 
 ## Reverse thrust from the forward prop, 0..1 (braking for, or holding at, the dock).
@@ -335,7 +426,16 @@ func load_count() -> int:
 	return aboard.size() + _boarding
 
 
+func kind_text() -> String:
+	return "Ferry"
+
+
 func status_text() -> String:
+	if state == State.SAILING and speed < 0.2 and _waiting_for:
+		return "Waiting for %s to clear the channel" % _waiting_for.ferry_name
+	var holding := holding_text()
+	if holding != "":
+		return holding
 	match state:
 		State.UNLOADING:
 			return "Unloading at " + here().island.name

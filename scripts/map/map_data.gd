@@ -15,6 +15,7 @@ class Island:
 	var is_mainland := false
 	var population := 0
 	var growth := 0.0               # base % per year
+	var wildlife_appeal := 1.0      # how strongly it pulls marine wildlife visits
 
 	# Ferry terminal (valid when has_terminal)
 	var has_terminal := false
@@ -47,6 +48,26 @@ class Island:
 		return shore + dock_dir * Layout.DOCK_U + lateral() * slip_offset(slip_index(route_id))
 
 
+## A small-boat pier with a T-head (see Layout's marina frame).
+class Marina:
+	var id := 0
+	var island := 0                 # island id
+	var shore := Vector3.ZERO       # where the pier meets land, y = 0
+	var dir := Vector3.FORWARD      # horizontal unit vector pointing out to sea
+
+	func lateral() -> Vector3:
+		return Vector3.UP.cross(dir)
+
+	func xform() -> Transform3D:
+		return Transform3D(Basis(lateral(), Vector3.UP, dir), shore)
+
+	func at(u: float, v: float) -> Vector3:
+		return shore + dir * u + lateral() * v
+
+	func berth_v(i: int) -> float:
+		return (i - (Layout.MARINA_BERTHS - 1) * 0.5) * Layout.MARINA_BERTH_SPACING
+
+
 class Route:
 	var id := 0
 	var a := 0      # island id
@@ -59,3 +80,4 @@ var map_seed := 0
 var half_size := 460.0
 var islands: Array[Island] = []
 var routes: Array[Route] = []
+var marinas: Array[Marina] = []

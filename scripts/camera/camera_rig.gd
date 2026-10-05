@@ -30,6 +30,8 @@ var _rot_drag := false
 var _press_pos := Vector2.ZERO
 var _moved := false
 var _last_ticks := 0
+var _last_magnify := 0        # ticks (usec) of the latest pinch event
+var _follow_pan := Vector2.ZERO   # swipe accumulated while following, before it breaks the follow
 
 
 func _ready() -> void:
@@ -91,10 +93,21 @@ func _unhandled_input(event: InputEvent) -> void:
 			target_pitch = clampf(target_pitch + mm.relative.y * 0.004, MIN_PITCH, MAX_PITCH)
 	elif event is InputEventPanGesture:
 		var pg := event as InputEventPanGesture
-		follow = null
+		if follow != null:
+			# Trackpad pinches leak small swipe events; only a deliberate swipe away from
+			# a pinch stops following.
+			if Time.get_ticks_usec() - _last_magnify < 300000:
+				_follow_pan = Vector2.ZERO
+				return
+			_follow_pan += pg.delta
+			if _follow_pan.length() < 3.0:
+				return
+			follow = null
+		_follow_pan = Vector2.ZERO
 		_pan_screen(pg.delta * 0.02 * distance / 10.0)
 	elif event is InputEventMagnifyGesture:
 		var mg := event as InputEventMagnifyGesture
+		_last_magnify = Time.get_ticks_usec()
 		_zoom(1.0 / mg.factor, mg.position)
 
 

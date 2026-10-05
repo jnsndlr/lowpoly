@@ -226,6 +226,144 @@ static func ferry() -> ArrayMesh:
 		return mb.commit())
 
 
+## A gull, about 1.4 m across (+Z forward, wings out along X, upper sides facing
+## up). Wing vertices carry alpha 0.5, which seagull.gdshader flaps and folds about
+## the shoulder (|x| = 0.06); it also lightens their undersides, so they are single panels.
+static func seagull() -> ArrayMesh:
+	return _cached("seagull", func():
+		var mb := MeshBuilder.new()
+		var white := Color(0.95, 0.95, 0.93)
+		var mantle := Color(0.66, 0.7, 0.74, 0.5)
+		var tip := Color(0.12, 0.12, 0.13, 0.5)
+		# Body: an octahedron stretched along the spine, and a smaller one for the head.
+		_octa(mb, Vector3(0, 0.01, 0.03), Vector3(0.065, 0.065, 0.0), 0.24, -0.23, white)
+		_octa(mb, Vector3(0, 0.075, 0.22), Vector3(0.045, 0.045, 0.0), 0.06, -0.05, white)
+		var beak := Color(0.95, 0.74, 0.2)
+		var bp := Vector3(0, 0.06, 0.36)
+		var b0 := Vector3(0.016, 0.075, 0.275)
+		var b1 := Vector3(-0.016, 0.075, 0.275)
+		var b2 := Vector3(0, 0.05, 0.275)
+		mb.tri(b0, b1, bp, beak, Vector3.UP)
+		mb.tri(b1, b2, bp, beak, Vector3(-1, -1, 0))
+		mb.tri(b2, b0, bp, beak, Vector3(1, -1, 0))
+		mb.quad(Vector3(-0.05, 0.03, -0.16), Vector3(0.05, 0.03, -0.16), Vector3(0.075, 0.02, -0.32),
+			Vector3(-0.075, 0.02, -0.32), white, Vector3.UP)
+		for side: float in [-1.0, 1.0]:
+			var sh_f := Vector3(0.06 * side, 0.04, 0.1)
+			var sh_b := Vector3(0.06 * side, 0.04, -0.07)
+			var el_f := Vector3(0.4 * side, 0.04, 0.08)
+			var el_b := Vector3(0.4 * side, 0.04, -0.09)
+			var mid_f := Vector3(0.58 * side, 0.04, 0.03)
+			var mid_b := Vector3(0.58 * side, 0.04, -0.1)
+			var end := Vector3(0.72 * side, 0.04, -0.12)
+			mb.quad(sh_f, el_f, el_b, sh_b, mantle, Vector3.UP)
+			mb.quad(el_f, mid_f, mid_b, el_b, mantle, Vector3.UP)
+			mb.tri(mid_f, end, mid_b, tip, Vector3.UP)
+		return mb.commit())
+
+
+## An orca one unit long (+Z forward, nose at z = 0.5), drawn per animal by Orcas'
+## multimesh and scaled to its length. The dorsal fin's vertices carry alpha < 1:
+## orca.gdshader raises them to each animal's fin height and sweeps them back (a
+## bull's fin stands tall and straight, a cow's is shorter and curved). It also beats
+## the tail. Belly, chin, eye patch and flank are white, the saddle grey.
+static func orca() -> ArrayMesh:
+	return _cached("orca", func():
+		var mb := MeshBuilder.new()
+		var black := Color(0.05, 0.055, 0.065)
+		var white := Color(0.92, 0.93, 0.92)
+		var saddle := Color(0.5, 0.52, 0.55)
+		# Cross-sections nose to tail: z, half-width, half-height, centre height.
+		var st := [[0.5, 0.0, 0.0, -0.01], [0.44, 0.045, 0.04, -0.005], [0.34, 0.075, 0.07, 0.0],
+			[0.18, 0.095, 0.09, 0.0], [0.0, 0.095, 0.092, 0.0], [-0.16, 0.075, 0.075, 0.0],
+			[-0.3, 0.045, 0.05, 0.005], [-0.4, 0.018, 0.035, 0.01], [-0.44, 0.0, 0.0, 0.01]]
+		var rings: Array[PackedVector3Array] = []
+		for s: Array in st:
+			var ring := PackedVector3Array()
+			for k in 8:
+				var a := TAU * k / 8.0
+				ring.append(Vector3(s[1] * sin(a), s[3] + s[2] * cos(a), s[0]))
+			rings.append(ring)
+		for i in st.size() - 1:
+			var axis := Vector3(0, (st[i][3] + st[i + 1][3]) * 0.5, (st[i][0] + st[i + 1][0]) * 0.5)
+			for k in 8:
+				# Facet k runs from k * 45° (0 = the back) round to (k + 1) * 45°.
+				var band := mini(k, 7 - k)   # 0 top, 1 upper side, 2 lower side, 3 belly
+				var col := black
+				if band == 3 and i <= 4:
+					col = white
+				elif band == 2 and (i <= 1 or i == 4 or i == 5):
+					col = white
+				elif band == 1 and i == 2:
+					col = white
+				elif band == 0 and i == 4:
+					col = saddle
+				var a := rings[i][k]
+				var b := rings[i][(k + 1) % 8]
+				var c := rings[i + 1][(k + 1) % 8]
+				var d := rings[i + 1][k]
+				mb.quad(a, b, c, d, col, (a + b + c + d) * 0.25 - axis)
+		# Dorsal fin: base on the back, a waist and a tip; height and sweep come from the shader.
+		var base_y := 0.085
+		var bf := Vector3(0, base_y, 0.07)
+		var bb := Vector3(0, base_y, -0.1)
+		var mf := Vector3(0, base_y, 0.03)
+		var mback := Vector3(0, base_y, -0.06)
+		var tip := Vector3(0, base_y, -0.03)
+		var fin_base := Color(black, 1.0)
+		var fin_mid := Color(black, 0.75)
+		var fin_tip := Color(black, 0.5)
+		for side: float in [-1.0, 1.0]:
+			var w := Vector3(0.014 * side, 0, 0)
+			var wm := Vector3(0.007 * side, 0, 0)
+			var out := Vector3(side, 0, 0)
+			mb.tri3(bf + w, bb + w, mback + wm, fin_base, fin_base, fin_mid, out)
+			mb.tri3(bf + w, mback + wm, mf + wm, fin_base, fin_mid, fin_mid, out)
+			mb.tri3(mf + wm, mback + wm, tip, fin_mid, fin_mid, fin_tip, out)
+			# Leading and trailing edges.
+			mb.tri3(bf, bf + w, mf + wm, fin_base, fin_base, fin_mid, Vector3(side, 0, 1))
+			mb.tri3(bf, mf + wm, mf, fin_base, fin_mid, fin_mid, Vector3(side, 0, 1))
+			mb.tri3(mf, mf + wm, tip, fin_mid, fin_mid, fin_tip, Vector3(side, 0, 1))
+			mb.tri3(bb, bb + w, mback + wm, fin_base, fin_base, fin_mid, Vector3(side, 0, -1))
+			mb.tri3(bb, mback + wm, mback, fin_base, fin_mid, fin_mid, Vector3(side, 0, -1))
+			mb.tri3(mback, mback + wm, tip, fin_mid, fin_mid, fin_tip, Vector3(side, 0, -1))
+			# Paddle-shaped flippers, angled down and back.
+			mb.tri(Vector3(0.07 * side, -0.065, 0.24), Vector3(0.21 * side, -0.12, 0.09),
+				Vector3(0.07 * side, -0.07, 0.13), black, Vector3(0, -1, 0))
+			# Flukes: swept-back wings off the tail stock with a notch in the middle.
+			var root_f := Vector3(0, 0.01, -0.38)
+			var notch := Vector3(0, 0.01, -0.46)
+			var fluke_tip := Vector3(0.15 * side, 0.005, -0.52)
+			mb.tri(root_f, fluke_tip, Vector3(0.05 * side, 0.01, -0.48), black, Vector3.UP)
+			mb.tri(root_f, Vector3(0.05 * side, 0.01, -0.48), notch, black, Vector3.UP)
+		var mesh := mb.commit()
+		# The shader moves the fin and tail, which a baked shadow mesh can't follow.
+		mesh.shadow_mesh = null
+		return mesh)
+
+
+## A blow or a splash: a white plume one unit tall, drawn per puff by Orcas.
+static func spout() -> ArrayMesh:
+	return _cached("spout", func():
+		var mb := MeshBuilder.new()
+		mb.cylinder(Vector3.ZERO, 0.12, 0.45, 0.6, 6, Color(0.95, 0.97, 1.0, 0.85))
+		mb.cylinder(Vector3(0, 0.6, 0), 0.45, 0.2, 0.4, 6, Color(0.95, 0.97, 1.0, 0.6))
+		return mb.commit(unshaded_material()))
+
+
+## An octahedron at `c`, `r` wide (x) and tall (y), reaching `front` ahead and `back` behind.
+static func _octa(mb: MeshBuilder, c: Vector3, r: Vector3, front: float, back: float, col: Color) -> void:
+	var f := c + Vector3(0, 0, front)
+	var b := c + Vector3(0, 0, back)
+	var ring := [c + Vector3(r.x, 0, 0), c + Vector3(0, r.y, 0), c + Vector3(-r.x, 0, 0), c + Vector3(0, -r.y, 0)]
+	for i in 4:
+		var p0: Vector3 = ring[i]
+		var p1: Vector3 = ring[(i + 1) % 4]
+		var out := (p0 + p1) * 0.5 - c
+		mb.tri(p0, p1, f, col, out)
+		mb.tri(p1, p0, b, col, out)
+
+
 ## Head and tail lights for every car and truck (+Z is the front), plus the cone
 ## they throw down the road. Drawn per vehicle by NightLights' multimesh.
 static func car_lights() -> ArrayMesh:
@@ -274,15 +412,134 @@ static func sailboat() -> ArrayMesh:
 		var hull := PackedVector2Array([Vector2(-0.6, -1.6), Vector2(0.6, -1.6), Vector2(0.65, 0.6), Vector2(0.0, 2.0), Vector2(-0.65, 0.6)])
 		mb.extrude(hull, -0.3, 0.35, WHITE, Color(0.75, 0.62, 0.45), 0.7)
 		mb.box(Vector3(0, 2.3, 0.3), Vector3(0.08, 4.0, 0.08), Color(0.8, 0.8, 0.8))
-		var a := Vector3(0, 0.7, 0.2)
-		var b := Vector3(0, 4.2, 0.2)
-		var c := Vector3(0, 0.7, -1.4)
-		mb.tri(a, b, c, Color(0.98, 0.98, 0.96), Vector3.RIGHT)
-		mb.tri(a, b, c, Color(0.98, 0.98, 0.96), Vector3.LEFT)
-		mb.tri(Vector3(0, 3.6, 0.35), Vector3(0, 0.8, 0.4), Vector3(0, 0.8, 1.7), Color(0.95, 0.95, 0.9), Vector3.RIGHT)
-		mb.tri(Vector3(0, 3.6, 0.35), Vector3(0, 0.8, 0.4), Vector3(0, 0.8, 1.7), Color(0.95, 0.95, 0.9), Vector3.LEFT)
 		add_lantern(mb, SAIL_MAST_TOP, GlowBuilder.LED, SAIL_LANTERN)
 		return mb.commit())
+
+
+# The sails, each built round the line it swings on (Sailboat sheets them out
+# to leeward): the mainsail and boom round the mast, the jib round its forestay.
+const SAIL_MAIN_PIVOT := Vector3(0, 0, 0.2)
+const SAIL_JIB_TACK := Vector3(0, 0.8, 1.7)
+const SAIL_JIB_HEAD := Vector3(0, 3.6, 0.35)
+
+
+static func sailboat_main() -> ArrayMesh:
+	return _cached("sailboat_main", func():
+		var mb := MeshBuilder.new()
+		var a := Vector3(0, 0.7, 0)
+		var b := Vector3(0, 4.2, 0)
+		var c := Vector3(0, 0.7, -1.6)
+		mb.tri(a, b, c, Color(0.98, 0.98, 0.96), Vector3.RIGHT)
+		mb.tri(a, b, c, Color(0.98, 0.98, 0.96), Vector3.LEFT)
+		mb.box(Vector3(0, 0.66, -0.8), Vector3(0.07, 0.07, 1.7), Color(0.8, 0.8, 0.8))
+		return mb.commit())
+
+
+static func sailboat_jib() -> ArrayMesh:
+	return _cached("sailboat_jib", func():
+		var mb := MeshBuilder.new()
+		var head := SAIL_JIB_HEAD - SAIL_JIB_TACK
+		var clew := Vector3(0, 0.8, 0.4) - SAIL_JIB_TACK
+		mb.tri(head, clew, Vector3.ZERO, Color(0.95, 0.95, 0.9), Vector3.RIGHT)
+		mb.tri(head, clew, Vector3.ZERO, Color(0.95, 0.95, 0.9), Vector3.LEFT)
+		return mb.commit())
+
+
+## The sailboat at its berth: sails stowed along the boom.
+static func sailboat_furled() -> ArrayMesh:
+	return _cached("sailboat_furled", func():
+		var mb := MeshBuilder.new()
+		var hull := PackedVector2Array([Vector2(-0.6, -1.6), Vector2(0.6, -1.6), Vector2(0.65, 0.6), Vector2(0.0, 2.0), Vector2(-0.65, 0.6)])
+		mb.extrude(hull, -0.3, 0.35, WHITE, Color(0.75, 0.62, 0.45), 0.7)
+		mb.box(Vector3(0, 2.3, 0.3), Vector3(0.08, 4.0, 0.08), Color(0.8, 0.8, 0.8))
+		mb.box(Vector3(0, 0.78, -0.55), Vector3(0.07, 0.07, 1.8), Color(0.8, 0.8, 0.8))
+		mb.box(Vector3(0, 0.9, -0.5), Vector3(0.2, 0.18, 1.6), Color(0.2, 0.32, 0.5))
+		add_lantern(mb, SAIL_MAST_TOP, GlowBuilder.LED, SAIL_LANTERN)
+		return mb.commit())
+
+
+## The sailboat's anchor light, drawn by NightLights on each boat.
+static func sailboat_lights() -> ArrayMesh:
+	return _cached("sailboat_lights", func():
+		var gb := GlowBuilder.new()
+		gb.glow(lantern_glow_at(SAIL_MAST_TOP, SAIL_LANTERN), GlowBuilder.LED, 0.13, 4.0, true, 0.0, Vector3.ZERO, LAMP_ON_AT)
+		return gb.commit())
+
+
+# Container ship (+Z is the bow): masthead lantern heights and the sidelights.
+const CARGO_FORE_MAST := Vector3(0, 9.0, 28.5)
+const CARGO_AFT_MAST := Vector3(0, 15.6, -24.0)
+const CARGO_LANTERN := 1.6
+const CARGO_SIDELIGHT := Vector3(6.3, 11.6, -24.0)
+const CARGO_FUNNELS := [Color(0.85, 0.55, 0.12), Color(0.15, 0.35, 0.65), Color(0.75, 0.15, 0.13)]
+const CONTAINERS := [Color(0.62, 0.2, 0.15), Color(0.18, 0.33, 0.6), Color(0.2, 0.48, 0.32),
+	Color(0.88, 0.5, 0.15), Color(0.55, 0.57, 0.6), Color(0.14, 0.5, 0.55), Color(0.9, 0.9, 0.86),
+	Color(0.85, 0.7, 0.2), Color(0.45, 0.25, 0.4)]
+
+
+## A container ship about 64 m long and 11 m in the beam, its accommodation block
+## aft. `variant` picks the funnel colour and how the boxes are stacked.
+static func cargo_ship(variant: int) -> ArrayMesh:
+	return _cached("cargo_%d" % variant, func():
+		var mb := MeshBuilder.new()
+		var hull := PackedVector2Array([Vector2(-5.6, -30), Vector2(-4.8, -32), Vector2(4.8, -32), Vector2(5.6, -30),
+			Vector2(5.6, 20), Vector2(4.2, 27), Vector2(1.6, 31), Vector2(0, 32), Vector2(-1.6, 31), Vector2(-4.2, 27),
+			Vector2(-5.6, 20)])
+		mb.extrude(hull, -2.6, 0.25, Color(0.55, 0.14, 0.12), Color(0, 0, 0, 0), 0.85)
+		mb.extrude(hull, 0.25, 3.2, Color(0.12, 0.16, 0.24), Color(0.4, 0.42, 0.43))
+		mb.extrude(hull, 0.18, 0.32, WHITE, Color(0, 0, 0, 0))
+		# Forecastle and the breakwater behind it.
+		mb.box(Vector3(0, 3.6, 26.0), Vector3(8.0, 0.8, 5.0), Color(0.12, 0.16, 0.24))
+		mb.box(Vector3(0, 4.4, 23.4), Vector3(10.4, 1.6, 0.25), WHITE)
+		# Accommodation block, bridge with its wings, and the funnel.
+		mb.box(Vector3(0, 7.2, -25.0), Vector3(10.0, 8.0, 6.0), WHITE)
+		for y: float in [5.2, 7.4, 9.6]:
+			mb.box(Vector3(0, y, -25.0), Vector3(10.1, 0.6, 6.1), WINDOW)
+		mb.box(Vector3(0, 11.6, -24.0), Vector3(12.4, 1.4, 3.2), WHITE)
+		mb.box(Vector3(0, 11.7, -24.0), Vector3(12.5, 0.5, 3.3), WINDOW_LIT)
+		mb.box(Vector3(0, 12.4, -24.0), Vector3(12.8, 0.2, 3.6), Color(0.3, 0.32, 0.34))
+		mb.box(Vector3(0, 14.0, -24.0), Vector3(0.25, 3.0, 0.25), WHITE)
+		add_lantern(mb, CARGO_AFT_MAST, GlowBuilder.LED, CARGO_LANTERN)
+		var funnel: Color = CARGO_FUNNELS[variant % CARGO_FUNNELS.size()]
+		mb.box(Vector3(0, 13.4, -28.6), Vector3(2.6, 3.6, 2.8), funnel)
+		mb.box(Vector3(0, 15.45, -28.6), Vector3(2.65, 0.5, 2.85), Color(0.1, 0.1, 0.1))
+		# Port (+X) red, starboard green, on the bridge wings' ends.
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * CARGO_SIDELIGHT.x, CARGO_SIDELIGHT.y, CARGO_SIDELIGHT.z), Vector3(0.2, 0.35, 0.45),
+				lamp_glass(GlowBuilder.RED if x > 0.0 else GlowBuilder.GREEN))
+		# Foremast.
+		mb.box(Vector3(0, 6.1, 28.5), Vector3(0.3, 5.8, 0.3), Color(0.85, 0.75, 0.2))
+		add_lantern(mb, CARGO_FORE_MAST, GlowBuilder.LED, CARGO_LANTERN)
+		# Containers: seven bays of four stacks, one to three high.
+		var r := RandomNumberGenerator.new()
+		r.seed = 4111 + variant * 97
+		for bay in 7:
+			var z := -18.5 + bay * 6.2
+			for col in 4:
+				var x := -3.75 + col * 2.5
+				var tiers := r.randi_range(1, 3) if variant % 3 != 2 else r.randi_range(2, 3)
+				for t in tiers:
+					var c: Color = CONTAINERS[r.randi_range(0, CONTAINERS.size() - 1)]
+					mb.box(Vector3(x, 3.2 + 1.25 + t * 2.5, z), Vector3(2.4, 2.45, 6.0), c.darkened(r.randf() * 0.12))
+		return mb.commit())
+
+
+## Masthead, stern and sidelights and the lit bridge's reflection, in the ship's frame.
+static func cargo_ship_lights() -> ArrayMesh:
+	return _cached("cargo_lights", func():
+		var gb := GlowBuilder.new()
+		for top: Vector3 in [CARGO_FORE_MAST, CARGO_AFT_MAST]:
+			gb.glow(lantern_glow_at(top, CARGO_LANTERN), GlowBuilder.LED, 0.35, 9.0, true, 0.0, Vector3.ZERO, 0.0)
+		gb.glow(Vector3(-CARGO_SIDELIGHT.x, CARGO_SIDELIGHT.y, CARGO_SIDELIGHT.z), GlowBuilder.GREEN, 0.25, 7.0, true, 0.0, Vector3(-1, 0, 0.8), 0.0)
+		gb.glow(CARGO_SIDELIGHT, GlowBuilder.RED, 0.25, 7.0, true, 0.0, Vector3(1, 0, 0.8), 0.0)
+		gb.glow(Vector3(0, 4.0, -32.2), GlowBuilder.LED, 0.2, 5.0, true, 0.0, Vector3(0, 0, -1), 0.0)
+		var window := Color(1.0, 0.74, 0.42)
+		for x: float in [-6.25, 6.25]:
+			for i in 5:
+				gb.reflection(Vector3(x, 11.7, -25.4 + i * 0.7), window, 0.3, 2.2, Vector3(signf(x), 0, 0))
+		for x in 7:
+			gb.reflection(Vector3(-4.5 + x * 1.5, 11.7, -22.3), window, 0.3, 2.2, Vector3(0, 0, 1))
+		return gb.commit())
 
 
 static func add_lighthouse(mb: MeshBuilder, base: Vector3) -> void:

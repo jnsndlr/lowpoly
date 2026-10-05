@@ -1,7 +1,8 @@
 class_name Hud
 extends CanvasLayer
 ## Screen-space UI, built in code: top stats bar, sidebar, floating island labels,
-## selection panel, terminal status bar, fleet list, toasts and a minimap.
+## selection panel, terminal status bar, fleet list, wildlife sightings, toasts and
+## a minimap.
 
 const PANEL_BG := Color(0.07, 0.11, 0.13, 0.9)
 const TEXT := Color(0.9, 0.94, 0.95)
@@ -9,15 +10,18 @@ const MUTED := Color(0.58, 0.66, 0.68)
 const ACCENT := Color(0.47, 0.86, 0.6)
 const SPEEDS := [0.0, 1.0, 3.0, 8.0]
 const SPEED_LABELS := ["❚❚", "▶", "▶▶", "▶▶▶"]
+const WILD := Color(0.98, 0.78, 0.42)
 
 var main: Node
 var sim: Simulation
+var wildlife: Wildlife
 var rig: CameraRig
 var map: MapData
 var route_overlay: Node3D
 var routes_forced := false
 var selected_island: MapData.Island
 var selected_ferry: Ferry
+var selected_vessel: Vessel   # a sailboat or cargo ship
 
 var root: Control
 var font: SystemFont
@@ -36,6 +40,10 @@ var _terminal_bar: PanelContainer
 var _tb := {}
 var _fleet_panel: PanelContainer
 var _fleet_list: VBoxContainer
+var _wild_panel: PanelContainer
+var _wild_list: VBoxContainer
+var _wild_islands: Label
+var _wild_empty: Label
 var _toast: PanelContainer
 var _toast_title: Label
 var _toast_body: Label
@@ -50,6 +58,7 @@ var _last_hour := -1.0
 func setup(m: Node) -> void:
 	main = m
 	sim = m.sim
+	wildlife = m.sim.wildlife
 	rig = m.rig
 	map = m.map
 	route_overlay = m.route_overlay
@@ -64,10 +73,14 @@ func setup(m: Node) -> void:
 	_build_info_panel()
 	_build_terminal_bar()
 	_build_fleet_panel()
+	_build_wildlife_panel()
 	_build_minimap(m.env)
 	_build_help()
 	_build_toast()
 	rig.ground_clicked.connect(_on_ground_clicked)
+	wildlife.visit_started.connect(_on_visit_started)
+	wildlife.sighted.connect(_on_sighted)
+	wildlife.photographed.connect(_on_photographed)
 	set_speed(1)
 	show_toast("PROCEDURAL ARCHIPELAGO", "Map seed %d · %d islands · %d routes.\nPress G for a new map." % [
 		map.map_seed, _labels.size(), map.routes.size()])
@@ -205,7 +218,7 @@ func _build_sidebar() -> void:
 	col.add_theme_constant_override("separation", 2)
 	panel.add_child(col)
 	for item in [["COMPANY", "company"], ["RESEARCH", "research"], ["FLEET", "fleet"],
-			["ROUTES", "routes"], ["FINANCES", "finances"], ["MAP", "map"]]:
+			["ROUTES", "routes"], ["WILDLIFE", "wildlife"], ["FINANCES", "finances"], ["MAP", "map"]]:
 		var b := Button.new()
 		b.text = item[0]
 		b.custom_minimum_size = Vector2(96, 46)
@@ -217,7 +230,7 @@ func _build_sidebar() -> void:
 
 
 func _build_help() -> void:
-	var l := _label("Drag: pan · Right-drag / Q E: rotate & tilt · Wheel / pinch: zoom · Click: select\n" +
+	var l := _label("Drag: pan · Right-drag / Q E: rotate & tilt · Wheel / pinch: zoom · Click: select (or photograph wildlife)\n" +
 		"Space: pause · 1-3: speed · Tab: next ferry · Esc: deselect · G: new map · [ ]: time of day · T: follow clock", 12, Color(1, 1, 1, 0.75))
 	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
 	l.add_theme_constant_override("shadow_offset_y", 1)
@@ -234,7 +247,12 @@ func _on_sidebar(id: String) -> void:
 	match id:
 		"fleet":
 			_fleet_panel.visible = not _fleet_panel.visible
+			_wild_panel.visible = false
 			_rebuild_fleet()
+		"wildlife":
+			_wild_panel.visible = not _wild_panel.visible
+			_fleet_panel.visible = false
+			_rebuild_wildlife()
 		"routes":
 			routes_forced = not routes_forced
 			show_toast("ROUTES", "Route overlay always on." if routes_forced else "Route overlay shows when zoomed out.")
@@ -300,18 +318,29 @@ func _update_labels() -> void:
 
 func _on_ground_clicked(screen_pos: Vector2) -> void:
 	var cam := rig.camera
-	var best: Ferry = null
+	var visit: Wildlife.Visit = main.orcas.pick(screen_pos, cam)
+	if visit:
+		if not wildlife.photograph(visit):
+			show_toast(visit.species.plural.to_upper(), "Already photographed this %s." % _group_word(visit), 3.0)
+		return
+	var best: Vessel = null
 	var best_d := clampf(3000.0 / rig.distance, 24.0, 220.0)
-	for f in sim.ferries:
-		var wp := f.global_position + Vector3(0, 3, 0)
+	for v in sim.marine.vessels:
+		var wp := v.global_position + Vector3(0, 3, 0)
 		if cam.is_position_behind(wp):
 			continue
 		var d := cam.unproject_position(wp).distance_to(screen_pos)
+		# Small boats only when actually clicked on, so they don't steal ferry clicks.
+		if v is Sailboat:
+			d *= 2.0
 		if d < best_d:
 			best_d = d
-			best = f
-	if best:
+			best = v
+	if best is Ferry:
 		select_ferry(best)
+		return
+	if best:
+		select_vessel(best)
 		return
 	var hit: Variant = rig.pick_terrain(screen_pos)
 	if hit == null:
@@ -339,6 +368,7 @@ func _on_ground_clicked(screen_pos: Vector2) -> void:
 func select_island(isl: MapData.Island, focus: bool) -> void:
 	selected_island = isl
 	selected_ferry = null
+	selected_vessel = null
 	rig.follow = null
 	if focus:
 		rig.focus_on(isl.town_center, 130.0)
@@ -348,15 +378,29 @@ func select_island(isl: MapData.Island, focus: bool) -> void:
 func select_ferry(f: Ferry) -> void:
 	selected_ferry = f
 	selected_island = null
+	selected_vessel = null
 	rig.follow = f
 	if rig.target_dist > 180.0:
 		rig.target_dist = 110.0
 	_refresh_panels()
 
 
+## A sailboat or cargo ship: shows its panel and follows it.
+func select_vessel(v: Vessel) -> void:
+	selected_vessel = v
+	selected_island = null
+	selected_ferry = null
+	rig.follow = v
+	var near := 60.0 if v is Sailboat else 140.0
+	if rig.target_dist > near * 1.6:
+		rig.target_dist = near
+	_refresh_panels()
+
+
 func clear_selection() -> void:
 	selected_island = null
 	selected_ferry = null
+	selected_vessel = null
 	rig.follow = null
 	_refresh_panels()
 
@@ -425,6 +469,8 @@ func _build_info_panel() -> void:
 func _on_info_button() -> void:
 	if selected_ferry:
 		rig.follow = null if rig.follow == selected_ferry else selected_ferry
+	elif selected_vessel:
+		rig.follow = null if rig.follow == selected_vessel else selected_vessel
 	elif selected_island:
 		rig.focus_on(selected_island.town_center, 130.0)
 	_refresh_panels()
@@ -450,7 +496,10 @@ func _set_rows(rows: Array) -> void:
 
 
 func _refresh_panels() -> void:
-	_info_panel.visible = selected_island != null or selected_ferry != null
+	# Cargo ships leave the map.
+	if selected_vessel and not is_instance_valid(selected_vessel):
+		selected_vessel = null
+	_info_panel.visible = selected_island != null or selected_ferry != null or selected_vessel != null
 	_terminal_bar.visible = selected_island != null and sim.terminals.has(selected_island.id)
 	_help.visible = not _terminal_bar.visible
 	if selected_ferry:
@@ -465,6 +514,18 @@ func _refresh_panels() -> void:
 			["Crossings", str(f.trips)],
 		])
 		_info_button.text = "Stop following" if rig.follow == f else "Follow"
+	elif selected_vessel:
+		var v := selected_vessel
+		_info_title.text = v.vessel_name.to_upper()
+		var rows := [["Status", v.status_text()], ["Speed", "%.1f kn" % (v.speed * 1.6)]]
+		if v is Sailboat:
+			_info_sub.text = "%s · out of %s" % [v.type_text(), (v as Sailboat).marina_name((v as Sailboat).marina)]
+			rows.append(["Passages", str((v as Sailboat).trips)])
+		else:
+			_info_sub.text = "%s · transiting" % v.type_text()
+			rows.append(["Distance to go", "%.1f km" % (v.path_left() / 1000.0)])
+		_set_rows(rows)
+		_info_button.text = "Stop following" if rig.follow == v else "Follow"
 	elif selected_island:
 		var isl := selected_island
 		var term: Terminal = sim.terminals.get(isl.id)
@@ -478,6 +539,8 @@ func _refresh_panels() -> void:
 			["Growth", "%+.1f%% / yr" % (isl.growth + (sat - 70.0) * 0.05)],
 			["Demand", sim.demand_label(isl) if term else "-"],
 		]
+		rows.append(["Wildlife draw", _draw_text(isl)])
+		rows.append(["Wildlife appeal", _appeal_text(wildlife.appeal(isl))])
 		if term:
 			rows.append(["Queued vehicles", "%d / %d" % [term.total_queued(), term.capacity()]])
 			rows.append(["Avg. wait", "%d min" % roundi(term.avg_wait)])
@@ -578,6 +641,137 @@ func _rebuild_fleet() -> void:
 	for i in sim.ferries.size():
 		var f := sim.ferries[i]
 		(_fleet_list.get_child(i) as Button).text = "%s  ·  %d/%d  ·  %s" % [f.ferry_name, f.load_count(), Ferry.CAPACITY, f.status_text()]
+
+
+# --- Wildlife ----------------------------------------------------------------------
+
+func _build_wildlife_panel() -> void:
+	_wild_panel = PanelContainer.new()
+	_wild_panel.position = Vector2(132, 112)
+	_wild_panel.custom_minimum_size = Vector2(340, 0)
+	root.add_child(_wild_panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 4)
+	_wild_panel.add_child(v)
+	v.add_child(_label("RECENT SIGHTINGS", 13, MUTED, true))
+	_wild_empty = _label("Nothing yet. Pods turn up once a day.", 13, MUTED)
+	v.add_child(_wild_empty)
+	_wild_list = VBoxContainer.new()
+	_wild_list.add_theme_constant_override("separation", 2)
+	v.add_child(_wild_list)
+	v.add_child(HSeparator.new())
+	v.add_child(_label("WILDLIFE DRAW", 13, MUTED, true))
+	_wild_islands = _label("", 13)
+	v.add_child(_wild_islands)
+	_wild_panel.visible = false
+
+
+## Newest first: live visits marked, who saw them, and whether they were photographed.
+func _rebuild_wildlife() -> void:
+	var shown: Array[Wildlife.Visit] = []
+	for i in range(wildlife.visits.size() - 1, -1, -1):
+		shown.append(wildlife.visits[i])
+		if shown.size() >= 6:
+			break
+	_wild_empty.visible = shown.is_empty()
+	if _wild_list.get_child_count() != shown.size():
+		for c in _wild_list.get_children():
+			_wild_list.remove_child(c)
+			c.queue_free()
+		for i in shown.size():
+			var b := Button.new()
+			b.focus_mode = Control.FOCUS_NONE
+			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			b.add_theme_font_size_override("font_size", 13)
+			b.pressed.connect(_on_wild_row.bind(i))
+			_wild_list.add_child(b)
+	for i in shown.size():
+		var v := shown[i]
+		var b := _wild_list.get_child(i) as Button
+		var when := "Day %d, %s" % [v.day, sim.clock_text(v.start)]
+		var seen := "not seen yet" if v.active() else "nobody saw them"
+		if not v.credited.is_empty():
+			var names := PackedStringArray()
+			for isl in v.credited:
+				names.append(isl.name)
+			seen = "seen from " + ", ".join(names)
+		b.text = "%s%s · %s%s\n%s · %s" % ["● " if v.active() else "", v.title(), v.target.name,
+			"  📷" if v.photographed else "", when, seen]
+		b.add_theme_color_override("font_color", WILD if v.active() else TEXT)
+		b.set_meta("visit", v)
+	var lines := PackedStringArray()
+	var ranked: Array = []
+	for isl in map.islands:
+		if wildlife.reputation(isl) > 0.05:
+			ranked.append(isl)
+	ranked.sort_custom(func(a, b): return wildlife.reputation(a) > wildlife.reputation(b))
+	for isl: MapData.Island in ranked.slice(0, 5):
+		lines.append("%s   %s" % [isl.name, _draw_text(isl)])
+	_wild_islands.text = "\n".join(lines) if not lines.is_empty() else "No island has had a sighting this season."
+
+
+func _on_wild_row(i: int) -> void:
+	var b := _wild_list.get_child(i)
+	if not b.has_meta("visit"):
+		return
+	var v: Wildlife.Visit = b.get_meta("visit")
+	if v.active():
+		follow_visit(v)
+	else:
+		select_island(v.target, true)
+
+
+## Points the camera at a visit's group and keeps it there.
+func follow_visit(v: Wildlife.Visit) -> void:
+	clear_selection()
+	if is_instance_valid(v.marker):
+		rig.target_pos = Vector3(v.pos.x, 0.0, v.pos.z)
+		rig.follow = v.marker
+		if rig.target_dist > 180.0:
+			rig.target_dist = 120.0
+
+
+func _group_word(v: Wildlife.Visit) -> String:
+	return "pod" if v.species.id == "orca" else "group"
+
+
+func _draw_text(isl: MapData.Island) -> String:
+	var r := wildlife.standing(isl)
+	if r == null or r.value < 0.05:
+		return "-"
+	return "+%.1f · %s" % [r.value, r.last_species]
+
+
+func _appeal_text(a: float) -> String:
+	if a >= 2.0:
+		return "Hotspot"
+	if a >= 0.7:
+		return "Fair"
+	return "Rare"
+
+
+func _on_visit_started(v: Wildlife.Visit) -> void:
+	show_toast("%s REPORTED" % v.species.plural.to_upper(),
+		"A %s of %d is heading for %s. Seen from a dock or a ferry in daylight, it draws tourists. Click one for a photo bonus." % [
+			_group_word(v), v.members.size(), v.target.name], 8.0)
+	if _wild_panel.visible:
+		_rebuild_wildlife()
+
+
+func _on_sighted(v: Wildlife.Visit, isl: MapData.Island, seen_from: String) -> void:
+	show_toast("%s SIGHTING · %s" % [v.species.name.to_upper(), isl.name.to_upper()],
+		"Spotted from %s. Wildlife draw at %s is now +%.1f." % [seen_from, isl.name, wildlife.reputation(isl)])
+
+
+func _on_photographed(v: Wildlife.Visit) -> void:
+	var where := "every island that sees this %s" % _group_word(v)
+	if not v.credited.is_empty():
+		var names := PackedStringArray()
+		for isl in v.credited:
+			names.append(isl.name)
+		where = ", ".join(names) + " and any island that sees it later"
+	show_toast("PHOTOGRAPHED!", "+%d%% wildlife draw from this %s for %s." % [
+		roundi(Wildlife.PHOTO_BONUS * 100.0), _group_word(v), where])
 
 
 # --- Toast --------------------------------------------------------------------------
@@ -684,10 +878,23 @@ func _draw_minimap() -> void:
 		pts.append(pts[0])
 		o.draw_polyline(pts, Color(1, 1, 1, 0.9), 1.5)
 	o.draw_circle(_to_minimap(rig.position), 2.5, Color(1, 1, 1, 0.9))
+	for v in sim.marine.vessels:
+		if v is Ferry:
+			continue
+		var sail := v is Sailboat
+		if sail and (v as Sailboat).state == Sailboat.State.MOORED and v != selected_vessel:
+			continue
+		var at := _to_minimap(v.global_position)
+		var vc := ACCENT if v == selected_vessel else (Color(0.85, 0.9, 0.95, 0.8) if sail else Color(0.95, 0.6, 0.35))
+		o.draw_circle(at, 1.5 if sail else 3.0, vc)
 	for f in sim.ferries:
 		var col := ACCENT if f == selected_ferry else Color(1, 1, 1)
 		o.draw_circle(_to_minimap(f.global_position), 3.5, Color(0, 0, 0, 0.5))
 		o.draw_circle(_to_minimap(f.global_position), 2.5, col)
+	for v in wildlife.active_visits():
+		var at := _to_minimap(v.pos)
+		o.draw_circle(at, 4.0, Color(0.05, 0.06, 0.07, 0.9))
+		o.draw_arc(at, 5.5, 0, TAU, 16, WILD, 1.5)
 	if selected_island:
 		o.draw_arc(_to_minimap(selected_island.town_center), 9.0, 0, TAU, 24, ACCENT, 1.5)
 
@@ -735,3 +942,5 @@ func _process(delta: float) -> void:
 	_refresh_panels()
 	if _fleet_panel.visible:
 		_rebuild_fleet()
+	if _wild_panel.visible:
+		_rebuild_wildlife()

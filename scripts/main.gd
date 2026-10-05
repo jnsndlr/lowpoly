@@ -5,6 +5,8 @@ extends Node3D
 ##   --seed=N  --speed=0..3  --cam=x,z,dist,yaw_deg,pitch_deg  --select=K (Kth terminal island)
 ##   --follow=K (Kth ferry)  --time=H (pin time of day, e.g. 19.5)  --shot=path.png  --shot-delay=seconds
 ##   --bench=seconds (print frame/GPU time and render stats, then quit)
+##   --orcas (start an orca visit now and follow it)
+##   --vessel=cargo|sail (follow a cargo ship, or a sailboat under way)
 
 static var map_seed := 0
 
@@ -19,6 +21,7 @@ var sky_mat: ProceduralSkyMaterial
 var day_cycle: DayCycle
 var water_mat: ShaderMaterial
 var route_overlay: MeshInstance3D
+var orcas: Orcas
 var _args := {}
 
 
@@ -65,6 +68,12 @@ func _ready() -> void:
 	var lights := NightLights.new()
 	add_child(lights)
 	lights.setup(sim, rig, day_cycle, fixed_lights)
+	var gulls := Seagulls.new()
+	add_child(gulls)
+	gulls.setup(sim, day_cycle, builder.gull_perches)
+	orcas = Orcas.new()
+	add_child(orcas)
+	orcas.setup(sim.wildlife, terrain)
 	day_cycle.apply(sim.hour())
 	hud = Hud.new()
 	add_child(hud)
@@ -171,6 +180,21 @@ func _apply_debug_args() -> void:
 		var k := int(_args["follow"])
 		if k < sim.ferries.size():
 			hud.select_ferry(sim.ferries[k])
+	if _args.has("orcas"):
+		var v := sim.wildlife.start_visit(sim.wildlife.find_species("orca"))
+		if v:
+			hud.follow_visit(v)
+			rig.target_dist = 70.0
+			rig.target_pitch = 0.55
+			rig.snap()
+	if _args.has("vessel"):
+		var want := str(_args["vessel"])
+		for v in sim.marine.vessels:
+			if (want == "cargo" and v is CargoShip) or (want == "sail" and v is Sailboat and v.wants_to_move()):
+				hud.select_vessel(v)
+				rig.target_pos = v.global_position
+				rig.snap()
+				break
 	if _args.has("shot"):
 		_take_screenshot(str(_args["shot"]), float(_args.get("shot-delay", "3")))
 	if _args.has("bench"):

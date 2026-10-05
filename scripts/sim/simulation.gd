@@ -1,10 +1,13 @@
 class_name Simulation
 extends Node3D
-## Owns the game clock, demand model, economy and all terminals/ferries/vehicles.
+## Owns the game clock, demand model, economy and all terminals/ferries/vehicles,
+## plus the other traffic afloat (MarineTraffic).
 ## One real second = one game minute at 1x speed (Engine.time_scale scales it).
 
 const FARE_CAR := 18.5
 const FARE_TRUCK := 42.0
+const SEASON_DAYS := 30
+const SEASONS := ["Spring", "Summer", "Autumn", "Winter"]
 const FERRY_NAMES := ["Cedar Star", "Orca Spirit", "Madrona Belle", "Tidewater", "Salish Dawn",
 	"Heron", "Sea Lark", "Kelp Runner", "Evergreen", "Cormorant", "Island Pride", "Driftwood Queen"]
 
@@ -16,6 +19,8 @@ var day := 12
 var terminals := {}             # island id -> Terminal
 var ferries: Array[Ferry] = []
 var traffic: Node3D
+var wildlife: Wildlife
+var marine: MarineTraffic
 var revenue_today := 0.0
 var revenue_total := 0.0
 var cars_today := 0
@@ -51,6 +56,13 @@ func setup(m: MapData, t: Terrain) -> void:
 		term.prefill()
 	for i in ferries.size():
 		ferries[i].start_staggered(i)
+	wildlife = Wildlife.new()
+	wildlife.name = "Wildlife"
+	add_child(wildlife)
+	wildlife.setup(self)
+	marine = MarineTraffic.new()
+	add_child(marine)
+	marine.setup(self)
 
 
 func _process(delta: float) -> void:
@@ -82,6 +94,13 @@ func collect_fare(car: Vehicle) -> void:
 
 func hour() -> float:
 	return fmod(minutes / 60.0, 24.0)
+
+
+## Unit vector (x, z) pointing to where the wind blows from (it is named for that;
+## -Z is north).
+func wind_from() -> Vector2:
+	var a := CloudLayer.DIRS.find(wind_dir) * TAU / 8.0
+	return Vector2(sin(a), -cos(a))
 
 
 ## Commuter-shaped demand: morning and evening peaks, quiet nights.
@@ -139,6 +158,15 @@ func clock_text(m: float = -1.0) -> String:
 
 func date_text() -> String:
 	return "May %d, Year 8" % day
+
+
+## Seasons since the game began (day 1 opens the first spring).
+func season() -> int:
+	return floori((day - 1) / float(SEASON_DAYS))
+
+
+func season_name() -> String:
+	return SEASONS[season() % SEASONS.size()]
 
 
 func temperature() -> int:

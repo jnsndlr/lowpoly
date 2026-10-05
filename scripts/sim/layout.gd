@@ -20,6 +20,18 @@ const FERRY_HALF := 15.0
 const DOCK_U := PIER_END + FERRY_HALF + 0.4  # ferry centre when docked
 const DECK_Y := LOT_Y
 
+# Marina frame, like a terminal's: origin where the pier meets the shore, +Z ("u")
+# out along the pier. The pier ends in a T-head; sailboats lie bow-in against its
+# seaward face, side by side, and back straight out to MARINA_BACKOUT_U to leave.
+const MARINA_PIER_END := 16.0
+const MARINA_HEAD_U := 17.0        # centre of the T-head float
+const MARINA_HEAD_HALF := 7.2      # its half length along v
+const MARINA_BERTHS := 4
+const MARINA_BERTH_SPACING := 3.0
+const MARINA_BERTH_U := 20.6       # moored hull centre (bow just off the float)
+const MARINA_BACKOUT_U := 29.0     # where a departing boat stops reversing
+const MARINA_APPROACH_U := 33.0    # where an arriving boat lines up for its berth
+
 
 ## Lateral lane positions grouped per slip (left → right), clear of the exit lane.
 static func lane_positions(half_width: float, slip_count: int) -> Array[PackedFloat32Array]:
