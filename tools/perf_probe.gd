@@ -3,7 +3,7 @@ extends SceneTree
 ## costs. GPU timings need Vulkan on macOS (Metal has no timestamp queries); a game
 ## running at the same time skews the numbers, so compare runs made back to back.
 ##   godot --path . --rendering-driver vulkan --resolution 3200x1920 --script tools/perf_probe.gd \
-##     -- --seed=9164 [--off=ssao,vfog,glow,shadow,shadow2,aa,msaa,water,clouds,backdrop,mtrees,scale75,census]
+##     -- --seed=9164 [--off=dof,ssao,vfog,glow,shadow,shadow2,aa,msaa,water,clouds,backdrop,mtrees,scale75,census]
 var main: Node
 var frames := 0
 var off := ""
@@ -27,6 +27,9 @@ func _apply() -> void:
 	for o in off.split(","):
 		match o:
 			"ssao": env.ssao_enabled = false
+			"dof":
+				main.cam_attr.dof_blur_near_enabled = false
+				main.cam_attr.dof_blur_far_enabled = false
 			"vfog": env.volumetric_fog_enabled = false
 			"glow": env.glow_enabled = false
 			"shadow": main.sun.shadow_enabled = false

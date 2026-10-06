@@ -8,7 +8,7 @@ extends Node3D
 ##   --orcas (start an orca visit now and follow it)
 ##   --vessel=cargo|sail|yacht|pilot|tug (follow a cargo ship, a sailboat under way, a
 ##     motor yacht, a pilot boat or a tug)
-##   --aa=msaa|smaa|none (anti-aliasing, to compare)
+##   --aa=msaa|smaa|none (anti-aliasing, to compare)  --dof=0 (no depth-of-field blur)
 
 static var map_seed := 0
 
@@ -24,6 +24,7 @@ var day_cycle: DayCycle
 var water_mat: ShaderMaterial
 var route_overlay: MeshInstance3D
 var orcas: Orcas
+var cam_attr: CameraAttributesPractical
 var _args := {}
 
 ## Frame caps: the sim is slow-paced, so 60 fps is plenty, and nobody is watching
@@ -56,6 +57,7 @@ func _ready() -> void:
 	rig.terrain = terrain
 	rig.bounds = map.half_size * 0.8
 	add_child(rig)
+	_setup_dof()
 	sim = Simulation.new()
 	sim.name = "Simulation"
 	add_child(sim)
@@ -168,6 +170,27 @@ func _process(_delta: float) -> void:
 	env.fog_depth_end = rig.distance * 4.0 + 700.0
 	RenderingServer.global_shader_parameter_set("fog_range", Vector2(env.fog_depth_begin, env.fog_depth_end))
 	env.volumetric_fog_length = clampf(rig.distance * 2.4, 250.0, 1600.0)
+	_update_dof()
+
+
+## Miniature-style depth of field: the point the camera looks at is sharp, the
+## foreground at the bottom of the screen and the far islands soften a little.
+func _setup_dof() -> void:
+	cam_attr = CameraAttributesPractical.new()
+	cam_attr.dof_blur_amount = 0.06
+	var on := str(_args.get("dof", "1")) != "0"
+	cam_attr.dof_blur_near_enabled = on
+	cam_attr.dof_blur_far_enabled = on
+	rig.camera.attributes = cam_attr
+
+
+func _update_dof() -> void:
+	# Focus on the orbit target; distances scale with zoom so the look holds at every height.
+	var d := rig.camera.global_position.distance_to(rig.position)
+	cam_attr.dof_blur_near_distance = d * 0.6
+	cam_attr.dof_blur_near_transition = d * 0.4
+	cam_attr.dof_blur_far_distance = d * 1.5
+	cam_attr.dof_blur_far_transition = d * 2.0
 
 
 # --- Debug / screenshot args ----------------------------------------------------------
