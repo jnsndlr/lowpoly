@@ -140,7 +140,9 @@ func _close_terminals(map: MapData) -> void:
 			u += 3.0
 
 
-## The pier and T-head (boats get to and from their berths on straight legs).
+## The pier, T-head and berths, and the water either side of them in under the
+## shore (boats get to and from their berths on straight legs, never round the
+## ends of the berths).
 func _close_marinas(map: MapData) -> void:
 	for m in map.marinas:
 		var u := -2.0
@@ -150,15 +152,15 @@ func _close_marinas(map: MapData) -> void:
 				var p := m.at(u, v)
 				var c := cell(Vector2(p.x, p.z))
 				large.set_point_solid(c)
-				if u <= Layout.MARINA_BERTH_U + 3.0 and absf(v) <= Layout.MARINA_HEAD_HALF + 2.0:
+				if u <= Layout.MARINA_BERTH_U + 4.0 and absf(v) <= Layout.MARINA_HEAD_HALF + 10.0:
 					small.set_point_solid(c)
 				v += 3.0
 			u += 3.0
 
 
-## The jetty and wharf, and (for ships) the lane off it the fishing boats use.
+## The jetty and wharf, and (for ships) the lane off it the boats based there use.
 func _close_quays(map: MapData) -> void:
-	for q in map.quays:
+	for q in map.wharves():
 		var u := -2.0
 		while u <= Layout.QUAY_LANE_U + 16.0:
 			var v := -Layout.QUAY_RUN - 10.0

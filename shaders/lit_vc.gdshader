@@ -23,10 +23,15 @@ uniform float lamp_blink_period = 4.0;
 
 // Which end of a ferry is the bow (+1: +Z), set per hull by NightLights.
 instance uniform float nav_flip = 0.0;
+// Stands in for the instance origin in the room key on anything that moves (set per
+// hull by Vessel), so its rooms don't change as it goes. 0: use the origin.
+instance uniform float room_seed = 0.0;
 
 varying vec3 world_pos;
 varying float local_z;
-varying vec3 room_key;
+// Flat: a whole face takes its first vertex's key (MeshBuilder starts both of a quad's
+// triangles there), so glass straddling a storey line doesn't hash per pixel.
+varying flat vec3 room_key;
 
 vec3 srgb_to_linear(vec3 c) {
 	return mix(pow((c + 0.055) / 1.055, vec3(2.4)), c / 12.92, lessThan(c, vec3(0.04045)));
@@ -41,9 +46,9 @@ float hash13(vec3 p) {
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	local_z = VERTEX.z;
-	// Instance origin, wall (normal) and storey: the same for a whole window. (Always-lit
-	// glass ignores it, since it changes every frame on anything that moves.)
-	room_key = MODEL_MATRIX[3].xyz + round(NORMAL * 2.0) * 17.0 + floor(VERTEX.y / 2.5) * 5.3;
+	// Instance origin (or room_seed), wall (normal) and storey: the same for a whole window.
+	vec3 origin = room_seed != 0.0 ? vec3(room_seed, room_seed * 1.7, room_seed * 2.3) : MODEL_MATRIX[3].xyz;
+	room_key = origin + round(NORMAL * 2.0) * 17.0 + floor(VERTEX.y / 2.5) * 5.3;
 }
 
 void fragment() {

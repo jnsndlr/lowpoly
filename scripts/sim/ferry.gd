@@ -367,6 +367,13 @@ func wants_to_move() -> bool:
 	return state == State.SAILING
 
 
+func waiting_on() -> Array[Vessel]:
+	var out := super()
+	if is_instance_valid(_waiting_for):
+		out.append(_waiting_for)
+	return out
+
+
 func ahead(d: float) -> Vector2:
 	# Docked, `traveled` still counts the last crossing but at_a has flipped.
 	if state != State.SAILING:

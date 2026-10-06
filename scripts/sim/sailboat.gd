@@ -1,24 +1,22 @@
 class_name Sailboat
-extends HelmVessel
+extends MarinaBoat
 ## A small sailboat that lies at a marina berth for a while, then sails to a free
 ## berth elsewhere (now and then out for a day sail and back home). Only leaves in
 ## daylight.
 ##
-## In and out of the marina it motors with its sails down along set legs: backing
-## out of the berth, and from off the marina in to it. Those manoeuvres take the
-## marina's lock (MarineTraffic.try_lock); an arriving boat holds station off the
-## marina (MarineTraffic.wait_spot), head to wind under engine, until it gets it. Out on open water it hoists sail and a
+## In and out of the marina it motors with its sails down (see MarinaBoat); an
+## arriving boat holds station off the marina head to wind under engine until it
+## is its turn to berth. Out on open water it hoists sail and a
 ## Helm takes it there: it sails by the wind (fastest on a reach, unable to point
 ## closer than NO_GO to it, so it beats upwind in tacks), keeps off the land,
 ## steers round wildlife, and keeps clear of other vessels by the rules of the
-## road: ferries and ships, anything manoeuvring in or out of its berth, a
-## fishing boat at work, and other sailboats when it is on port tack, to
-## windward, or overtaking.
+## road (HelmVessel.helm_role): ferries and ships and those working with them,
+## anything manoeuvring in or out of its berth, a fishing boat at work, and other
+## sailboats when it is on port tack, to windward, or overtaking.
 
 enum State { MOORED, LEAVING, SAILING, WAITING, ARRIVING }
 
 const COAST := 0.18          # slowing with no drive from the sails
-const REVERSE_SPEED := 0.7
 const DWELL := Vector2(60.0, 260.0)   # game minutes moored between trips
 const LEAVE_HOURS := Vector2(6.5, 19.5)
 const GOAL_R := 14.0
@@ -31,22 +29,11 @@ const NO_GO := 0.7
 const CLOSE_HAULED := 0.78
 const POLAR := [[0.7, 0.55], [0.8, 0.7], [1.05, 0.88], [1.57, 1.0], [2.3, 1.02], [2.7, 0.92], [PI, 0.78]]
 const MIN_TACK := 8.0
-# The hull length the marina's berths are laid out for (Layout.MARINA_BERTH_U);
-# longer boats lie further out.
-const BERTH_HALF_LENGTH := 1.8
 
 var state := State.MOORED
-var marina: MapData.Marina     # where it is moored, or where it last left from
-var berth := 0
-var dest: MapData.Marina
-var dest_berth := 0
-var path: NavPath              # the leg it is motoring along (backing out, or in to its berth)
-var s := 0.0
 var dwell := 0.0
-var trips := 0
 var motoring := true
 var _goals: Array[Vector2] = []
-var _hull: MeshInstance3D
 var _main: MeshInstance3D
 var _jib: MeshInstance3D
 var _tack := 0                 # which side of the wind it is beating on (+1 / -1), 0 if not beating
@@ -54,8 +41,6 @@ var _tack_time := 0.0
 var _leg_max := 60.0
 var _sheet := 0.0              # how far the sails are swung out (signed: to port is +)
 var _heel := 0.0
-var _leaving: MapData.Marina = null    # holds this marina's lock while getting out
-var _arriving := false                 # holds the destination's lock
 
 
 func setup(t: MarineTraffic, nm: String, sp: VesselSpec, m: MapData.Marina, b: int, first_dwell: float) -> void:
@@ -99,30 +84,11 @@ func _process(delta: float) -> void:
 			speed / cruise if under_way else 0.0, under_way and speed > 0.1)
 
 
-## A point on berth `b`'s line at `u` out from the shore, for this boat's centre
-## (a longer boat lies, and backs out, a little further out).
-func _berth_pos(m: MapData.Marina, b: int, u: float) -> Vector2:
-	var p := m.at(u + spec.half_length - BERTH_HALF_LENGTH, m.berth_v(b))
-	return Vector2(p.x, p.z)
-
-
 func _moor() -> void:
-	_let_go()
 	state = State.MOORED
-	free_nav = false
-	speed = 0.0
-	path = null
-	helm = null
-	var d := -marina.dir
-	_yaw = atan2(d.x, d.z)
+	_make_fast()
 	_set_sails(false)
 	_pose_moored()
-
-
-func _pose_moored() -> void:
-	var p := _berth_pos(marina, berth, Layout.MARINA_BERTH_U)
-	position = Vector3(p.x, sin(_bob * 1.4) * 0.04, p.y)
-	basis = Basis(Vector3.UP, _yaw + sin(_bob * 0.37) * 0.03) * Basis(Vector3.BACK, sin(_bob * 1.1) * 0.025)
 
 
 func _set_sails(up: bool) -> void:
@@ -165,11 +131,8 @@ func depart(progress := 0.0) -> void:
 		_start_sailing(true)
 		speed = helm_speed(_yaw)
 	else:
-		_leaving = marina
 		state = State.LEAVING
-		path = NavPath.new(PackedVector2Array([_berth_pos(marina, berth, Layout.MARINA_BERTH_U),
-			_berth_pos(marina, berth, Layout.MARINA_BACKOUT_U)]))
-		s = 0.0
+		_start_backing_out()
 
 
 ## Where it is bound: (on a day sail, somewhere out on open water first, then)
@@ -221,18 +184,21 @@ func _place_part_way(goals: Array[Vector2], progress: float) -> bool:
 
 # --- In and out of the marina, under engine ----------------------------------------
 
-func _back_out(delta: float) -> void:
-	var left := path.length - s
-	var target := minf(REVERSE_SPEED, 0.2 + sqrt(2.0 * 0.4 * left))
-	target = minf(target, yield_speed())
-	speed = minf(target, speed + spec.accel * delta)
-	s = minf(s + speed * delta, path.length)
-	var p := path.sample(s)
-	position = Vector3(p.x, sin(_bob * 1.6) * 0.05, p.y)
-	_pose(delta)
-	if path.length - s < 0.05:
-		path = null
-		_start_sailing(false)
+func _moored() -> bool:
+	return state == State.MOORED
+
+
+func _waiting_in() -> bool:
+	return state == State.WAITING
+
+
+func _backed_out() -> void:
+	_start_sailing(false)
+
+
+func _berthed() -> void:
+	dwell = traffic.rng.randf_range(DWELL.x, DWELL.y)
+	_moor()
 
 
 func _start_sailing(sails_up: bool) -> void:
@@ -244,42 +210,10 @@ func _start_sailing(sails_up: bool) -> void:
 	helm.set_goal(_goals[0])
 
 
-func _berth_in(delta: float) -> void:
-	var left := path.length - s
-	var target := minf(spec.motor_speed * 0.6, 0.3 + sqrt(2.0 * 0.3 * left))
-	target = minf(target, yield_speed())
-	speed = minf(target, speed + spec.accel * delta)
-	s = minf(s + speed * delta, path.length)
-	var t := path.tangent(s)
-	_yaw = rotate_toward(_yaw, atan2(t.x, t.y), spec.motor_turn * delta)
-	var p := path.sample(s)
-	position = Vector3(p.x, sin(_bob * 1.6) * 0.05, p.y)
-	_pose(delta)
-	if path.length - s < 0.02:
-		traffic.unlock(dest, self)
-		_arriving = false
-		marina = dest
-		berth = dest_berth
-		trips += 1
-		dwell = traffic.rng.randf_range(DWELL.x, DWELL.y)
-		_moor()
-
-
-## From where it is to the approach point, then straight in to the berth.
-func _plan_berthing() -> NavPath:
-	var to := _berth_pos(dest, dest_berth, Layout.MARINA_APPROACH_U)
-	var main := traffic.nav.find_path(pos2(), to, false)
-	if main.is_empty():
-		main = PackedVector2Array([pos2(), to])
-	main = traffic.nav.finish(main, 0.0, 6.0, 2, hull_radius + 1.0)
-	main.append(_berth_pos(dest, dest_berth, Layout.MARINA_BERTH_U))
-	return NavPath.new(main)
-
-
 # --- Out on the water ---------------------------------------------------------------
 
 func _navigate(delta: float) -> void:
-	if _leaving and pos2().distance_to(_berth_pos(_leaving, berth, Layout.MARINA_BACKOUT_U)) > CLEAR_OF_MARINA:
+	if _clear_of_marina(CLEAR_OF_MARINA):
 		_let_go()
 		_set_sails(true)
 	var final := _goals.size() == 1
@@ -291,7 +225,6 @@ func _navigate(delta: float) -> void:
 				_goals.pop_front()
 				helm.set_goal(_goals[0])
 			elif traffic.try_lock(dest, self):
-				_arriving = true
 				_begin_berthing()
 				return
 			else:
@@ -299,7 +232,6 @@ func _navigate(delta: float) -> void:
 				state = State.WAITING
 				traffic.queue_for(dest, self)
 	if state == State.WAITING and traffic.try_lock(dest, self):
-		_arriving = true
 		_begin_berthing()
 		return
 	helm.update(delta)
@@ -318,21 +250,10 @@ func _navigate(delta: float) -> void:
 	_pose(delta)
 
 
-## Lets go of the marina it is leaving.
-func _let_go() -> void:
-	if _leaving:
-		traffic.unlock(_leaving, self)
-		_leaving = null
-
-
 func _begin_berthing() -> void:
-	_let_go()
 	state = State.ARRIVING
-	free_nav = false
 	_set_sails(false)
-	helm = null
-	path = _plan_berthing()
-	s = 0.0
+	_start_berthing()
 
 
 ## Keeps track of which tack it is beating on, and asks for a tack when one leg
@@ -428,57 +349,29 @@ func helm_courses(bearing: float) -> Array:
 	return [[wy + side * CLOSE_HAULED, 0.0], [wy - side * CLOSE_HAULED, other_cost]]
 
 
-## The rules of the road, simplified.
-func helm_role(o: Variant) -> String:
-	if o is Wildlife.Visit:
-		return "Keeping clear of the " + (o as Wildlife.Visit).species.plural.to_lower()
-	if o is Sailboat:
-		var b := o as Sailboat
-		match b.state:
-			State.MOORED:
-				# Tied up in its berth: just don't hit it.
-				return ""
-			State.LEAVING, State.ARRIVING:
-				return "Giving way to %s, manoeuvring" % b.vessel_name
-		var me_sail := not motoring
-		var them_sail := not b.motoring
-		if me_sail != them_sail:
-			# Power gives way to sail.
-			return "" if me_sail else "Giving way to %s, under sail" % b.vessel_name
-		# Overtaking: keep clear of the boat ahead.
-		var rel := pos2() - b.pos2()
-		var bf := b.heading2()
-		if rel.dot(bf) < -rel.length() * 0.38 and speed > b.speed + 0.1:
-			return "Overtaking %s" % b.vessel_name
-		if not me_sail:
-			# Two under engine: keep to starboard of each other; the one with the
-			# other on its starboard side gives way.
-			var right := Vector2(-cos(_yaw), sin(_yaw))
-			return "Giving way to " + b.vessel_name if (b.pos2() - pos2()).dot(right) > 0.0 else ""
-		var mine := _tack_side()
-		var theirs := b._tack_side()
-		if mine != theirs:
-			return "Giving way to %s on starboard tack" % b.vessel_name if mine < 0 else ""
-		var w := traffic.sim.wind_from()
-		if pos2().dot(w) > b.pos2().dot(w):
-			return "Giving way to %s to leeward" % b.vessel_name
-		return ""
-	if o is FishingBoat:
-		var f := o as FishingBoat
-		if not f.wants_to_move():
-			return ""
-		if f.manoeuvring():
-			return "Giving way to %s, manoeuvring" % f.vessel_name
-		if f.fishing():
-			return "Giving way to %s, fishing" % f.vessel_name
-		if not motoring:
-			# Power gives way to sail.
-			return ""
-		var right := Vector2(-cos(_yaw), sin(_yaw))
-		return "Giving way to " + f.vessel_name if (f.pos2() - pos2()).dot(right) > 0.0 else ""
-	if o is Vessel:
-		return "Giving way to " + (o as Vessel).vessel_name
-	return "Keeping clear"
+func road() -> Road:
+	match state:
+		State.MOORED:
+			return Road.MOORED
+		State.LEAVING, State.ARRIVING:
+			return Road.MANOEUVRING
+	return Road.POWER if motoring else Road.SAIL
+
+
+## Two sailboats under sail: one on port tack keeps clear of one on starboard
+## tack; on the same tack, the one to windward keeps clear.
+func _same_kind(o: Vessel) -> String:
+	if motoring or not (o is Sailboat):
+		return _crossing(o)
+	var b := o as Sailboat
+	var mine := _tack_side()
+	var theirs := b._tack_side()
+	if mine != theirs:
+		return "Giving way to %s on starboard tack" % b.vessel_name if mine < 0 else ""
+	var w := traffic.sim.wind_from()
+	if pos2().dot(w) > b.pos2().dot(w):
+		return "Giving way to %s to leeward" % b.vessel_name
+	return ""
 
 
 ## +1 on starboard tack (wind over the starboard side), -1 on port tack.
@@ -495,34 +388,6 @@ func wake_hull() -> Vector4:
 	if motoring:
 		h.z = maxf(h.z, 0.55)
 	return h
-
-
-func waits_for(v: Vessel) -> bool:
-	return blocker == v or (state == State.WAITING and traffic.lock_holder(dest) == v)
-
-
-func wants_to_move() -> bool:
-	return state != State.MOORED
-
-
-func ahead(d: float) -> Vector2:
-	if path != null:
-		return path.sample(s + d)
-	if state == State.MOORED:
-		return pos2()
-	return pos2() + Vector2(sin(_yaw), cos(_yaw)) * d
-
-
-func path_left() -> float:
-	if path != null:
-		return path.length - s
-	if helm != null:
-		return helm.distance_left() + 10.0
-	return 0.0
-
-
-func marina_name(m: MapData.Marina) -> String:
-	return traffic.sim.map.islands[m.island].name + " Marina"
 
 
 func status_text() -> String:

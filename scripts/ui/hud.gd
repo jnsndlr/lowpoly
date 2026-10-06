@@ -21,7 +21,7 @@ var route_overlay: Node3D
 var routes_forced := false
 var selected_island: MapData.Island
 var selected_ferry: Ferry
-var selected_vessel: Vessel   # a sailboat, fishing boat or cargo ship
+var selected_vessel: Vessel   # anything afloat but a ferry
 
 var root: Control
 var font: SystemFont
@@ -331,7 +331,7 @@ func _on_ground_clicked(screen_pos: Vector2) -> void:
 			continue
 		var d := cam.unproject_position(wp).distance_to(screen_pos)
 		# Small boats only when actually clicked on, so they don't steal ferry clicks.
-		if v is Sailboat:
+		if v.spec and v.spec.half_length < 3.5:
 			d *= 2.0
 		if d < best_d:
 			best_d = d
@@ -385,13 +385,14 @@ func select_ferry(f: Ferry) -> void:
 	_refresh_panels()
 
 
-## A sailboat, fishing boat or cargo ship: shows its panel and follows it.
+## Anything afloat but a ferry: shows its panel and follows it, from closer in
+## the smaller it is.
 func select_vessel(v: Vessel) -> void:
 	selected_vessel = v
 	selected_island = null
 	selected_ferry = null
 	rig.follow = v
-	var near := 60.0 if v is Sailboat else (90.0 if v is FishingBoat else 140.0)
+	var near := clampf(40.0 + v.spec.half_length * 5.0, 55.0, 140.0) if v.spec else 140.0
 	if rig.target_dist > near * 1.6:
 		rig.target_dist = near
 	_refresh_panels()
@@ -521,14 +522,32 @@ func _refresh_panels() -> void:
 		if v is Sailboat:
 			_info_sub.text = "%s · out of %s" % [v.type_text(), (v as Sailboat).marina_name((v as Sailboat).marina)]
 			rows.append(["Passages", str((v as Sailboat).trips)])
+		elif v is MotorYacht:
+			var y := v as MotorYacht
+			_info_sub.text = "%s · out of %s" % [v.type_text(), y.marina_name(y.marina)]
+			rows.append(["Outings", str(y.trips)])
 		elif v is FishingBoat:
 			var f := v as FishingBoat
 			_info_sub.text = "%s · out of %s" % [v.type_text(), f.quay_name()]
 			rows.append(["Hold", "%d%% full" % roundi(f.fish_hold * 100.0)])
 			rows.append(["Trips", str(f.trips)])
+		elif v is PilotBoat:
+			var pb := v as PilotBoat
+			_info_sub.text = "%s · out of %s" % [v.type_text(), pb.wharf_name()]
+			rows.append(["Ships met", str(pb.jobs)])
+		elif v is Tug:
+			var tg := v as Tug
+			_info_sub.text = "%s · out of %s" % [v.type_text(), tg.wharf_name()]
+			rows.append(["Escorts", str(tg.jobs)])
 		else:
 			_info_sub.text = "%s · transiting" % v.type_text()
 			rows.append(["Distance to go", "%.1f km" % (v.path_left() / 1000.0)])
+			if v is CargoShip:
+				var cs := v as CargoShip
+				rows.append(["Pilot", cs.pilot_text()])
+				if cs.needs_escort():
+					var esc := cs.escort.vessel_name if is_instance_valid(cs.escort) else ("Escorted" if cs.escorted else "Awaiting a tug")
+					rows.append(["Escort", esc])
 		_set_rows(rows)
 		_info_button.text = "Stop following" if rig.follow == v else "Follow"
 	elif selected_island:
@@ -886,12 +905,14 @@ func _draw_minimap() -> void:
 	for v in sim.marine.vessels:
 		if v is Ferry:
 			continue
-		var sail := v is Sailboat
-		if sail and (v as Sailboat).state == Sailboat.State.MOORED and v != selected_vessel:
+		# Small craft lying at a berth or at anchor are left off.
+		var small := v.spec != null and v.spec.half_length < 3.5
+		if small and not v.wants_to_move() and v != selected_vessel:
 			continue
 		var at := _to_minimap(v.global_position)
-		var vc := ACCENT if v == selected_vessel else (Color(0.85, 0.9, 0.95, 0.8) if sail else Color(0.95, 0.6, 0.35))
-		o.draw_circle(at, 1.5 if sail else 3.0, vc)
+		var vc := ACCENT if v == selected_vessel else (Color(0.85, 0.9, 0.95, 0.8) if small else Color(0.95, 0.6, 0.35))
+		var r := 1.5 if small else (2.2 if v.spec and v.spec.half_length < 12.0 else 3.0)
+		o.draw_circle(at, r, vc)
 	for f in sim.ferries:
 		var col := ACCENT if f == selected_ferry else Color(1, 1, 1)
 		o.draw_circle(_to_minimap(f.global_position), 3.5, Color(0, 0, 0, 0.5))

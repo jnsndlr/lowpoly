@@ -1,6 +1,6 @@
 class_name Vessel
 extends Node3D
-## Anything afloat that gets under way: ferries, sailboats and cargo ships. Each hull
+## Anything afloat that gets under way: ferries, ships and small craft. Each hull
 ## is a capsule on the water plane (a segment of ±half_seg along the heading,
 ## widened by hull_radius). Every frame MarineTraffic looks along each moving
 ## vessel's path and sets `clear`, how far its centre may still go before it would
@@ -8,6 +8,12 @@ extends Node3D
 ## vessel then keeps its speed low enough to stop within it. A vessel steering its
 ## own way (free_nav) keeps clear of others' paths itself, so for it this is only
 ## the last-resort check against touching another hull.
+
+## What it is doing as far as the rules of the road go (see HelmVessel.helm_role):
+## lying at a berth or anchor, manoeuvring in or out of one, restricted in how it
+## can manoeuvre (working with a ship), fishing, under sail, under power, or a
+## ship (ferries and cargo ships, which everything smaller keeps clear of).
+enum Road { MOORED, MANOEUVRING, RESTRICTED, FISHING, SAIL, POWER, SHIP }
 
 var vessel_name := ""
 var spec: VesselSpec      # its type (ferries don't have one)
@@ -22,6 +28,7 @@ var hold := INF           # how far it means to go for now (short of a channel o
 var lights: MeshInstance3D
 var wake: WakeTrail       # its trail on the water, if it leaves one
 var free_nav := false     # steering its own way (a Helm), not along a fixed path
+var consort: Vessel = null   # the ship it is working alongside, if any (their hulls don't count against each other)
 
 # Set by MarineTraffic each frame.
 var clear := INF
@@ -79,9 +86,52 @@ func yield_speed() -> float:
 	return sqrt(2.0 * yield_decel * maxf(clear - 0.5, 0.0))
 
 
-## Whether it is held up waiting on `v` (its hull or path, or something `v` holds).
+## Whether it is held up waiting on `v`, directly (its hull or path, or something
+## `v` holds) or through others that are themselves waiting, in a ring of any
+## size up to a handful.
 func waits_for(v: Vessel) -> bool:
-	return blocker == v
+	var seen := {self: true}
+	var frontier: Array[Vessel] = [self]
+	for depth in 6:
+		var next: Array[Vessel] = []
+		for w in frontier:
+			for u in w.waiting_on():
+				if u == v:
+					return true
+				if not seen.has(u):
+					seen[u] = true
+					next.append(u)
+		if next.is_empty():
+			return false
+		frontier = next
+	return false
+
+
+## The vessels it is held up by directly.
+func waiting_on() -> Array[Vessel]:
+	var out: Array[Vessel] = []
+	if is_instance_valid(blocker):
+		out.append(blocker)
+	return out
+
+
+## Whether `a` and `b` are working together alongside (their hulls may lie close).
+static func paired(a: Vessel, b: Vessel) -> bool:
+	return a.consort == b or b.consort == a
+
+
+func road() -> Road:
+	return Road.SHIP
+
+
+## Why others must keep out of its way when its road() is RESTRICTED.
+func restricted_text() -> String:
+	return ""
+
+
+## Stopped on purpose though it wants to move (hauling a net, standing by).
+func resting() -> bool:
+	return false
 
 
 ## Its hull and wake as the water shader draws them: half beam, length, how hard
@@ -157,6 +207,8 @@ func apply_spec(s: VesselSpec, variant := 0) -> MeshInstance3D:
 	var hull := MeshInstance3D.new()
 	hull.mesh = s.model.call(variant)
 	hull.scale = Vector3.ONE * s.scale
+	# Fixes which of its rooms are lit (lit_vc.gdshader); the origin would change every frame.
+	hull.set_instance_shader_parameter("room_seed", randf_range(1.0, 1000.0))
 	add_child(hull)
 	lights = MeshInstance3D.new()
 	lights.mesh = s.lights.call(variant)

@@ -25,6 +25,21 @@ static func fishing_boats() -> Array[VesselSpec]:
 	return [_trawler()]
 
 
+static func motor_yachts() -> Array[VesselSpec]:
+	var flybridge := _motor_yacht()
+	var express := flybridge.scaled(0.85, "express", "Express cruiser")
+	express.weight = 0.6
+	return [flybridge, express]
+
+
+static func pilot_boats() -> Array[VesselSpec]:
+	return [_pilot_boat()]
+
+
+static func tugs() -> Array[VesselSpec]:
+	return [_tug()]
+
+
 ## One of `types`, picked by weight.
 static func pick(types: Array[VesselSpec], rng: RandomNumberGenerator) -> VesselSpec:
 	var total := 0.0
@@ -143,5 +158,93 @@ static func _trawler() -> VesselSpec:
 	s.shape = Vector4(5.5, 0.15, 1.5, 0.85)
 	s.model = func(v: int) -> ArrayMesh: return Models.trawler(v)
 	s.lights = func(_v: int) -> ArrayMesh: return Models.trawler_lights()
+	s.variants = 3
+	return s
+
+
+## A flybridge motor yacht of the sailboats' scale. `cruise` is its speed on the
+## plane; `motor_speed` its no-wake speed, in harbour and among anchored boats.
+static func _motor_yacht() -> VesselSpec:
+	var s := VesselSpec.new()
+	s.id = "flybridge"
+	s.kind = "Motor yacht"
+	s.type_name = "Flybridge cruiser"
+	s.half_length = 2.75
+	s.half_beam = 0.9
+	s.pad = 0.3
+	s.draft = 1.0
+	s.cruise = 6.2
+	s.motor_speed = 1.5
+	s.accel = 0.5
+	s.decel = 0.8
+	s.turn = 0.5
+	s.motor_turn = 0.75
+	s.wake_spacing = 2.4
+	s.wake_life = 18.0
+	s.wake_crumbs = 44
+	# (MotorYacht.wake_hull varies these with how it sits in the water.)
+	s.wash = 0.8
+	s.kelvin = 0.5
+	# A fine entry over its forward 1.6 m, and a broad transom.
+	s.shape = Vector4(1.6, 0.0, 0.3, 0.92)
+	s.model = func(v: int) -> ArrayMesh: return Models.motor_yacht(v)
+	s.lights = func(_v: int) -> ArrayMesh: return Models.motor_yacht_lights()
+	s.variants = 3
+	return s
+
+
+## A fast, heavily fendered launch that runs the pilots out to the ships.
+static func _pilot_boat() -> VesselSpec:
+	var s := VesselSpec.new()
+	s.id = "pilot"
+	s.kind = "Pilot boat"
+	s.type_name = "Pilot launch"
+	s.half_length = 4.5
+	s.half_beam = 1.5
+	s.pad = 0.4
+	s.draft = 1.4
+	s.cruise = 7.5
+	s.motor_speed = 3.0
+	s.accel = 0.6
+	s.decel = 0.9
+	s.turn = 0.35
+	s.motor_turn = 0.35
+	s.wake_spacing = 3.5
+	s.wake_life = 20.0
+	s.wake_crumbs = 44
+	s.wash = 1.0
+	s.kelvin = 0.7
+	s.shape = Vector4(2.5, 0.0, 0.8, 0.9)
+	s.model = func(v: int) -> ArrayMesh: return Models.pilot_boat(v)
+	s.lights = func(_v: int) -> ArrayMesh: return Models.pilot_boat_lights()
+	s.variants = 3
+	return s
+
+
+## An escort tug: quick enough to keep up with a laden tanker and catch one up.
+static func _tug() -> VesselSpec:
+	var s := VesselSpec.new()
+	s.id = "tug"
+	s.kind = "Tug"
+	s.type_name = "Escort tug"
+	s.half_length = 7.0
+	s.half_beam = 2.5
+	s.pad = 0.4
+	s.draft = 2.4
+	s.cruise = 5.6
+	s.motor_speed = 2.6
+	s.accel = 0.3
+	s.decel = 0.5
+	s.turn = 0.3
+	s.motor_turn = 0.3
+	s.wake_spacing = 5.0
+	s.wake_life = 26.0
+	s.wake_crumbs = 44
+	# Twin big props: a heavy wash for her length.
+	s.wash = 1.1
+	s.kelvin = 0.75
+	s.shape = Vector4(3.0, 0.1, 1.2, 0.85)
+	s.model = func(v: int) -> ArrayMesh: return Models.tug(v)
+	s.lights = func(_v: int) -> ArrayMesh: return Models.tug_lights()
 	s.variants = 3
 	return s

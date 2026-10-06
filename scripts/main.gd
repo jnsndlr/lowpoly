@@ -6,7 +6,8 @@ extends Node3D
 ##   --follow=K (Kth ferry)  --time=H (pin time of day, e.g. 19.5)  --shot=path.png  --shot-delay=seconds
 ##   --bench=seconds (print frame/GPU time and render stats, then quit)
 ##   --orcas (start an orca visit now and follow it)
-##   --vessel=cargo|sail (follow a cargo ship, or a sailboat under way)
+##   --vessel=cargo|sail|yacht|pilot|tug (follow a cargo ship, a sailboat under way, a
+##     motor yacht, a pilot boat or a tug)
 
 static var map_seed := 0
 
@@ -190,7 +191,8 @@ func _apply_debug_args() -> void:
 	if _args.has("vessel"):
 		var want := str(_args["vessel"])
 		for v in sim.marine.vessels:
-			if (want == "cargo" and v is CargoShip) or (want == "sail" and v is Sailboat and v.wants_to_move()):
+			if (want == "cargo" and v is CargoShip) or (want == "sail" and v is Sailboat and v.wants_to_move()) \
+					or (want == "yacht" and v is MotorYacht) or (want == "pilot" and v is PilotBoat) or (want == "tug" and v is Tug):
 				hud.select_vessel(v)
 				rig.target_pos = v.global_position
 				rig.snap()

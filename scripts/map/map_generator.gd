@@ -32,6 +32,7 @@ func generate(map_seed: int) -> MapData:
 	terrain.finalize()
 	_place_marinas(map_seed)
 	_place_quays(map_seed)
+	_place_station(map_seed)
 	_flatten_terminals()
 	_name_islands()
 	_layout_towns()
@@ -553,7 +554,7 @@ func _place_quays(map_seed: int) -> void:
 
 ## [shore, dir] if a fish quay fits where the ray from the island's centre along
 ## `dir` meets the sea, else null.
-func _quay_site(isl: MapData.Island, n3: Vector3) -> Variant:
+func _quay_site(isl: MapData.Island, n3: Vector3, marina_gap := 60.0) -> Variant:
 	var c := Vector3(isl.center.x, 0.0, isl.center.y)
 	var shore := -1.0
 	var rr := 0.0
@@ -587,9 +588,9 @@ func _quay_site(isl: MapData.Island, n3: Vector3) -> Variant:
 		if o.has_terminal and (s3.distance_to(o.shore) < 60.0 or reach.distance_to(o.shore + o.dock_dir * 40.0) < 65.0):
 			return null
 	for m in map.marinas:
-		if s3.distance_to(m.shore) < 60.0 or reach.distance_to(m.at(Layout.MARINA_APPROACH_U, 0.0)) < 55.0:
+		if s3.distance_to(m.shore) < marina_gap or reach.distance_to(m.at(Layout.MARINA_APPROACH_U, 0.0)) < marina_gap - 5.0:
 			return null
-	for q in map.quays:
+	for q in map.wharves():
 		if s3.distance_to(q.shore) < 160.0:
 			return null
 	for u: float in [0.0, Layout.QUAY_LANE_U]:
@@ -600,6 +601,45 @@ func _quay_site(isl: MapData.Island, n3: Vector3) -> Variant:
 				if Vector2(rp.x - p.x, rp.z - p.z).length_squared() < 34.0 * 34.0:
 					return null
 	return [s3, n3]
+
+
+## The pilot station, where the pilot boats and tugs that meet the ships are
+## based: a wharf like a fish quay, on the island whose shore faces furthest out
+## towards the edges of the map (where the ships come in), if one has room. Its
+## own RNG, so the rest of the map stays the same for a given seed.
+func _place_station(map_seed: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = map_seed * 29 + 5
+	var best: Array = []
+	var best_score := -INF
+	# (Its boats come and go a lot: well away from the marinas, if it can be.)
+	for gap: float in [130.0, 90.0, 60.0]:
+		if not best.is_empty():
+			break
+		for isl in _main_islands():
+			var start := r.randf() * TAU
+			for k in 36:
+				var ang := start + TAU * k / 36.0
+				var site: Variant = _quay_site(isl, Vector3(cos(ang), 0.0, sin(ang)), gap)
+				if site == null:
+					continue
+				var reach: Vector3 = site[0] + site[1] * Layout.QUAY_LANE_U
+				# Out towards an edge, looking out to sea.
+				var out := maxf(absf(reach.x), absf(reach.z))
+				var score := out + 120.0 * Vector2(site[1].x, site[1].z).dot(Vector2(reach.x, reach.z).normalized()) \
+						+ r.randf() * 40.0
+				if score > best_score:
+					best_score = score
+					best = [isl, site]
+	if best.is_empty():
+		return
+	var st := MapData.PilotStation.new()
+	st.id = map.stations.size()
+	st.island = best[0].id
+	st.shore = best[1][0]
+	st.dir = best[1][1]
+	st.side = 1.0 if r.randf() < 0.5 else -1.0
+	map.stations.append(st)
 
 
 func _flatten_terminals() -> void:

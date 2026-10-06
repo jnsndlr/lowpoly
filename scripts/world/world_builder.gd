@@ -604,21 +604,20 @@ func _build_marinas() -> void:
 			bu += 1.5
 
 
-## A timber jetty out to a wharf the fishing boats lie alongside (the boats
-## themselves are MarineTraffic's): bollards and tyre fenders along its face, a
-## fish shed and stacked totes on it, a hoist over the water, and floodlights for
-## landing the catch in the dark.
+## A timber jetty out to a wharf the boats lie alongside (the boats themselves
+## are MarineTraffic's): bollards and tyre fenders along its face, and
+## floodlights for working in the dark. A fish quay has a fish shed and stacked
+## totes on it and a hoist over the water; the pilot station its pilot house,
+## with a lookout and radar mast.
 func _build_quays() -> void:
 	var plank := Color(0.5, 0.42, 0.33)
 	var cap := Color(0.6, 0.6, 0.57)
 	var tyre := Color(0.1, 0.1, 0.11)
 	var steel := Color(0.35, 0.36, 0.38)
-	var shed_wall := Color(0.6, 0.24, 0.19)
-	var trim := Color(0.9, 0.89, 0.84)
-	var totes := [Color(0.18, 0.38, 0.66), Color(0.9, 0.48, 0.14), Color(0.86, 0.86, 0.82)]
 	var r := RandomNumberGenerator.new()
-	for q in map.quays:
-		r.seed = map.map_seed * 13 + q.id
+	for q in map.wharves():
+		var fish := q is MapData.FishQuay
+		r.seed = map.map_seed * 13 + q.id + (0 if fish else 7919)
 		var mb := MeshBuilder.new()
 		mb.xform = q.xform()
 		glows.xform = mb.xform
@@ -649,60 +648,21 @@ func _build_quays() -> void:
 			mb.box(Vector3(v, 0.3, face + 0.12), Vector3(0.75, 0.75, 0.26), tyre)
 			mb.box(Vector3(v, 0.3, face + 0.26), Vector3(0.4, 0.4, 0.04), Color(0.03, 0.03, 0.03))
 			v += 3.6 + r.randf() * 1.2
-		for b in Layout.QUAY_BERTHS:
-			for o: float in [-8.5, 0.0, 8.5]:
+		var spread := (Layout.QUAY_BERTH_SPACING if fish else Layout.STATION_BERTH_SPACING) * 0.37
+		for b in q.berths():
+			for o: float in [-spread, 0.0, spread]:
 				var bp := Vector3(q.berth_v(b) + o, deck + 0.09, face - 0.45)
 				mb.cylinder(bp, 0.17, 0.15, 0.4, 8, Color(0.16, 0.17, 0.18))
 				mb.cylinder(bp + Vector3(0, 0.4, 0), 0.24, 0.24, 0.07, 8, Color(0.16, 0.17, 0.18))
-		# The fish shed at one end, its big door onto the wharf.
-		var sv := -q.side * (hh - 8.0)
-		var sz := Vector3(11.0, 3.0, 4.6)
-		var sc := Vector3(sv, deck + sz.y * 0.5, back + sz.z * 0.5 + 0.3)
-		mb.box(sc, sz, shed_wall)
-		mb.box(sc + Vector3(0, -0.35, sz.z * 0.5 + 0.01), Vector3(3.2, 2.3, 0.04), shed_wall.darkened(0.45))
-		for wv: float in [-3.8, 3.8]:
-			mb.box(sc + Vector3(wv, 0.4, sz.z * 0.5 + 0.01), Vector3(1.0, 0.7, 0.04), Models.WINDOW)
-		mb.box(sc + Vector3(0, sz.y * 0.5 - 0.06, 0), Vector3(sz.x + 0.1, 0.12, sz.z + 0.1), trim)
-		var ry := deck + sz.y
-		var rx := sz.x * 0.5 + 0.25
-		var rz := sz.z * 0.5 + 0.35
-		var roof := Color(0.3, 0.31, 0.33)
-		var l0 := sc + Vector3(-rx, ry - sc.y, -rz)
-		var l1 := sc + Vector3(rx, ry - sc.y, -rz)
-		var f0 := sc + Vector3(-rx, ry - sc.y, rz)
-		var f1 := sc + Vector3(rx, ry - sc.y, rz)
-		var t0 := sc + Vector3(-rx, ry - sc.y + 1.5, 0)
-		var t1 := sc + Vector3(rx, ry - sc.y + 1.5, 0)
-		mb.quad(l0, t0, t1, l1, roof, Vector3(0, 1, -1))
-		mb.quad(f0, f1, t1, t0, roof, Vector3(0, 1, 1))
-		mb.quad(l0, l1, f1, f0, roof.darkened(0.4), Vector3.DOWN)
-		for e: float in [-1.0, 1.0]:
-			var ex := sc.x + e * sz.x * 0.5
-			mb.tri(Vector3(ex, ry, sc.z - sz.z * 0.5), Vector3(ex, ry, sc.z + sz.z * 0.5),
-				Vector3(ex, ry + 1.4, sc.z), shed_wall, Vector3(e, 0, 0))
-		_perch(mb.xform * Vector3(sc.x - rx + 0.6, ry + 1.5, sc.z), mb.xform * Vector3(sc.x + rx - 0.6, ry + 1.5, sc.z), 0.0, Seagulls.Kind.ROOF)
-		# Fish totes stacked about the wharf.
-		for k in 9:
-			var tv := r.randf_range(-hh + 3.0, hh - 3.0)
-			if absf(tv - sv) < sz.x * 0.5 + 1.5:
-				continue
-			var tu := r.randf_range(back + 1.0, face - 2.2)
-			var high := r.randi_range(1, 4)
-			var col: Color = totes[r.randi_range(0, totes.size() - 1)]
-			for t in high:
-				mb.box(Vector3(tv, deck + 0.3 + t * 0.55, tu), Vector3(1.2, 0.52, 0.8), col.darkened(r.randf() * 0.15))
-		# A hoist for landing the catch, its boom out over the berths.
-		var hv := q.side * 2.0
-		mb.box(Vector3(hv, deck + 2.6, face - 1.2), Vector3(0.35, 5.2, 0.35), Color(0.85, 0.72, 0.18))
-		var saved := mb.xform
-		mb.xform = saved * Transform3D(Basis(Vector3.RIGHT, -0.55), Vector3(hv, deck + 1.0, face - 1.2))
-		mb.box(Vector3(0, 0, 3.0), Vector3(0.24, 0.24, 6.4), Color(0.85, 0.72, 0.18))
-		mb.xform = saved
-		mb.box(Vector3(hv, deck + 2.8, face + 4.0), Vector3(0.03, 1.4, 0.03), Color(0.2, 0.2, 0.2))
-		var hook := mb.xform * Vector3(hv, deck + 5.2, face - 1.2)
-		_perch(hook, hook, 0.0, Seagulls.Kind.LAMP)
-		# Floodlights on poles, lighting the wharf and the boats alongside.
+		if fish:
+			_fish_quay_props(mb, q, r, deck, back, face, hh)
+		else:
+			_pilot_station_props(mb, q, r, deck, back, face, hh)
+		# Floodlights on poles, lighting the wharf and the boats alongside (at the
+		# pilot station, only at the end away from the pilot house).
 		for fv: float in [-hh + 4.0, hh - 4.0]:
+			if not fish and signf(fv) == -q.side:
+				continue
 			var pole := Vector3(fv, deck, back + 0.6)
 			mb.box(pole + Vector3(0, 3.5, 0), Vector3(0.2, 7.0, 0.2), steel)
 			mb.box(pole + Vector3(0, 7.0, 0.3), Vector3(0.9, 0.35, 0.5), Color(0.25, 0.26, 0.27))
@@ -713,7 +673,7 @@ func _build_quays() -> void:
 			_perch(top, top, 0.0, Seagulls.Kind.LAMP)
 		_perch(mb.xform * Vector3(-hh + 1.0, deck + 0.16, face - 0.35), mb.xform * Vector3(hh - 1.0, deck + 0.16, face - 0.35),
 			0.0, Seagulls.Kind.DOLPHIN)
-		_add_mesh(mb.commit(), map.islands[q.island].name + " Fish Quay")
+		_add_mesh(mb.commit(), q.title(map).capitalize())
 		# Keep trees and houses off the wharf and the jetty's landing.
 		var bu := -10.0
 		while bu < face:
@@ -723,6 +683,114 @@ func _build_quays() -> void:
 				_block(q.at(bu, bv), 1.0)
 				bv += 1.5
 			bu += 1.5
+
+
+## The fish shed at one end, its big door onto the wharf, totes stacked about,
+## and a hoist for landing the catch.
+func _fish_quay_props(mb: MeshBuilder, q: MapData.Wharf, r: RandomNumberGenerator, deck: float, back: float,
+		face: float, hh: float) -> void:
+	var shed_wall := Color(0.6, 0.24, 0.19)
+	var trim := Color(0.9, 0.89, 0.84)
+	var totes := [Color(0.18, 0.38, 0.66), Color(0.9, 0.48, 0.14), Color(0.86, 0.86, 0.82)]
+	# The fish shed at one end, its big door onto the wharf.
+	var sv := -q.side * (hh - 8.0)
+	var sz := Vector3(11.0, 3.0, 4.6)
+	var sc := Vector3(sv, deck + sz.y * 0.5, back + sz.z * 0.5 + 0.3)
+	mb.box(sc, sz, shed_wall)
+	mb.box(sc + Vector3(0, -0.35, sz.z * 0.5 + 0.01), Vector3(3.2, 2.3, 0.04), shed_wall.darkened(0.45))
+	for wv: float in [-3.8, 3.8]:
+		mb.box(sc + Vector3(wv, 0.4, sz.z * 0.5 + 0.01), Vector3(1.0, 0.7, 0.04), Models.WINDOW)
+	mb.box(sc + Vector3(0, sz.y * 0.5 - 0.06, 0), Vector3(sz.x + 0.1, 0.12, sz.z + 0.1), trim)
+	var ry := deck + sz.y
+	var rx := sz.x * 0.5 + 0.25
+	var rz := sz.z * 0.5 + 0.35
+	var roof := Color(0.3, 0.31, 0.33)
+	var l0 := sc + Vector3(-rx, ry - sc.y, -rz)
+	var l1 := sc + Vector3(rx, ry - sc.y, -rz)
+	var f0 := sc + Vector3(-rx, ry - sc.y, rz)
+	var f1 := sc + Vector3(rx, ry - sc.y, rz)
+	var t0 := sc + Vector3(-rx, ry - sc.y + 1.5, 0)
+	var t1 := sc + Vector3(rx, ry - sc.y + 1.5, 0)
+	mb.quad(l0, t0, t1, l1, roof, Vector3(0, 1, -1))
+	mb.quad(f0, f1, t1, t0, roof, Vector3(0, 1, 1))
+	mb.quad(l0, l1, f1, f0, roof.darkened(0.4), Vector3.DOWN)
+	for e: float in [-1.0, 1.0]:
+		var ex := sc.x + e * sz.x * 0.5
+		mb.tri(Vector3(ex, ry, sc.z - sz.z * 0.5), Vector3(ex, ry, sc.z + sz.z * 0.5),
+			Vector3(ex, ry + 1.4, sc.z), shed_wall, Vector3(e, 0, 0))
+	_perch(mb.xform * Vector3(sc.x - rx + 0.6, ry + 1.5, sc.z), mb.xform * Vector3(sc.x + rx - 0.6, ry + 1.5, sc.z), 0.0, Seagulls.Kind.ROOF)
+	# Fish totes stacked about the wharf.
+	for k in 9:
+		var tv := r.randf_range(-hh + 3.0, hh - 3.0)
+		if absf(tv - sv) < sz.x * 0.5 + 1.5:
+			continue
+		var tu := r.randf_range(back + 1.0, face - 2.2)
+		var high := r.randi_range(1, 4)
+		var col: Color = totes[r.randi_range(0, totes.size() - 1)]
+		for t in high:
+			mb.box(Vector3(tv, deck + 0.3 + t * 0.55, tu), Vector3(1.2, 0.52, 0.8), col.darkened(r.randf() * 0.15))
+	# A hoist for landing the catch, its boom out over the berths.
+	var hv := q.side * 2.0
+	mb.box(Vector3(hv, deck + 2.6, face - 1.2), Vector3(0.35, 5.2, 0.35), Color(0.85, 0.72, 0.18))
+	var saved := mb.xform
+	mb.xform = saved * Transform3D(Basis(Vector3.RIGHT, -0.55), Vector3(hv, deck + 1.0, face - 1.2))
+	mb.box(Vector3(0, 0, 3.0), Vector3(0.24, 0.24, 6.4), Color(0.85, 0.72, 0.18))
+	mb.xform = saved
+	mb.box(Vector3(hv, deck + 2.8, face + 4.0), Vector3(0.03, 1.4, 0.03), Color(0.2, 0.2, 0.2))
+	var hook := mb.xform * Vector3(hv, deck + 5.2, face - 1.2)
+	_perch(hook, hook, 0.0, Seagulls.Kind.LAMP)
+
+
+## The pilot house at one end of the wharf (where the pilots wait between ships
+## and the boats' crews keep watch), a lookout mast with the radar and a
+## windsock, a liferaft and lifebuoys.
+func _pilot_station_props(mb: MeshBuilder, q: MapData.Wharf, _r: RandomNumberGenerator, deck: float, back: float,
+		face: float, hh: float) -> void:
+	var wall := Color(0.92, 0.91, 0.87)
+	var band := Color(0.86, 0.33, 0.1)
+	var roof := Color(0.22, 0.24, 0.27)
+	var sv := -q.side * (hh - 7.0)
+	var sz := Vector3(9.0, 5.6, 4.8)
+	var sc := Vector3(sv, deck + sz.y * 0.5, back + sz.z * 0.5 + 0.3)
+	mb.box(sc, sz, wall)
+	# An orange band at the eaves and round the ground floor, windows all round,
+	# the upper floor's the watch room.
+	mb.box(sc + Vector3(0, sz.y * 0.5 - 0.3, 0), Vector3(sz.x + 0.06, 0.6, sz.z + 0.06), band)
+	mb.box(sc + Vector3(0, -sz.y * 0.5 + 0.25, 0), Vector3(sz.x + 0.06, 0.5, sz.z + 0.06), band.darkened(0.2))
+	mb.box(sc + Vector3(0, 1.2, 0), Vector3(sz.x + 0.04, 1.1, sz.z - 0.8), Models.WINDOW_LIT)
+	mb.box(sc + Vector3(0, 1.2, 0), Vector3(sz.x - 0.8, 1.1, sz.z + 0.04), Models.WINDOW_LIT)
+	for wv: float in [-2.6, 2.6]:
+		mb.box(sc + Vector3(wv, -1.2, sz.z * 0.5 + 0.01), Vector3(1.4, 0.9, 0.04), Models.WINDOW)
+	mb.box(sc + Vector3(0, -1.75, sz.z * 0.5 + 0.01), Vector3(1.1, 2.1, 0.04), band.darkened(0.45))
+	# A flat roof with a rail, the mast on it.
+	var ry := deck + sz.y
+	mb.box(Vector3(sc.x, ry + 0.08, sc.z), Vector3(sz.x + 0.5, 0.16, sz.z + 0.5), roof)
+	for e: float in [-1.0, 1.0]:
+		mb.box(Vector3(sc.x, ry + 0.6, sc.z + e * (sz.z * 0.5 + 0.2)), Vector3(sz.x + 0.4, 0.06, 0.06), wall)
+		mb.box(Vector3(sc.x + e * (sz.x * 0.5 + 0.2), ry + 0.6, sc.z), Vector3(0.06, 0.06, sz.z + 0.4), wall)
+	var mast := Vector3(sc.x + q.side * 2.5, ry, sc.z)
+	mb.box(mast + Vector3(0, 3.0, 0), Vector3(0.2, 6.0, 0.2), wall)
+	mb.box(mast + Vector3(0, 4.6, 0), Vector3(1.6, 0.08, 0.08), wall)
+	mb.box(mast + Vector3(0, 5.3, 0), Vector3(0.3, 0.3, 0.3), roof)
+	mb.box(mast + Vector3(0, 5.55, 0), Vector3(2.4, 0.12, 0.35), wall)
+	Models.add_lantern(mb, mast + Vector3(0, 6.0, 0), GlowBuilder.RED, 0.9)
+	glows.glow(Models.lantern_glow_at(mast + Vector3(0, 6.0, 0), 0.9), GlowBuilder.RED, 0.16, 5.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+	# The windsock, streaming off the yard.
+	var sock := mast + Vector3(0.8, 4.6, 0)
+	mb.box(sock + Vector3(0.45, -0.1, 0), Vector3(0.9, 0.3, 0.3), band)
+	mb.box(sock + Vector3(1.1, -0.18, 0), Vector3(0.5, 0.2, 0.2), wall)
+	var top := mb.xform * (mast + Vector3(0, 6.4, 0))
+	_perch(top, top, 0.0, Seagulls.Kind.LAMP)
+	_perch(mb.xform * Vector3(sc.x - sz.x * 0.5 + 0.5, ry + 0.2, sc.z), mb.xform * Vector3(sc.x + sz.x * 0.5 - 0.5, ry + 0.2, sc.z),
+		0.0, Seagulls.Kind.ROOF)
+	# A liferaft canister in its cradle and lifebuoys on posts along the face.
+	var lr := Vector3(-sv * 0.35, deck + 0.4, back + 1.4)
+	mb.box(lr, Vector3(1.6, 0.5, 0.9), Color(0.3, 0.32, 0.34))
+	mb.cylinder(lr + Vector3(0, 0.25, 0), 0.4, 0.4, 0.5, 8, Color(0.95, 0.95, 0.93))
+	for lv: float in [-hh * 0.5, hh * 0.5]:
+		mb.box(Vector3(lv, deck + 0.6, face - 1.0), Vector3(0.12, 1.2, 0.12), Color(0.2, 0.2, 0.22))
+		mb.box(Vector3(lv, deck + 1.0, face - 0.92), Vector3(0.7, 0.7, 0.1), band)
+		mb.box(Vector3(lv, deck + 1.0, face - 0.9), Vector3(0.35, 0.35, 0.12), Color(0.2, 0.2, 0.22))
 
 
 func _build_route_overlay() -> void:

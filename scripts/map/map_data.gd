@@ -68,6 +68,10 @@ class Harbour:
 	func berths() -> int:
 		return 0
 
+	## Berth `i`'s place along v.
+	func berth_v(_i: int) -> float:
+		return 0.0
+
 	## Where a boat lines up to come in (u, v).
 	func approach() -> Vector2:
 		return Vector2.ZERO
@@ -80,6 +84,10 @@ class Harbour:
 	## How far apart boats waiting here hold station.
 	func wait_spacing() -> float:
 		return 7.0
+
+	## Whether a boat may wait its turn at (u, v) (out of the way in).
+	func wait_ok(_u: float, _v: float) -> bool:
+		return true
 
 
 ## A small-boat pier with a T-head (see Layout's marina frame).
@@ -97,18 +105,12 @@ class Marina extends Harbour:
 		return Vector2(40.0, Layout.MARINA_HEAD_HALF + 12.0)
 
 
-## A fishing boats' wharf (see Layout's quay frame): a jetty out to a wharf whose
-## seaward face the boats lie alongside, bow to stern, all pointing `side` along
-## v. They come in along the lane off the face from astern and crab in sideways,
-## and leave the same way round: crab out, then ahead along the lane.
-class FishQuay extends Harbour:
+## A wharf boats lie alongside (see Layout's quay frame): a jetty out to a wharf
+## whose seaward face the boats lie against, bow to stern, all pointing `side`
+## along v. They come in along the lane off the face from astern and crab in
+## sideways, and leave the same way round: crab out, then ahead along the lane.
+class Wharf extends Harbour:
 	var side := 1.0
-
-	func berth_v(i: int) -> float:
-		return (i - (Layout.QUAY_BERTHS - 1) * 0.5) * Layout.QUAY_BERTH_SPACING
-
-	func berths() -> int:
-		return Layout.QUAY_BERTHS
 
 	func approach() -> Vector2:
 		return Vector2(Layout.QUAY_LANE_U, -side * Layout.QUAY_RUN)
@@ -118,6 +120,38 @@ class FishQuay extends Harbour:
 
 	func wait_spacing() -> float:
 		return 32.0
+
+	## Not off the end of the lane where boats run in.
+	func wait_ok(_u: float, v: float) -> bool:
+		return absf(v + side * Layout.QUAY_RUN) > 30.0
+
+	## Its name, as the HUD shows it.
+	func title(map: MapData) -> String:
+		return map.islands[island].name
+
+
+## The fishing boats' wharf.
+class FishQuay extends Wharf:
+	func berth_v(i: int) -> float:
+		return (i - (Layout.QUAY_BERTHS - 1) * 0.5) * Layout.QUAY_BERTH_SPACING
+
+	func berths() -> int:
+		return Layout.QUAY_BERTHS
+
+	func title(map: MapData) -> String:
+		return map.islands[island].name + " fish quay"
+
+
+## Where the pilot boats and tugs that work with the ships are based.
+class PilotStation extends Wharf:
+	func berth_v(i: int) -> float:
+		return (i - (Layout.STATION_BERTHS - 1) * 0.5) * Layout.STATION_BERTH_SPACING
+
+	func berths() -> int:
+		return Layout.STATION_BERTHS
+
+	func title(map: MapData) -> String:
+		return map.islands[island].name + " pilot station"
 
 
 class Route:
@@ -134,3 +168,12 @@ var islands: Array[Island] = []
 var routes: Array[Route] = []
 var marinas: Array[Marina] = []
 var quays: Array[FishQuay] = []
+var stations: Array[PilotStation] = []
+
+
+## Every wharf on the map: fish quays and pilot stations.
+func wharves() -> Array[Wharf]:
+	var out: Array[Wharf] = []
+	out.append_array(quays)
+	out.append_array(stations)
+	return out

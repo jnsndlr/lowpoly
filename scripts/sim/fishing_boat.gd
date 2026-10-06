@@ -1,20 +1,16 @@
 class_name FishingBoat
-extends HelmVessel
+extends WharfBoat
 ## A trawler working out of a fish quay. It casts off well before dawn and steams
 ## out to a fishing ground (see FishingGround), where it tows its net slowly up and
 ## down the ground; at the end of each tow it stops to haul the catch aboard, then
 ## shoots the net again and tows back the other way. Once its hold is full, or by the afternoon, it steams home, lands
 ## the catch, and lies alongside until the small hours.
 ##
-## Alongside, it lies against the wharf's face pointing along it. It comes in
-## along the lane off the face from astern and crabs in sideways, and leaves the
-## same way round (crab out, then ahead along the lane); those manoeuvres take
-## the quay's lock (MarineTraffic.try_lock), and an arriving boat waits its turn
-## off the quay (MarineTraffic.wait_spot). Out on the water a Helm steers it.
-## Under way it is a power-driven vessel: it gives way to sail, keeps clear of the
-## ferries and ships, and crosses other power vessels by the rules. Fishing, it is
-## the stand-on vessel to sail and power alike (but still keeps out of the way of
-## the ferries and ships).
+## Alongside, it lies against the quay's face (see WharfBoat for how it comes
+## and goes). Under way it is a power-driven vessel: it gives way to sail, keeps
+## clear of the ferries and ships, and crosses other power vessels by the rules.
+## Fishing, it is the stand-on vessel to sail and power alike (but still keeps
+## out of the way of the ferries and ships).
 
 enum State { ALONGSIDE, LEAVING, STEAMING, FISHING, HOMEWARD, WAITING, ARRIVING }
 enum Work { SHOOTING, TOWING, HAULING }
@@ -30,28 +26,21 @@ const SHOOT_TIME := Vector2(10.0, 20.0)
 const CATCH := Vector2(0.24, 0.4)           # of a full hold, per haul (on an average ground)
 const GOAL_R := 16.0
 const HOLD_R := 12.0
-const CRAB_SPEED := 0.6
 const SWELL_ROLL := 0.025
 
 var state := State.ALONGSIDE
 var work := Work.TOWING
 var quay: MapData.FishQuay
-var berth := 0
 var ground: FishingGround
 var fish_hold := 0.0                # how full its hold is, 0..1
 var trips := 0
 var hauls := 0
-var path: NavPath              # the leg it is following in or out of the quay
-var s := 0.0
-var _legs: Array = []          # [[NavPath, crab], ...] the legs still to follow after this one
-var _crab := false             # moving sideways along `path`, not ahead
 var _sail_at := 0.0            # when it next casts off (game minutes since day 0)
 var _home_by := 15.0
 var _landed_at := -INF
 var _timer := 0.0              # in a haul or shooting the net: game minutes left
 var _tow_end := 1.0            # the end of the ground it is towing towards (-1 / +1)
 var _tow_across := 0.0
-var _hull: MeshInstance3D
 var _warps: MeshInstance3D
 var _nav_lights: MeshInstance3D
 var _steam_lights: MeshInstance3D
@@ -78,6 +67,7 @@ func setup(t: MarineTraffic, nm: String, sp: VesselSpec, q: MapData.FishQuay, b:
 	_warps.visible = false
 	_hull.add_child(_warps)
 	quay = q
+	wharf = q
 	berth = b
 	_bob = t.rng.randf() * TAU
 	_plan_next_trip()
@@ -124,39 +114,12 @@ func manoeuvring() -> bool:
 
 
 func quay_name() -> String:
-	return traffic.sim.map.islands[quay.island].name + " fish quay"
-
-
-## Its centre lying alongside berth `b`.
-func _berth_pos(b: int) -> Vector2:
-	var p := quay.at(Layout.QUAY_FACE_U + Layout.QUAY_FENDER + spec.half_beam, quay.berth_v(b))
-	return Vector2(p.x, p.z)
-
-
-func _lane_pos(v: float) -> Vector2:
-	var p := quay.at(Layout.QUAY_LANE_U, v)
-	return Vector2(p.x, p.z)
-
-
-func _along_yaw() -> float:
-	var d := quay.lateral() * quay.side
-	return atan2(d.x, d.z)
+	return wharf_name()
 
 
 func _tie_up() -> void:
 	state = State.ALONGSIDE
-	free_nav = false
-	speed = 0.0
-	path = null
-	helm = null
-	_yaw = _along_yaw()
-	_pose_alongside()
-
-
-func _pose_alongside() -> void:
-	var p := _berth_pos(berth)
-	position = Vector3(p.x, sin(_bob * 1.1) * 0.05, p.y)
-	basis = Basis(Vector3.UP, _yaw + sin(_bob * 0.29) * 0.008) * Basis(Vector3.BACK, sin(_bob * 0.9) * 0.012)
+	_lie_alongside()
 
 
 ## When it next goes out: in the small hours of a coming day (now and then it
@@ -186,9 +149,7 @@ func _cast_off() -> void:
 	_tow_end = 1.0 if g.at(1.0, 0.0).distance_to(b) > g.at(-1.0, 0.0).distance_to(b) else -1.0
 	_tow_across = traffic.rng.randf_range(-FishingGround.HALF_WIDTH, FishingGround.HALF_WIDTH)
 	state = State.LEAVING
-	var out := _lane_pos(quay.berth_v(berth))
-	_legs = [[NavPath.new(PackedVector2Array([out, _lane_pos(quay.side * Layout.QUAY_RUN)])), false]]
-	_start_leg(NavPath.new(PackedVector2Array([b, out])), true)
+	_leave()
 
 
 ## Starts it already out on its ground (for boats at sea when the map opens).
@@ -217,45 +178,24 @@ func start_at_sea() -> bool:
 
 # --- In and out of the quay ---------------------------------------------------------
 
-func _start_leg(p: NavPath, crab: bool) -> void:
-	path = p
-	s = 0.0
-	_crab = crab
+func _alongside() -> bool:
+	return state == State.ALONGSIDE
 
 
-func _follow_path(delta: float) -> void:
-	var left := path.length - s
-	var top := CRAB_SPEED if _crab else spec.motor_speed
-	var target := top
-	# It stops at the end of each leg but the last one out, which runs on into
-	# the open water.
-	if _crab or state == State.ARRIVING or not _legs.is_empty():
-		target = minf(top, 0.15 + sqrt(2.0 * 0.2 * left))
-	target = minf(target, yield_speed())
-	speed = move_toward(speed, target, (spec.accel if target > speed else spec.decel) * delta)
-	s = minf(s + speed * delta, path.length)
-	if not _crab:
-		var t := path.tangent(s)
-		_yaw = rotate_toward(_yaw, atan2(t.x, t.y), spec.motor_turn * delta)
-	var p := path.sample(s)
-	position = Vector3(p.x, sin(_bob * 1.1) * 0.05, p.y)
-	_pose(delta)
-	if left > 0.05:
-		return
-	if not _legs.is_empty():
-		var next: Array = _legs.pop_front()
-		_start_leg(next[0], next[1])
-		return
-	path = null
-	traffic.unlock(quay, self)
-	if state == State.LEAVING:
-		_start_helm(State.STEAMING)
-		helm.set_goal(ground.at(-_tow_end, _tow_across))
-	else:
-		trips += 1
-		_landed_at = _now()
-		_plan_next_trip()
-		_tie_up()
+func _waiting_in() -> bool:
+	return state == State.WAITING
+
+
+func _left_berth() -> void:
+	_start_helm(State.STEAMING)
+	helm.set_goal(ground.at(-_tow_end, _tow_across))
+
+
+func _came_alongside() -> void:
+	trips += 1
+	_landed_at = _now()
+	_plan_next_trip()
+	_tie_up()
 
 
 func _start_helm(st: State) -> void:
@@ -264,21 +204,9 @@ func _start_helm(st: State) -> void:
 	helm = Helm.new(self, traffic)
 
 
-## In along the lane from astern to abreast of its berth, then crab in.
 func _begin_arriving() -> void:
 	state = State.ARRIVING
-	free_nav = false
-	helm = null
-	var a := _lane_pos(-quay.side * Layout.QUAY_RUN)
-	var b := _lane_pos(quay.berth_v(berth))
-	var main := traffic.nav.find_path(pos2(), a, false)
-	if main.is_empty():
-		main = PackedVector2Array([pos2(), a])
-	main.append(b)
-	main = traffic.nav.finish(main, 0.0, 10.0, 2, hull_radius + 1.0)
-	main[main.size() - 1] = b
-	_legs = [[NavPath.new(PackedVector2Array([b, _berth_pos(berth)])), true]]
-	_start_leg(NavPath.new(main), false)
+	_come_in()
 
 
 # --- Out on the water ---------------------------------------------------------------
@@ -327,8 +255,13 @@ func _navigate(delta: float) -> void:
 	_pose(delta)
 
 
+## Whether what it is keeping clear of is a ship or a vessel working with one,
+## which it must get out of the way of even while hauling.
 func _must_move() -> bool:
-	return helm.give_way_to is Vessel and not (helm.give_way_to is Sailboat or helm.give_way_to is FishingBoat)
+	if not (helm.give_way_to is Vessel):
+		return false
+	var r := (helm.give_way_to as Vessel).road()
+	return r == Road.SHIP or r == Road.RESTRICTED
 
 
 ## The round of the work on the ground: shoot the net, tow it to the end of the
@@ -400,49 +333,15 @@ func helm_turn_rate() -> float:
 	return spec.turn
 
 
-## The rules of the road, simplified.
-func helm_role(o: Variant) -> String:
-	if o is Wildlife.Visit:
-		return "Keeping clear of the " + (o as Wildlife.Visit).species.plural.to_lower()
-	if o is Sailboat:
-		var b := o as Sailboat
-		match b.state:
-			Sailboat.State.MOORED:
-				return ""
-			Sailboat.State.LEAVING, Sailboat.State.ARRIVING:
-				return "Giving way to %s, manoeuvring" % b.vessel_name
-		if _overtaking(b):
-			return "Overtaking " + b.vessel_name
-		if fishing():
-			return ""
-		if not b.motoring:
-			return "Giving way to %s, under sail" % b.vessel_name
-		return _crossing(b)
-	if o is FishingBoat:
-		var f := o as FishingBoat
-		if not f.wants_to_move():
-			return ""
-		if f.manoeuvring():
-			return "Giving way to %s, manoeuvring" % f.vessel_name
-		if _overtaking(f):
-			return "Overtaking " + f.vessel_name
-		if fishing() != f.fishing():
-			return "" if fishing() else "Giving way to %s, fishing" % f.vessel_name
-		return _crossing(f)
-	if o is Vessel:
-		return "Giving way to " + (o as Vessel).vessel_name
-	return "Keeping clear"
-
-
-func _overtaking(o: Vessel) -> bool:
-	var rel := pos2() - o.pos2()
-	return rel.dot(o.heading2()) < -rel.length() * 0.38 and speed > o.speed + 0.1
-
-
-## Two power vessels crossing: the one with the other on its starboard side gives way.
-func _crossing(o: Vessel) -> String:
-	var right := Vector2(-cos(_yaw), sin(_yaw))
-	return "Giving way to " + o.vessel_name if (o.pos2() - pos2()).dot(right) > 0.0 else ""
+func road() -> Road:
+	match state:
+		State.ALONGSIDE:
+			return Road.MOORED
+		State.LEAVING, State.ARRIVING:
+			return Road.MANOEUVRING
+		State.FISHING:
+			return Road.FISHING
+	return Road.POWER
 
 
 # --- Vessel ---------------------------------------------------------------------------
@@ -459,32 +358,8 @@ func wake_hull() -> Vector4:
 	return h
 
 
-func waits_for(v: Vessel) -> bool:
-	return blocker == v or (state == State.WAITING and traffic.lock_holder(quay) == v)
-
-
-func wants_to_move() -> bool:
-	return state != State.ALONGSIDE
-
-
-func crabbing() -> bool:
-	return path != null and _crab
-
-
-func ahead(d: float) -> Vector2:
-	if path != null:
-		return path.sample(s + d)
-	if state == State.ALONGSIDE:
-		return pos2()
-	return pos2() + Vector2(sin(_yaw), cos(_yaw)) * d
-
-
-func path_left() -> float:
-	if path != null:
-		return path.length - s
-	if helm != null:
-		return helm.distance_left() + 10.0
-	return 0.0
+func resting() -> bool:
+	return fishing() and work == Work.HAULING
 
 
 func status_text() -> String:

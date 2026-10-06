@@ -5,7 +5,8 @@ extends SceneTree
 ## counts how often they come to a stop out on the water (and what they were
 ## doing), how long the last-resort hull check held them back, and their closest
 ## pass to another hull. Fishing boats' comings and goings are logged (FISH lines),
-## and any time one touches water shallower than its draft (SHOAL).
+## and any time one touches water shallower than its draft (SHOAL); so are motor
+## yachts', pilot boats' and tugs' (YACHT, PILOT and TUG lines).
 ##
 ##   godot --headless --path . --fixed-fps 30 --script tools/vessel_soak_test.gd -- --seed=123 --frames=20000
 
@@ -26,12 +27,20 @@ var fish_closest := INF
 var shoal := {}
 var _was_stopped := {}
 var _fish_state := {}
+var _state := {}
+var trace := ""
+var _trace_t := 0.0
+var anchorings := 0
+var yacht_closest := INF
+var yacht_brake := 0.0
 
 
 func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--frames="):
 			max_frames = int(a.substr(9))
+		if a.begins_with("--trace="):
+			trace = a.substr(8)
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 
@@ -59,11 +68,21 @@ func _process(delta: float) -> bool:
 				closest = minf(closest, gap)
 			if a is FishingBoat or b is FishingBoat:
 				fish_closest = minf(fish_closest, gap)
+			if (a is MotorYacht or b is MotorYacht) and not Vessel.paired(a, b):
+				yacht_closest = minf(yacht_closest, gap)
 			var key := a.vessel_name + " / " + b.vessel_name
 			if gap < 0.0 and not overlaps.has(key):
 				overlaps[key] = true
 				print("OVERLAP %.2f m at %s: %s (%s) / %s (%s)" % [gap, sim.clock_text(), a.vessel_name, a.status_text(),
 					b.vessel_name, b.status_text()])
+				for t in [a, b]:
+					if t is ShipTender and is_instance_valid(t.ship):
+						var sh: CargoShip = t.ship
+						var rel: Vector2 = t.pos2() - sh.pos2()
+						var hh := sh.heading2()
+						print("    DBG %s rel along %.1f lat %.1f yaw diff %.2f locked %s gap %.2f speed %.2f ship %.2f" % [
+							t.vessel_name, rel.dot(hh), rel.dot(Vector2(-hh.y, hh.x)), angle_difference(t.helm_yaw(), atan2(hh.x, hh.y)),
+							t._locked, t._gap, t.speed, sh.speed])
 		if not (a is Ferry):
 			for e in [pa - ha, pa + ha, pa]:
 				if sim.terrain.height_at(e.x, e.y) > -0.6 and not aground.has(a.vessel_name):
@@ -88,6 +107,10 @@ func _process(delta: float) -> bool:
 					var why: String = f.status_text()
 					stop_why["(fishing) " + why] = stop_why.get("(fishing) " + why, 0) + 1
 				_was_stopped[f] = stopped
+		_log_state(sim, a)
+		if a.vessel_name == trace and frames % 8 == 0:
+			print("TRACE %s %s pos %s yaw %.2f speed %.2f clear %.1f: %s" % [sim.clock_text(), a.vessel_name, pa,
+				atan2(a.heading2().x, a.heading2().y), a.speed, a.clear, a.status_text()])
 		# A sailboat brought to a stop out on the water.
 		if a is Sailboat and a.state == Sailboat.State.SAILING:
 			var stopped: bool = a.speed < 0.2
@@ -96,21 +119,26 @@ func _process(delta: float) -> bool:
 				var st: String = a.status_text().split(" ·")[0]
 				stop_why[st] = stop_why.get(st, 0) + 1
 			_was_stopped[a] = stopped
-		# (A trawler hauling its net lies stopped on purpose.)
-		var hauling: bool = a is FishingBoat and a.fishing() and a.work == FishingBoat.Work.HAULING
-		if a.wants_to_move() and a.speed < 0.05 and not hauling:
+		# (A trawler hauling its net, say, lies stopped on purpose.)
+		if a.wants_to_move() and a.speed < 0.05 and not a.resting():
 			stall[a] = stall.get(a, 0.0) + delta
-			if stall[a] > STALL and not reported.has(a):
+			# (Waiting its turn to go in to a berth can take a while.)
+			var limit := STALL * (4.0 if a.status_text().begins_with("Waiting") else 1.0)
+			if stall[a] > limit and not reported.has(a):
 				reported[a] = true
 				var extra := ""
 				if a is Sailboat and a.dest:
 					var h: Vessel = sim.marine.lock_holder(a.dest)
 					extra = " [lock: %s]" % ("none" if h == null else "%s %s at %s" % [h.vessel_name, h.status_text(), h.pos2()])
-					if a.helm:
-						var hm: Helm = a.helm
-						extra += " [helm: heading %.2f, wants %.2f at %.1f m/s, aiming at %s, land ahead %s]" % [
-							a.helm_yaw(), hm.want_yaw, hm.want_speed, hm.aim(), hm.blocked_land]
+				if a is HelmVessel and a.helm:
+					var hm: Helm = a.helm
+					extra += " [helm: heading %.2f, wants %.2f at %.1f m/s, aiming at %s, land ahead %s, goal %s, depth %.1f]" % [
+						a.helm_yaw(), hm.want_yaw, hm.want_speed, hm.aim(), hm.blocked_land, hm.goal,
+						sim.terrain.height_at(pa.x, pa.y)]
 				print("STALL %s (%s) at %s: %s%s" % [a.vessel_name, a.kind_text(), pa, a.status_text(), extra])
+				for o in vs:
+					if o != a and o.pos2().distance_to(pa) < 45.0:
+						print("    near: %s (%s) at %s %.1f m/s: %s" % [o.vessel_name, o.kind_text(), o.pos2(), o.speed, o.status_text()])
 		else:
 			stall[a] = 0.0
 			reported.erase(a)
@@ -138,6 +166,44 @@ func _process(delta: float) -> bool:
 		fhauls += f.hauls
 	print("     fishing boats: %d, trips %d, hauls %d, stops steaming %d, hull-check braking %.0f s, closest pass %.2f m, shoal %d" % [
 		sim.marine.fishing_boats.size(), ftrips, fhauls, fish_stops, fbrake, fish_closest, shoal.size()])
+	var ytrips := 0
+	for y in sim.marine.motor_yachts:
+		ytrips += y.trips
+		yacht_brake += y.brake_time
+	print("     motor yachts: %d, trips %d, anchorings %d, hull-check braking %.0f s, closest pass %.2f m" % [
+		sim.marine.motor_yachts.size(), ytrips, anchorings, yacht_brake, yacht_closest])
+	_extra_summary(sim)
 	for k in stop_why:
 		print("       stopped while: %s (%d)" % [k, stop_why[k]])
 	return true
+
+
+## For the pilotage: what the pilot boats and tugs got done.
+func _extra_summary(sim: Simulation) -> void:
+	var p: Pilotage = sim.marine.pilotage
+	if p == null:
+		return
+	print("     pilotage: %d pilot boats, %d tugs, boarded %d, landed %d, escorts %d, missed %d" % [
+		p.pilot_boats.size(), p.tugs.size(), p.boarded, p.landed, p.escorts, p.missed])
+
+
+## Logs each motor yacht's, pilot boat's and tug's changes of state.
+func _log_state(sim: Simulation, v: Vessel) -> void:
+	var tag := ""
+	var st := ""
+	if v is MotorYacht:
+		tag = "YACHT"
+		st = MotorYacht.State.keys()[(v as MotorYacht).state]
+		if (v as MotorYacht).state == MotorYacht.State.ANCHORED and _state.get(v, "") != st:
+			anchorings += 1
+	elif v is PilotBoat:
+		tag = "PILOT"
+		st = ShipTender.State.keys()[(v as PilotBoat).state]
+	elif v is Tug:
+		tag = "TUG"
+		st = ShipTender.State.keys()[(v as Tug).state]
+	else:
+		return
+	if _state.get(v, "") != st:
+		_state[v] = st
+		print("%s %s %s %s · %s" % [tag, sim.clock_text(), v.vessel_name, st, v.status_text()])

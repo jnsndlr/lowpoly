@@ -24,11 +24,15 @@ const SAIL_NAMES := ["Windsong", "Blue Heron", "Sea Otter", "Kittiwake", "Halcyo
 	"Cormorant II", "Seabright", "Gannet", "Islay", "Brant", "Westerly"]
 const CARGO_NAMES := ["Pacific Trader", "Nordic Star", "Cascade Carrier", "Salish Voyager",
 	"Coastal Venture", "Georgia Strait", "Harbour Pride", "Ocean Ranger", "Juan de Fuca", "Arctic Tern"]
+const YACHT_NAMES := ["Serenity", "Knot Working", "Reel Time", "Sea Esta", "Island Time", "Aquavit",
+	"Blue Moon", "Liquid Asset", "Wanderlust", "Sundowner", "Pacific Rose", "Osprey", "Second Star", "Driftaway",
+	"Tide Runner", "Madrona Lady", "Free Spirit", "Orca Bay"]
 const FISH_NAMES := ["Northern Dawn", "Ocean Harvest", "Kristi Ann", "Sea Wolf", "Arctic Fox", "Pacific Pride",
 	"Mary Ellen", "Silver Bay", "Westward", "Sea Rover", "Kodiak Queen", "Morning Star", "Lady Grace", "Provider"]
 const MAX_CARGO := 2
 const CARGO_GAP := Vector2(35.0, 90.0)   # game minutes between cargo ships
 const RANK_SAIL := 1000
+const RANK_POWER := 1200
 const RANK_FISH := 1500
 const RANK_CARGO := 2000
 const RANK_FERRY := 3000
@@ -44,10 +48,13 @@ var nav: NavGrid
 var rng := RandomNumberGenerator.new()
 var vessels: Array[Vessel] = []
 var sailboats: Array[Sailboat] = []
+var motor_yachts: Array[MotorYacht] = []
 var cargo_ships: Array[CargoShip] = []
 var fishing_boats: Array[FishingBoat] = []
 var grounds: Array[FishingGround] = []
-var berths := {}            # marina id -> Array of the Sailboat holding each berth (or null)
+var anchorages: Array[Anchorage] = []
+var pilotage: Pilotage
+var berths := {}            # marina id -> Array of the MarinaBoat holding each berth (or null)
 var corridors := {}         # route id -> Array of the Corridors along it
 var _lock := {}             # harbour -> the vessel manoeuvring there
 var _queue := {}            # harbour -> the vessels waiting to go in, in the order they got there
@@ -74,14 +81,25 @@ func setup(s: Simulation) -> void:
 		var row := []
 		row.resize(Layout.MARINA_BERTHS)
 		berths[m.id] = row
-	_spawn_sailboats()
 	grounds = FishingGround.find_all(self)
+	var t1 := Time.get_ticks_msec()
+	anchorages = Anchorage.find_all(self)
+	var spots := 0
+	for a in anchorages:
+		spots += a.spots.size()
+	print("Anchorages: %d coves, %d spots (%d ms)" % [anchorages.size(), spots, Time.get_ticks_msec() - t1])
+	_spawn_sailboats()
 	_spawn_fishing_boats()
+	pilotage = Pilotage.new(self)
 	_spawn_cargo(true)
 	_cargo_timer = rng.randf_range(CARGO_GAP.x, CARGO_GAP.y) * 0.5
-	print("Marine traffic: %d marinas, %d sailboats, %d fish quays, %d fishing grounds, %d fishing boats, %d cargo ships (%d ms)" % [
-		s.map.marinas.size(), sailboats.size(), s.map.quays.size(), grounds.size(), fishing_boats.size(),
-		cargo_ships.size(), Time.get_ticks_msec() - t0])
+	print("Marine traffic: %d marinas, %d sailboats, %d motor yachts, %d fish quays, %d fishing grounds, %d fishing boats, %d pilot boats, %d tugs, %d cargo ships (%d ms)" % [
+		s.map.marinas.size(), sailboats.size(), motor_yachts.size(), s.map.quays.size(), grounds.size(), fishing_boats.size(),
+		pilotage.pilot_boats.size(), pilotage.tugs.size(), cargo_ships.size(), Time.get_ticks_msec() - t0])
+
+
+func register(v: Vessel, base_rank: int) -> void:
+	_register(v, base_rank)
 
 
 func _register(v: Vessel, base_rank: int) -> void:
@@ -96,8 +114,12 @@ func remove(v: Vessel) -> void:
 		cargo_ships.erase(v)
 	elif v is Sailboat:
 		sailboats.erase(v)
+	elif v is MotorYacht:
+		motor_yachts.erase(v)
 	elif v is FishingBoat:
 		fishing_boats.erase(v)
+	if pilotage:
+		pilotage.remove(v)
 
 
 # --- Ferry corridors ---------------------------------------------------------------
@@ -207,9 +229,27 @@ func _spawn_sailboats() -> void:
 		names[j] = t
 	var k := 0
 	var sail_types := VesselTypes.sailboats()
+	var yacht_types := VesselTypes.motor_yachts()
+	var yacht_names := YACHT_NAMES.duplicate()
+	for i in range(yacht_names.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var t: String = yacht_names[i]
+		yacht_names[i] = yacht_names[j]
+		yacht_names[j] = t
 	for m in sim.map.marinas:
 		for b in Layout.MARINA_BERTHS:
 			if rng.randf() > 0.6:
+				continue
+			# About a third of the boats kept at the marinas are motor yachts.
+			if rng.randf() < 0.35:
+				var y := MotorYacht.new()
+				sim.add_child(y)
+				var ysp := VesselTypes.pick(yacht_types, rng)
+				y.setup(self, yacht_names[motor_yachts.size() % yacht_names.size()], ysp, m, b,
+						rng.randi_range(0, ysp.variants - 1), rng.randf_range(2.0, 120.0))
+				berths[m.id][b] = y
+				motor_yachts.append(y)
+				_register(y, RANK_POWER)
 				continue
 			var boat := Sailboat.new()
 			sim.add_child(boat)
@@ -222,11 +262,15 @@ func _spawn_sailboats() -> void:
 	for boat in sailboats:
 		if rng.randf() < 0.3:
 			boat.depart(rng.randf_range(0.2, 0.7))
+	# A few lay at anchor in a cove overnight.
+	for y in motor_yachts:
+		if rng.randf() < 0.3:
+			y.start_at_anchor()
 
 
 ## Picks a free berth for `boat` to sail to (another marina if there is one,
 ## otherwise back home) and reserves it. Returns [marina, berth] or [].
-func reserve_berth(boat: Sailboat) -> Array:
+func reserve_berth(boat: MarinaBoat) -> Array:
 	var options: Array = []
 	for m in sim.map.marinas:
 		if m == boat.marina and sim.map.marinas.size() > 1 and rng.randf() < 0.85:
@@ -242,7 +286,7 @@ func reserve_berth(boat: Sailboat) -> Array:
 	return pick
 
 
-func release_berth(m: MapData.Marina, b: int, boat: Sailboat) -> void:
+func release_berth(m: MapData.Marina, b: int, boat: MarinaBoat) -> void:
 	if berths[m.id][b] == boat:
 		berths[m.id][b] = null
 
@@ -270,6 +314,12 @@ func queue_for(h: MapData.Harbour, who: Vessel) -> void:
 		_queue[h] = []
 	if not _queue[h].has(who):
 		_queue[h].append(who)
+
+
+## Leaves the line for `h` (it has somewhere else to be).
+func leave_queue(h: MapData.Harbour, who: Vessel) -> void:
+	if _queue.has(h):
+		_queue[h].erase(who)
 
 
 func lock_holder(h: MapData.Harbour) -> Vessel:
@@ -334,6 +384,38 @@ func reserve_ground(boat: FishingBoat) -> FishingGround:
 func release_ground(g: FishingGround, boat: FishingBoat) -> void:
 	if g != null and g.worked_by == boat:
 		g.worked_by = null
+
+
+# --- Anchorages ---------------------------------------------------------------------
+
+## A free spot in a cove for `boat`, reserved for it: the more sheltered coves
+## more often, the nearer ones (to `from`) more often. Null if none is free.
+func reserve_spot(boat: Vessel, from: Vector2) -> Anchorage.Spot:
+	var free: Array[Anchorage.Spot] = []
+	var weights: Array[float] = []
+	var total := 0.0
+	for a in anchorages:
+		for sp in a.spots:
+			if sp.taken_by != null and is_instance_valid(sp.taken_by) and sp.taken_by != boat:
+				continue
+			var w := a.shelter * a.shelter / (1.0 + sp.pos.distance_to(from) / 350.0)
+			free.append(sp)
+			weights.append(w)
+			total += w
+	if free.is_empty():
+		return null
+	var r := rng.randf() * total
+	for i in free.size():
+		r -= weights[i]
+		if r <= 0.0 or i == free.size() - 1:
+			free[i].taken_by = boat
+			return free[i]
+	return null
+
+
+func release_spot(sp: Anchorage.Spot, boat: Vessel) -> void:
+	if sp != null and sp.taken_by == boat:
+		sp.taken_by = null
 
 
 # --- Cargo ships --------------------------------------------------------------------
@@ -401,7 +483,7 @@ func hull_gap(v: Vessel, p: Vector2, h: Vector2) -> float:
 	var b := p + h * v.half_seg
 	var best := INF
 	for o in vessels:
-		if o == v:
+		if o == v or Vessel.paired(v, o):
 			continue
 		var q := o.pos2()
 		var r := v.half_seg + o.half_seg + v.hull_radius + o.hull_radius + 2.0
@@ -426,7 +508,7 @@ func wait_spot(h: MapData.Harbour, b: int) -> Vector2:
 		var a2 := Vector2(approach.x, approach.z)
 		for u in range(int(bounds.x), int(bounds.x) + 60, 6):
 			for v in range(-70, 71, 6):
-				if absf(v) < bounds.y:
+				if absf(v) < bounds.y or not h.wait_ok(u, v):
 					continue
 				var p3 := h.at(u, v)
 				var p := Vector2(p3.x, p3.z)
@@ -443,6 +525,26 @@ func wait_spot(h: MapData.Harbour, b: int) -> Vector2:
 	var spot: Vector2 = _wait_spots[h]
 	var lat := Vector2(h.lateral().x, h.lateral().z)
 	return spot + lat * (b - (h.berths() - 1) * 0.5) * h.wait_spacing()
+
+
+## True if `p` is within `r` of a harbour: a marina's T-head, a wharf's face, or a
+## ferry terminal's slips.
+func near_harbour(p: Vector2, r: float) -> bool:
+	var map := sim.map
+	for m in map.marinas:
+		var a := m.at(Layout.MARINA_HEAD_U, 0.0)
+		if Vector2(a.x, a.z).distance_squared_to(p) < r * r:
+			return true
+	for q in map.wharves():
+		var a := q.at(Layout.QUAY_FACE_U, 0.0)
+		if Vector2(a.x, a.z).distance_squared_to(p) < r * r:
+			return true
+	for isl in map.islands:
+		if isl.has_terminal:
+			var a := isl.shore + isl.dock_dir * Layout.DOCK_U
+			if Vector2(a.x, a.z).distance_squared_to(p) < r * r:
+				return true
+	return false
 
 
 ## True if no hull (but `except`'s) is within `radius` of p.
@@ -479,6 +581,7 @@ func _process(delta: float) -> void:
 		_cargo_timer = rng.randf_range(CARGO_GAP.x, CARGO_GAP.y)
 		if cargo_ships.size() < MAX_CARGO:
 			_spawn_cargo()
+	pilotage.update(delta)
 	_update_clearances()
 
 
@@ -541,7 +644,7 @@ func _update_clearances() -> void:
 			continue
 		var mine: Claim = own[v]
 		for o in vessels:
-			if o == v:
+			if o == v or Vessel.paired(v, o):
 				continue
 			var thr := v.hull_radius + o.hull_radius + MARGIN
 			var reach := mine.box.grow(thr)

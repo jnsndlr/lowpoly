@@ -45,6 +45,10 @@ const QUAY_BERTH_SPACING := 23.0
 const QUAY_FENDER := 0.5           # between the face and a hull lying alongside
 const QUAY_LANE_U := 30.0
 const QUAY_RUN := 60.0
+# A pilot station is laid out like a fish quay, with a berth more for its
+# shorter boats.
+const STATION_BERTHS := 3
+const STATION_BERTH_SPACING := 16.0
 
 
 ## Lateral lane positions grouped per slip (left → right), clear of the exit lane.

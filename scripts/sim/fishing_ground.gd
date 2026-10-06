@@ -40,7 +40,7 @@ static func find_all(t: MarineTraffic) -> Array[FishingGround]:
 	for m in map.marinas:
 		var a := m.at(Layout.MARINA_APPROACH_U, 0.0)
 		avoid.append(Vector2(a.x, a.z))
-	for q in map.quays:
+	for q in map.wharves():
 		var a := q.at(Layout.QUAY_LANE_U, 0.0)
 		avoid.append(Vector2(a.x, a.z))
 	var route_pts := PackedVector2Array()

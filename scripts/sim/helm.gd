@@ -44,6 +44,7 @@ const KEEP_SMALL := 6.0
 const KEEP_SHIP := 14.0
 const KEEP_AHEAD_OF_SHIP := 16.0
 const KEEP_WILDLIFE := 45.0
+const KEEP_MOORED := 4.0       # from boats lying at a berth or at anchor
 const WILDLIFE_RADIUS := 15.0
 # A stand-on vessel only acts once a pass is this close and this soon.
 const STAND_ON_KEEP := 2.0
@@ -140,6 +141,7 @@ class Threat:
 	var why := ""            # the rule that makes us keep clear, "" if stand-on
 	var keep := 0.0
 	var ahead_keep := 0.0    # extra kept clear ahead of its bow
+	var moored := false      # lying at a berth or at anchor: kept clear of though it is the stand-on vessel
 	var radius := 0.0
 	var a := PackedVector2Array()   # its hull (or centre) at each sample time
 	var b := PackedVector2Array()
@@ -245,6 +247,9 @@ func _threats(p: Vector2) -> Array[Threat]:
 	for o in traffic.vessels:
 		if o == v or not is_instance_valid(o):
 			continue
+		# (Working alongside a ship, it is no threat to it, nor it to the ship.)
+		if Vessel.paired(v, o) and (v.road() == Vessel.Road.RESTRICTED or o.road() == Vessel.Road.RESTRICTED):
+			continue
 		var reach := SCAN + o.half_seg + o.hull_radius
 		var q := o.pos2()
 		if absf(q.x - p.x) > reach or absf(q.y - p.y) > reach:
@@ -256,6 +261,9 @@ func _threats(p: Vector2) -> Array[Threat]:
 		t.keep = KEEP_SHIP if ship else KEEP_SMALL
 		t.ahead_keep = KEEP_AHEAD_OF_SHIP if ship and o.speed > 0.3 else 0.0
 		t.radius = o.hull_radius
+		if o.road() == Vessel.Road.MOORED:
+			t.moored = true
+			t.keep = KEEP_MOORED
 		# One that wants to get going is reckoned to be about to, even if it is
 		# stopped (waiting for this one to get out of its way, perhaps).
 		var moving := o.wants_to_move()
@@ -306,13 +314,13 @@ func _pass_cost(p: Vector2, yaw: float, h: float, sp: float, my_r: float, t: Thr
 	# worst; the average still rewards getting further away when already close.)
 	for k in t.a.size():
 		var time := k * STEP_T
-		if stand_on and time > STAND_ON_SOON:
+		if stand_on and time > STAND_ON_SOON and not t.moored:
 			break
 		var early := minf(time, turn_t * 0.5)
 		var me := p + d0 * sp * early + d1 * sp * (time - early)
 		var cp := Geometry2D.get_closest_point_to_segment(me, t.a[k], t.b[k])
 		var gap := me.distance_to(cp) - t.radius - my_r
-		var keep := STAND_ON_KEEP if stand_on else t.keep
+		var keep := STAND_ON_KEEP if stand_on and not t.moored else t.keep
 		# Crossing ahead of a ship under way needs a lot more room than astern.
 		if not stand_on and t.ahead_keep > 0.0 and (me - t.b[k]).dot(t.fwd[k]) > -2.0:
 			keep += t.ahead_keep

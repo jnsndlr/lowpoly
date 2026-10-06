@@ -611,7 +611,7 @@ static func _cargo_hull(mb: MeshBuilder, topsides: Color, deck: Color, funnel: C
 	# Accommodation block, bridge with its wings, and the funnel.
 	mb.box(Vector3(0, 7.2, -25.0), Vector3(10.0, 8.0, 6.0), WHITE)
 	for y: float in [5.2, 7.4, 9.6]:
-		mb.box(Vector3(0, y, -25.0), Vector3(10.1, 0.6, 6.1), WINDOW)
+		mb.box(Vector3(0, y, -25.0), Vector3(10.1, 0.6, 6.1), WINDOW_LIT)
 	mb.box(Vector3(0, 11.6, -24.0), Vector3(12.4, 1.4, 3.2), WHITE)
 	mb.box(Vector3(0, 11.7, -24.0), Vector3(12.5, 0.5, 3.3), WINDOW_LIT)
 	mb.box(Vector3(0, 12.4, -24.0), Vector3(12.8, 0.2, 3.6), Color(0.3, 0.32, 0.34))
@@ -699,7 +699,7 @@ static func trawler(variant: int) -> ArrayMesh:
 		mb.box(Vector3(0, d + 2.0 + 0.9, 3.3), Vector3(4.4, 1.8, 3.4), WHITE)
 		mb.box(Vector3(0, d + 2.0 + 1.15, 3.3), Vector3(4.46, 0.6, 3.46), WINDOW_LIT)
 		mb.box(Vector3(0, d + 2.0 + 1.85, 3.3), Vector3(4.9, 0.12, 3.9), WHITE)
-		mb.box(Vector3(0, d + 1.1, 2.0), Vector3(4.86, 0.5, 2.2), WINDOW)
+		mb.box(Vector3(0, d + 1.1, 2.0), Vector3(4.86, 0.5, 2.2), WINDOW_LIT)
 		# Sidelights in their screens on the wheelhouse sides.
 		for x: float in [-1.0, 1.0]:
 			var sl := Vector3(x * TRAWLER_SIDELIGHT.x, TRAWLER_SIDELIGHT.y, TRAWLER_SIDELIGHT.z)
@@ -798,6 +798,359 @@ static func trawler_working_lights() -> ArrayMesh:
 		gb.glow(Vector3(0, TRAWLER_DECK + 3.7, 1.55), GlowBuilder.LED, 0.28, 5.0, false, 0.0, Vector3(0, -0.4, -1), 0.0)
 		gb.pool(Vector3(0, TRAWLER_DECK + 0.05, -5.0), GlowBuilder.LED, 4.2, 0.5, 0.0)
 		gb.pool(Vector3(0, 0.05, -12.0), GlowBuilder.LED, 4.0, 0.1, 0.0)
+		return gb.commit())
+
+
+# Motor yacht (+Z is the bow), at the sailboats' scale: about 5.5 m long and
+# 1.8 m in the beam, a saloon with a raked windscreen, a flybridge under a bimini,
+# and a radar arch carrying its masthead (or, at anchor, anchor) light.
+const YACHT_ARCH_TOP := Vector3(0, 2.1, -0.85)
+const YACHT_LANTERN := 0.5
+const YACHT_SIDELIGHT := Vector3(0.74, 1.4, 0.44)
+const YACHT_HULLS := [Color(0.94, 0.95, 0.94), Color(0.1, 0.16, 0.3), Color(0.78, 0.8, 0.82)]
+const YACHT_STRIPES := [Color(0.1, 0.2, 0.42), Color(0.94, 0.95, 0.94), Color(0.13, 0.13, 0.15)]
+const YACHT_CANVAS := [Color(0.13, 0.22, 0.38), Color(0.82, 0.78, 0.68), Color(0.2, 0.2, 0.22)]
+const TEAK := Color(0.62, 0.45, 0.28)
+# Sidelight lenses that only shine when the boat shows its lights (the glow is in
+# its nav-light mesh, shown under way): plain coloured glass.
+const LENS_RED := Color(0.62, 0.1, 0.08)
+const LENS_GREEN := Color(0.1, 0.5, 0.24)
+const CUSHION := Color(0.88, 0.85, 0.77)
+
+
+static func _yacht_outline(grow := 0.0) -> PackedVector2Array:
+	var pts := PackedVector2Array([Vector2(-0.82, -2.75), Vector2(0.82, -2.75), Vector2(0.9, -1.8), Vector2(0.9, 0.4),
+		Vector2(0.78, 1.5), Vector2(0.45, 2.3), Vector2(0, 2.75), Vector2(-0.45, 2.3), Vector2(-0.78, 1.5),
+		Vector2(-0.9, 0.4), Vector2(-0.9, -1.8)])
+	if grow != 0.0:
+		for i in pts.size():
+			pts[i] = pts[i] * Vector2((0.9 + grow) / 0.9, (2.75 + grow) / 2.75)
+	return pts
+
+
+## A flybridge motor yacht; `variant` picks its colours.
+static func motor_yacht(variant: int) -> ArrayMesh:
+	return _cached("yacht_%d" % variant, func():
+		var mb := MeshBuilder.new()
+		var hull: Color = YACHT_HULLS[variant % YACHT_HULLS.size()]
+		var stripe: Color = YACHT_STRIPES[variant % YACHT_STRIPES.size()]
+		var canvas: Color = YACHT_CANVAS[variant % YACHT_CANVAS.size()]
+		var deck := Color(0.92, 0.91, 0.87)
+		var outline := _yacht_outline()
+		mb.extrude(outline, -0.4, 0.05, Color(0.12, 0.14, 0.2), Color(0, 0, 0, 0), 0.5)
+		mb.extrude(outline, 0.05, 0.62, hull, deck)
+		mb.extrude(_yacht_outline(0.03), 0.12, 0.2, stripe, Color(0, 0, 0, 0))
+		# Hull ports for the cabins below, a teak cockpit and swim platform aft.
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * 0.88, 0.4, 0.55), Vector3(0.05, 0.1, 0.8), WINDOW)
+		mb.box(Vector3(0, 0.632, -2.15), Vector3(1.5, 0.02, 1.1), TEAK)
+		mb.box(Vector3(0, 0.12, -2.95), Vector3(1.55, 0.07, 0.42), TEAK)
+		mb.box(Vector3(0, 0.76, -2.58), Vector3(1.4, 0.28, 0.26), CUSHION)
+		# The saloon, windows down its sides and glass doors aft, and its raked
+		# windscreen.
+		mb.box(Vector3(0, 0.91, -0.45), Vector3(1.5, 0.58, 2.1), WHITE)
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * 0.755, 0.95, -0.5), Vector3(0.02, 0.3, 1.8), WINDOW)
+			mb.tri(Vector3(x * 0.75, 1.2, 0.6), Vector3(x * 0.75, 0.62, 0.6), Vector3(x * 0.75, 0.62, 1.2), WHITE, Vector3(x, 0, 0))
+		mb.box(Vector3(0, 0.92, -1.505), Vector3(1.1, 0.44, 0.02), WINDOW)
+		mb.quad(Vector3(-0.75, 1.2, 0.6), Vector3(0.75, 1.2, 0.6), Vector3(0.75, 0.62, 1.2), Vector3(-0.75, 0.62, 1.2),
+			GLASS, Vector3(0, 1, 1))
+		# The flybridge: deck, screen, helm and seats.
+		mb.box(Vector3(0, 1.25, -0.55), Vector3(1.56, 0.1, 2.0), WHITE)
+		mb.box(Vector3(0, 1.4, 0.36), Vector3(1.5, 0.22, 0.18), WHITE)
+		mb.box(Vector3(0.38, 1.46, 0.12), Vector3(0.42, 0.3, 0.24), WHITE)
+		mb.box(Vector3(0.38, 1.62, 0.18), Vector3(0.36, 0.04, 0.14), GLASS)
+		mb.box(Vector3(0.38, 1.42, -0.32), Vector3(0.44, 0.24, 0.4), CUSHION)
+		mb.box(Vector3(0, 1.4, -1.25), Vector3(1.25, 0.2, 0.42), CUSHION)
+		# Sidelights in the screen's corners.
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * YACHT_SIDELIGHT.x, YACHT_SIDELIGHT.y, YACHT_SIDELIGHT.z), Vector3(0.06, 0.08, 0.12),
+				LENS_RED if x > 0.0 else LENS_GREEN)
+		# The radar arch, leaning aft, with the radome and the lantern on top;
+		# the bimini forward of it.
+		var a_y := YACHT_ARCH_TOP.y - 0.22
+		var a_z := YACHT_ARCH_TOP.z
+		for x: float in [-1.0, 1.0]:
+			var lo := Vector3(x * 0.68, 1.3, a_z + 0.2)
+			var hi := Vector3(x * 0.5, a_y, a_z)
+			mb.xform = Transform3D(Basis.looking_at(hi - lo), (lo + hi) * 0.5)
+			mb.box(Vector3.ZERO, Vector3(0.09, 0.12, lo.distance_to(hi)), WHITE)
+			mb.xform = Transform3D.IDENTITY
+		mb.box(Vector3(0, a_y, a_z), Vector3(1.1, 0.1, 0.2), WHITE)
+		mb.cylinder(Vector3(0, a_y + 0.05, a_z), 0.16, 0.16, 0.12, 8, WHITE)
+		add_lantern(mb, YACHT_ARCH_TOP, GlowBuilder.LED, YACHT_LANTERN)
+		mb.box(Vector3(0, 1.9, -0.3), Vector3(1.4, 0.04, 1.1), canvas)
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * 0.66, 1.62, 0.2), Vector3(0.03, 0.56, 0.03), Color(0.8, 0.8, 0.8))
+		# Foredeck: a sunpad, the bow rail and the anchor in its roller.
+		mb.box(Vector3(0, 0.67, 1.55), Vector3(0.9, 0.08, 0.6), CUSHION)
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * 0.6, 0.85, 1.7), Vector3(0.03, 0.03, 1.5), Color(0.82, 0.82, 0.82))
+		mb.box(Vector3(0, 0.66, 2.55), Vector3(0.12, 0.06, 0.34), Color(0.5, 0.52, 0.54))
+		mb.box(Vector3(0, 0.45, -2.76), Vector3(0.1, 0.06, 0.03), lamp_glass(GlowBuilder.LED))
+		return mb.commit())
+
+
+## The anchor's rode, out from the bow roller and down into the water ahead
+## (shown at anchor).
+static func motor_yacht_rode() -> ArrayMesh:
+	return _cached("yacht_rode", func():
+		var mb := MeshBuilder.new()
+		var a := Vector3(0, 0.62, 2.72)
+		var b := Vector3(0, -0.5, 4.3)
+		mb.xform = Transform3D(Basis.looking_at(b - a), (a + b) * 0.5)
+		mb.box(Vector3.ZERO, Vector3(0.04, 0.04, a.distance_to(b)), Color(0.3, 0.3, 0.32))
+		return mb.commit())
+
+
+## The lit saloon's reflection, drawn by NightLights on each motor yacht.
+static func motor_yacht_lights() -> ArrayMesh:
+	return _cached("yacht_lights", func():
+		var gb := GlowBuilder.new()
+		var window := Color(1.0, 0.74, 0.42)
+		for x: float in [-0.78, 0.78]:
+			for i in 2:
+				gb.reflection(Vector3(x, 0.95, -1.0 + i * 0.8), window, 0.12, 1.2, Vector3(signf(x), 0, 0))
+		return gb.commit())
+
+
+## Sidelights and stern light, shown under way.
+static func motor_yacht_nav_lights() -> ArrayMesh:
+	return _cached("yacht_nav", func():
+		var gb := GlowBuilder.new()
+		gb.glow(YACHT_SIDELIGHT + Vector3(0.02, 0, 0.04), GlowBuilder.RED, 0.1, 4.0, true, 0.0, Vector3(1, 0, 0.8), 0.0)
+		gb.glow(Vector3(-YACHT_SIDELIGHT.x - 0.02, YACHT_SIDELIGHT.y, YACHT_SIDELIGHT.z + 0.04), GlowBuilder.GREEN, 0.1, 4.0, true, 0.0, Vector3(-1, 0, 0.8), 0.0)
+		gb.glow(Vector3(0, 0.45, -2.8), GlowBuilder.LED, 0.08, 3.0, true, 0.0, Vector3(0, 0, -1), 0.0)
+		return gb.commit())
+
+
+## The light on the arch: the masthead light under way, the anchor light at anchor.
+static func motor_yacht_mast_light() -> ArrayMesh:
+	return _cached("yacht_mast", func():
+		var gb := GlowBuilder.new()
+		gb.glow(lantern_glow_at(YACHT_ARCH_TOP, YACHT_LANTERN), GlowBuilder.LED, 0.12, 4.5, true, 0.0, Vector3.ZERO, 0.0)
+		return gb.commit())
+
+
+# Pilot boat (+Z is the bow): about 9 m long and 3 m in the beam, heavily fendered
+# to lie against a ship's side, the deckhouse forward and its mast carrying the
+# pilot vessel's lights (white over red).
+const PILOT_WHITE := Vector3(0, 3.95, 0.7)
+const PILOT_RED := Vector3(0, 3.5, 0.7)
+const PILOT_LANTERN := 0.9
+const PILOT_SIDELIGHT := Vector3(1.13, 1.75, 1.8)
+const PILOT_HULLS := [Color(0.08, 0.08, 0.09), Color(0.86, 0.33, 0.1), Color(0.1, 0.15, 0.28)]
+const PILOT_TOPS := [Color(0.9, 0.4, 0.1), Color(0.94, 0.95, 0.94), Color(0.9, 0.4, 0.1)]
+
+
+static func _pilot_outline(grow := 0.0) -> PackedVector2Array:
+	var pts := PackedVector2Array([Vector2(-1.4, -4.5), Vector2(1.4, -4.5), Vector2(1.5, -3.5), Vector2(1.5, 1.0),
+		Vector2(1.3, 2.6), Vector2(0.75, 3.8), Vector2(0, 4.5), Vector2(-0.75, 3.8), Vector2(-1.3, 2.6),
+		Vector2(-1.5, 1.0), Vector2(-1.5, -3.5)])
+	if grow != 0.0:
+		for i in pts.size():
+			pts[i] = pts[i] * Vector2((1.5 + grow) / 1.5, (4.5 + grow) / 4.5)
+	return pts
+
+
+## A pilot boat; `variant` picks its colours.
+static func pilot_boat(variant: int) -> ArrayMesh:
+	return _cached("pilot_%d" % variant, func():
+		var mb := MeshBuilder.new()
+		var hull: Color = PILOT_HULLS[variant % PILOT_HULLS.size()]
+		var top: Color = PILOT_TOPS[variant % PILOT_TOPS.size()]
+		var deck := Color(0.4, 0.42, 0.42)
+		var fender := Color(0.06, 0.06, 0.07)
+		var outline := _pilot_outline()
+		mb.extrude(outline, -0.8, 0.05, Color(0.5, 0.14, 0.12), Color(0, 0, 0, 0), 0.55)
+		mb.extrude(outline, 0.05, 0.95, hull, deck)
+		# The heavy rubber fender all round the gunwale.
+		mb.extrude(_pilot_outline(0.14), 0.62, 0.95, fender, Color(0, 0, 0, 0))
+		mb.extrude(_pilot_outline(0.04), 0.1, 0.18, WHITE, Color(0, 0, 0, 0))
+		# Deckhouse, windows all round, and the roof in the station's colour with a
+		# rail round it.
+		mb.box(Vector3(0, 1.6, 0.4), Vector3(2.2, 1.3, 3.4), WHITE)
+		mb.box(Vector3(0, 1.85, 0.4), Vector3(2.24, 0.48, 3.44), WINDOW_LIT)
+		mb.box(Vector3(0, 2.3, 0.4), Vector3(2.4, 0.12, 3.6), top)
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * 1.1, 2.6, 0.4), Vector3(0.05, 0.05, 3.2), WHITE)
+		mb.box(Vector3(0, 2.6, -1.25), Vector3(2.2, 0.05, 0.05), WHITE)
+		mb.box(Vector3(0, 2.6, 2.05), Vector3(2.2, 0.05, 0.05), WHITE)
+		# A band of the top colour round the hull below the fender.
+		mb.extrude(_pilot_outline(0.02), 0.38, 0.55, top, Color(0, 0, 0, 0))
+		# Sidelights on the deckhouse's forward corners.
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * PILOT_SIDELIGHT.x, PILOT_SIDELIGHT.y, PILOT_SIDELIGHT.z), Vector3(0.06, 0.16, 0.24),
+				LENS_RED if x > 0.0 else LENS_GREEN)
+		# The mast: radar, then the pilot's red and white lanterns.
+		mb.box(Vector3(0, (2.36 + PILOT_WHITE.y) * 0.5, PILOT_WHITE.z), Vector3(0.12, PILOT_WHITE.y - 2.36, 0.12), WHITE)
+		mb.box(Vector3(0, 3.05, PILOT_WHITE.z), Vector3(1.4, 0.08, 0.26), WHITE)
+		mb.box(Vector3(0, 3.2, PILOT_WHITE.z), Vector3(0.8, 0.06, 0.08), Color(0.2, 0.2, 0.22))
+		add_lantern(mb, PILOT_RED, GlowBuilder.RED, PILOT_LANTERN)
+		add_lantern(mb, PILOT_WHITE, GlowBuilder.LED, PILOT_LANTERN)
+		# Foredeck rails where the pilot steps across, a bitt aft and the stern light.
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * 1.05, 1.35, 3.0), Vector3(0.05, 0.05, 1.6), WHITE)
+			for z: float in [2.3, 3.0, 3.7]:
+				mb.box(Vector3(x * 1.05 * (1.0 - (z - 2.3) * 0.3), 1.15, z), Vector3(0.05, 0.4, 0.05), WHITE)
+		mb.cylinder(Vector3(0, 0.95, -3.4), 0.14, 0.14, 0.35, 8, Color(0.2, 0.2, 0.22))
+		mb.cylinder(Vector3(0.6, 0.95, -2.4), 0.3, 0.3, 0.5, 8, WHITE)
+		mb.box(Vector3(0, 0.8, -4.52), Vector3(0.14, 0.1, 0.04), lamp_glass(GlowBuilder.LED))
+		return mb.commit())
+
+
+## The ship's pilot ladder, hung over its side down to just above the pilot
+## boat's deck, in the boat's frame with the ship's side `out` metres to
+## starboard (+X) and its deck `deck` metres up.
+static func pilot_ladder(out: float, deck: float) -> ArrayMesh:
+	return _cached("pilot_ladder_%.2f_%.2f" % [out, deck], func():
+		var mb := MeshBuilder.new()
+		var rope := Color(0.75, 0.66, 0.48)
+		var foot := 1.45
+		# Abreast of the foredeck, where the boat's boarding rails are.
+		var z := 2.9
+		for dz: float in [-0.25, 0.25]:
+			mb.box(Vector3(out - 0.04, (deck + foot) * 0.5, z + dz), Vector3(0.04, deck - foot, 0.04), rope)
+		var y := foot + 0.1
+		while y < deck - 0.1:
+			mb.box(Vector3(out - 0.05, y, z), Vector3(0.06, 0.05, 0.62), Color(0.55, 0.36, 0.2))
+			y += 0.33
+		# The pilot, stepping across from the foredeck in a hi-vis jacket.
+		var px := out - 0.45
+		mb.box(Vector3(px, 1.35, z), Vector3(0.24, 0.5, 0.22), Color(0.12, 0.13, 0.18))
+		mb.box(Vector3(px, 1.78, z), Vector3(0.3, 0.38, 0.26), Color(0.95, 0.5, 0.1))
+		mb.box(Vector3(px, 2.07, z), Vector3(0.18, 0.18, 0.18), Color(0.85, 0.65, 0.5))
+		return mb.commit())
+
+
+static func pilot_boat_lights() -> ArrayMesh:
+	return _cached("pilot_lights", func():
+		var gb := GlowBuilder.new()
+		var window := Color(1.0, 0.74, 0.42)
+		for x: float in [-1.15, 1.15]:
+			for i in 3:
+				gb.reflection(Vector3(x, 1.85, -0.6 + i), window, 0.16, 1.4, Vector3(signf(x), 0, 0))
+		return gb.commit())
+
+
+## Sidelights and stern light, shown under way.
+static func pilot_boat_nav_lights() -> ArrayMesh:
+	return _cached("pilot_nav", func():
+		var gb := GlowBuilder.new()
+		gb.glow(PILOT_SIDELIGHT + Vector3(0.04, 0, 0.1), GlowBuilder.RED, 0.15, 5.0, true, 0.0, Vector3(1, 0, 0.8), 0.0)
+		gb.glow(Vector3(-PILOT_SIDELIGHT.x - 0.04, PILOT_SIDELIGHT.y, PILOT_SIDELIGHT.z + 0.1), GlowBuilder.GREEN, 0.15, 5.0, true, 0.0, Vector3(-1, 0, 0.8), 0.0)
+		gb.glow(Vector3(0, 0.8, -4.56), GlowBuilder.LED, 0.1, 3.5, true, 0.0, Vector3(0, 0, -1), 0.0)
+		return gb.commit())
+
+
+## On pilotage duty: white over red, all round.
+static func pilot_boat_duty_lights() -> ArrayMesh:
+	return _cached("pilot_duty", func():
+		var gb := GlowBuilder.new()
+		gb.glow(lantern_glow_at(PILOT_WHITE, PILOT_LANTERN), GlowBuilder.LED, 0.17, 6.0, true, 0.0, Vector3.ZERO, 0.0)
+		gb.glow(lantern_glow_at(PILOT_RED, PILOT_LANTERN), GlowBuilder.RED, 0.17, 6.0, true, 0.0, Vector3.ZERO, 0.0)
+		return gb.commit())
+
+
+# Tug (+Z is the bow): about 14 m long and 5 m in the beam, heavily fendered, the
+# wheelhouse high on its deckhouse forward, the stack behind it and the towing
+# winch and staple on the after deck.
+const TUG_MAST := Vector3(0, 7.7, 1.4)
+const TUG_LANTERN := 1.1
+const TUG_SIDELIGHT := Vector3(1.56, 4.7, 2.9)
+const TUG_HULLS := [Color(0.1, 0.1, 0.11), Color(0.62, 0.15, 0.12), Color(0.13, 0.22, 0.36)]
+const TUG_HOUSES := [Color(0.94, 0.95, 0.94), Color(0.94, 0.95, 0.94), Color(0.9, 0.84, 0.62)]
+const TUG_STACKS := [Color(0.86, 0.33, 0.1), Color(0.1, 0.1, 0.11), Color(0.75, 0.15, 0.13)]
+
+
+static func _tug_outline(grow := 0.0) -> PackedVector2Array:
+	var pts := PackedVector2Array([Vector2(-2.2, -7), Vector2(2.2, -7), Vector2(2.5, -5.5), Vector2(2.5, 2.0),
+		Vector2(2.2, 4.5), Vector2(1.4, 6.3), Vector2(0, 7), Vector2(-1.4, 6.3), Vector2(-2.2, 4.5),
+		Vector2(-2.5, 2.0), Vector2(-2.5, -5.5)])
+	if grow != 0.0:
+		for i in pts.size():
+			pts[i] = pts[i] * Vector2((2.5 + grow) / 2.5, (7.0 + grow) / 7.0)
+	return pts
+
+
+## A tug; `variant` picks its colours.
+static func tug(variant: int) -> ArrayMesh:
+	return _cached("tug_%d" % variant, func():
+		var mb := MeshBuilder.new()
+		var hull: Color = TUG_HULLS[variant % TUG_HULLS.size()]
+		var house: Color = TUG_HOUSES[variant % TUG_HOUSES.size()]
+		var stack: Color = TUG_STACKS[variant % TUG_STACKS.size()]
+		var deck := Color(0.36, 0.37, 0.37)
+		var fender := Color(0.06, 0.06, 0.07)
+		var steel := Color(0.25, 0.26, 0.28)
+		var outline := _tug_outline()
+		mb.extrude(outline, -2.2, 0.05, Color(0.55, 0.14, 0.12), Color(0, 0, 0, 0), 0.65)
+		mb.extrude(outline, 0.05, 1.3, hull, deck)
+		mb.extrude(_tug_outline(0.04), 0.95, 1.08, WHITE, Color(0, 0, 0, 0))
+		# Fendering all round, and the big bow fender for pushing.
+		mb.extrude(_tug_outline(0.3), 0.35, 1.0, fender, Color(0, 0, 0, 0))
+		mb.box(Vector3(0, 1.1, 6.75), Vector3(2.4, 1.3, 0.9), fender)
+		# Bulwarks down the sides, a white cap on them.
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * 2.42, 1.6, -1.8), Vector3(0.14, 0.6, 9.4), hull)
+			mb.box(Vector3(x * 2.42, 1.92, -1.8), Vector3(0.2, 0.06, 9.4), WHITE)
+		# The deckhouse, the wheelhouse high on it with windows all round, and the
+		# mast on its roof.
+		mb.box(Vector3(0, 2.4, 1.6), Vector3(3.6, 2.2, 5.0), house)
+		mb.box(Vector3(0, 2.6, 1.6), Vector3(3.64, 0.5, 4.2), WINDOW)
+		mb.box(Vector3(0, 4.4, 2.2), Vector3(3.0, 1.8, 2.6), house)
+		mb.box(Vector3(0, 4.62, 2.2), Vector3(3.06, 0.7, 2.66), WINDOW_LIT)
+		mb.box(Vector3(0, 5.36, 2.2), Vector3(3.5, 0.12, 3.1), house)
+		for x: float in [-1.0, 1.0]:
+			var sl := Vector3(x * TUG_SIDELIGHT.x, TUG_SIDELIGHT.y, TUG_SIDELIGHT.z)
+			mb.box(sl + Vector3(0, 0, -0.25), Vector3(0.3, 0.34, 0.06), LAMP_DARK)
+			mb.box(sl, Vector3(0.12, 0.24, 0.3), LENS_RED if x > 0.0 else LENS_GREEN)
+		mb.box(Vector3(0, (5.42 + TUG_MAST.y) * 0.5, TUG_MAST.z), Vector3(0.16, TUG_MAST.y - 5.42, 0.16), house)
+		mb.box(Vector3(0, 6.3, TUG_MAST.z), Vector3(2.4, 0.1, 0.3), house)
+		mb.box(Vector3(0, 6.45, TUG_MAST.z), Vector3(1.2, 0.06, 0.1), Color(0.2, 0.2, 0.22))
+		add_lantern(mb, TUG_MAST, GlowBuilder.LED, TUG_LANTERN)
+		# The stack, behind the wheelhouse.
+		mb.box(Vector3(0, 3.9, -1.5), Vector3(1.3, 2.6, 1.4), stack)
+		mb.box(Vector3(0, 5.25, -1.5), Vector3(1.32, 0.3, 1.42), Color(0.08, 0.08, 0.08))
+		mb.box(Vector3(0, 4.2, -1.5), Vector3(1.34, 0.3, 1.44), WHITE)
+		# Towing winch and the staple over the after deck, bitts either side.
+		mb.box(Vector3(0, 1.8, -3.6), Vector3(2.2, 1.0, 1.3), steel)
+		mb.cylinder(Vector3(0, 1.55, -3.6), 0.5, 0.5, 0.5, 10, Color(0.75, 0.6, 0.18))
+		for x: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * 1.9, 2.4, -5.8), Vector3(0.3, 2.2, 0.3), stack)
+			mb.cylinder(Vector3(x * 1.4, 1.3, -6.3), 0.2, 0.2, 0.5, 8, steel)
+		mb.box(Vector3(0, 3.5, -5.8), Vector3(4.1, 0.3, 0.3), stack)
+		mb.box(Vector3(0, 1.4, -7.02), Vector3(0.18, 0.14, 0.04), lamp_glass(GlowBuilder.LED))
+		return mb.commit())
+
+
+static func tug_lights() -> ArrayMesh:
+	return _cached("tug_lights", func():
+		var gb := GlowBuilder.new()
+		var window := Color(1.0, 0.74, 0.42)
+		for x: float in [-1.55, 1.55]:
+			for i in 3:
+				gb.reflection(Vector3(x, 4.62, 1.3 + i * 0.9), window, 0.2, 1.6, Vector3(signf(x), 0, 0))
+		for i in 3:
+			gb.reflection(Vector3(-1.0 + i, 4.62, 3.55), window, 0.2, 1.6, Vector3(0, 0, 1))
+		return gb.commit())
+
+
+## Sidelights and stern light, shown under way.
+static func tug_nav_lights() -> ArrayMesh:
+	return _cached("tug_nav", func():
+		var gb := GlowBuilder.new()
+		gb.glow(Vector3(TUG_SIDELIGHT.x, TUG_SIDELIGHT.y, TUG_SIDELIGHT.z + 0.1), GlowBuilder.RED, 0.18, 6.0, true, 0.0, Vector3(1, 0, 0.8), 0.0)
+		gb.glow(Vector3(-TUG_SIDELIGHT.x, TUG_SIDELIGHT.y, TUG_SIDELIGHT.z + 0.1), GlowBuilder.GREEN, 0.18, 6.0, true, 0.0, Vector3(-1, 0, 0.8), 0.0)
+		gb.glow(Vector3(0, 1.4, -7.08), GlowBuilder.LED, 0.12, 4.0, true, 0.0, Vector3(0, 0, -1), 0.0)
+		return gb.commit())
+
+
+## The masthead light, shown under way.
+static func tug_mast_light() -> ArrayMesh:
+	return _cached("tug_mast", func():
+		var gb := GlowBuilder.new()
+		gb.glow(lantern_glow_at(TUG_MAST, TUG_LANTERN), GlowBuilder.LED, 0.2, 7.0, true, 0.0, Vector3.ZERO, 0.0)
 		return gb.commit())
 
 
