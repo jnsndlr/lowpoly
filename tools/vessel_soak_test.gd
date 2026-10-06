@@ -33,6 +33,9 @@ var _trace_t := 0.0
 var anchorings := 0
 var yacht_closest := INF
 var yacht_brake := 0.0
+var ferry_held_in := 0.0      # ferries ready to leave, holding in at the dock
+var ferry_stopped := 0.0      # ferries stopped under way
+var ferry_stop_why := {}
 
 
 func _initialize() -> void:
@@ -142,6 +145,21 @@ func _process(delta: float) -> bool:
 		else:
 			stall[a] = 0.0
 			reported.erase(a)
+	for f in sim.ferries:
+		if f.state == Ferry.State.SAILING and f.speed < 0.2:
+			if f.traveled < 0.5:
+				ferry_held_in += delta
+			else:
+				ferry_stopped += delta
+				var why := f.status_text()
+				if not why.begins_with("En route"):
+					why = "%s: %s" % [f.ferry_name, why]
+					if not ferry_stop_why.has(why):
+						var o: Ferry = f._waiting_for
+						print("FERRY WAIT %s %s at %.0f of %.0f m to %s: %s%s" % [sim.clock_text(), f.ferry_name, f.traveled, f.run_length(),
+							f.destination().island.name, why, "" if o == null else " [%s at %.0f of %.0f m to %s]" % [
+								o.ferry_name, o.traveled, o.run_length(), o.destination().island.name]])
+					ferry_stop_why[why] = ferry_stop_why.get(why, 0.0) + delta
 	if frames < max_frames:
 		return false
 	var sail := 0
@@ -155,6 +173,11 @@ func _process(delta: float) -> bool:
 		brake += b.brake_time
 	print("DONE day %d %s: sail trips %d, ferry trips %d, overlaps %d, aground %d" % [
 		sim.day, sim.clock_text(), sail, ferry, overlaps.size(), aground.size()])
+	var sizes := []
+	for f in sim.ferries:
+		sizes.append("%s %d (%d trips)" % [f.ferry_name, f.fc.size, f.trips])
+	print("     ferries: " + ", ".join(PackedStringArray(sizes)))
+	print("     ferry waits: held in at the dock %.0f s, stopped under way %.0f s %s" % [ferry_held_in, ferry_stopped, ferry_stop_why])
 	print("     sailboats: stops under way %d, hull-check braking %.0f s, closest pass %.2f m" % [
 		sail_stops, brake, closest])
 	var fbrake := 0.0

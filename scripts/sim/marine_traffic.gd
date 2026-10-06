@@ -38,9 +38,10 @@ const RANK_CARGO := 2000
 const RANK_FERRY := 3000
 # Kept between hulls (their capsules already stand a little proud of the hulls).
 const MARGIN := 0.4
-# Two ferry hulls (as capsule segments) this close are in each other's way: two
-# hull radii, MARGIN, the extra kept clear of a higher rank's path, and a metre over.
-const CORRIDOR_GAP := 10.5
+# Two ferry hulls (as capsule segments) are in each other's way closer than their
+# two hull radii and this: MARGIN, the extra kept clear of a higher rank's path,
+# and a metre over.
+const CORRIDOR_CLEAR := 1.9
 const POSE_STEP := 2.0
 
 var sim: Simulation
@@ -134,6 +135,7 @@ func remove(v: Vessel) -> void:
 class Corridor:
 	var span := {}
 	var docked := {}
+	var ferry := {}                 # route id -> the ferry on it
 	var owner: Ferry = null
 
 
@@ -145,8 +147,8 @@ func _find_corridors() -> void:
 		for j in range(i + 1, routes.size()):
 			var r1 := routes[i]
 			var r2 := routes[j]
-			var w1 := _in_the_way(r1, r2)
-			var w2 := _in_the_way(r2, r1)
+			var w1 := _in_the_way(ferry_on(r1), ferry_on(r2))
+			var w2 := _in_the_way(ferry_on(r2), ferry_on(r1))
 			var span1: Vector2 = w1[0]
 			var span2: Vector2 = w2[0]
 			if span1.x > span1.y or span2.x > span2.y:
@@ -156,19 +158,30 @@ func _find_corridors() -> void:
 			c.span[r2.id] = span2
 			c.docked[r1.id] = w1[1]
 			c.docked[r2.id] = w2[1]
+			c.ferry[r1.id] = ferry_on(r1)
+			c.ferry[r2.id] = ferry_on(r2)
 			corridors[r1.id].append(c)
 			corridors[r2.id].append(c)
 
 
-## [the stretch of `r` (first to last offset, padded a little) over which a ferry's
-## hull comes within CORRIDOR_GAP of a ferry's hull anywhere along `other` (empty,
-## x > y, if none), whether a ferry docked at r's A / B end is (x / y)].
-func _in_the_way(r: MapData.Route, other: MapData.Route) -> Array:
-	var mine := _route_poses(r)
+func ferry_on(r: MapData.Route) -> Ferry:
+	for f in sim.ferries:
+		if f.route == r:
+			return f
+	return null
+
+
+## [the stretch of `f`'s route (first to last curve offset, padded a little) over
+## which its hull comes within reach of `other`'s hull anywhere along its route
+## (empty, x > y, if none), whether `f` docked at its A / B end is (x / y)].
+func _in_the_way(f: Ferry, other: Ferry) -> Array:
+	var r := f.route
+	var mine := _route_poses(f)
 	var theirs := _route_poses(other)
+	var gap := f.hull_radius + other.hull_radius + CORRIDOR_CLEAR
 	# Their poses bucketed by where they are; two hulls that close are within a
 	# bucket of each other.
-	var cell := (Ferry.HULL_HALF_LENGTH - 4.3) * 2.0 + CORRIDOR_GAP
+	var cell := maxf(f.half_seg, other.half_seg) * 2.0 + gap
 	var buckets := {}
 	for j in theirs[0].size():
 		var m: Vector2 = (theirs[0][j] + theirs[1][j]) * 0.5
@@ -180,6 +193,7 @@ func _in_the_way(r: MapData.Route, other: MapData.Route) -> Array:
 	var hi := -INF
 	var ends := Vector2i.ZERO
 	var last: int = mine[0].size() - 1
+	var s0 := -f.dock_inset()
 	for k in mine[0].size():
 		var a: Vector2 = mine[0][k]
 		var b: Vector2 = mine[1][k]
@@ -189,9 +203,9 @@ func _in_the_way(r: MapData.Route, other: MapData.Route) -> Array:
 			for dx in range(-1, 2):
 				near.append_array(buckets.get(Vector2i(floori(mid.x / cell) + dx, floori(mid.y / cell) + dy), []))
 		for j in near:
-			if _seg_dist(a, b, theirs[0][j], theirs[1][j]) < CORRIDOR_GAP:
-				lo = minf(lo, k * POSE_STEP)
-				hi = maxf(hi, k * POSE_STEP)
+			if _seg_dist(a, b, theirs[0][j], theirs[1][j]) < gap:
+				lo = minf(lo, s0 + k * POSE_STEP)
+				hi = maxf(hi, s0 + k * POSE_STEP)
 				if k == 0:
 					ends.x = 1
 				if k == last:
@@ -199,18 +213,19 @@ func _in_the_way(r: MapData.Route, other: MapData.Route) -> Array:
 				break
 	if lo > hi:
 		return [Vector2(1, 0), ends]
-	return [Vector2(maxf(lo - 4.0, 0.0), minf(hi + 4.0, r.length)), ends]
+	return [Vector2(maxf(lo - 4.0, s0), minf(hi + 4.0, r.length - s0)), ends]
 
 
-## A ferry's hull every POSE_STEP along a route, as [ends a, ends b].
-func _route_poses(r: MapData.Route) -> Array:
+## A ferry's hull every POSE_STEP along its crossing, dock to dock, as [ends a, ends b].
+func _route_poses(f: Ferry) -> Array:
 	var ea := PackedVector2Array()
 	var eb := PackedVector2Array()
-	var half := Ferry.HULL_HALF_LENGTH - 4.3
-	var s := 0.0
-	while s <= r.length:
-		var p := r.curve.sample_baked(s)
-		var t := r.curve.sample_baked(minf(s + 1.5, r.length)) - r.curve.sample_baked(maxf(s - 1.5, 0.0))
+	var half := f.half_seg
+	var s := -f.dock_inset()
+	var end := f.route.length + f.dock_inset()
+	while s <= end + 0.01:
+		var p := f.route_point(s)
+		var t := f.route_point(s + 1.5) - f.route_point(s - 1.5)
 		var t2 := Vector2(t.x, t.z).normalized() * half
 		ea.append(Vector2(p.x, p.z) - t2)
 		eb.append(Vector2(p.x, p.z) + t2)

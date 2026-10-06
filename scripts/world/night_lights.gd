@@ -28,7 +28,7 @@ func setup(s: Simulation, r: CameraRig, d: DayCycle, fixed: MeshInstance3D) -> v
 	static_lights = fixed
 	for f in sim.ferries:
 		var mi := MeshInstance3D.new()
-		mi.mesh = Models.ferry_lights()
+		mi.mesh = Models.ferry_lights(f.fc)
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.layers = LAYER
 		f.add_child(mi)

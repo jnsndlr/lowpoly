@@ -2,12 +2,12 @@ class_name Ferry
 extends Vessel
 ## A double-ended car ferry shuttling along one route. It never turns around: cars
 ## board at the end facing the pier, park on the deck (as children of the ferry, so
-## they ride along) and drive off the opposite end at the destination.
+## they ride along) and drive off the opposite end at the destination. Its size
+## (FerryClass) sets how many cars it takes and how fast it goes; whatever its
+## length, it docks with its end at the ramp.
 
 enum State { UNLOADING, LOADING, SAILING }
 
-const CAPACITY := 36
-const CRUISE := 9.0
 const ACCEL := 1.4
 # Arrival: ferries ease off to APPROACH_SPEED along the run-in, then from the
 # moment the bow passes the outer dolphins the forward prop reverse-thrusts them
@@ -16,17 +16,17 @@ const DECEL := 0.5
 # Braking to give way to other traffic.
 const YIELD_DECEL := 0.9
 const APPROACH_SPEED := 3.2
-const OUTER_DOLPHIN_U := Layout.PIER_END + 21.0
+const OUTER_DOLPHIN_U := Layout.DOLPHIN_OUTER.x
 const MIN_DWELL := 10.0
 const MAX_DWELL := 24.0
 const DISPATCH_GAP := 0.5
-const ROWS := [10.0, 7.5, 5.0, 2.5, 0.0, -2.5, -5.0, -7.5, -10.0]
-const COLS := [-2.25, -0.75, 0.75, 2.25]
-const END_Z := 14.0
-const HULL_HALF_LENGTH := 15.0
-const HULL_HALF_BEAM := 4.2
+# A ferry about to leave holds in at the dock while a stretch of water it shares
+# with another route, no further out than this, is taken, or while a ferry
+# coming in to the same terminal, this close to it, has it still to pass.
+const ARRIVAL_PRIORITY := 220.0
 
 var sim: Simulation
+var fc: FerryClass
 var route: MapData.Route
 var ferry_name := ""
 var term_a: Terminal
@@ -34,7 +34,7 @@ var term_b: Terminal
 var state := State.LOADING
 var at_a := true        # docked at A, or departed from A while sailing
 var hull: MeshInstance3D
-var traveled := 0.0
+var traveled := 0.0      # how far the hull's centre has come, dock to dock
 var trips := 0
 var aboard: Array[Vehicle] = []
 var _slots: Array[Vehicle] = []
@@ -47,31 +47,40 @@ var _thrust := 0.0   # forward prop reverse thrust while braking, 0..1
 var _last_pos := Vector3.ZERO
 var _tracking := false
 var _waiting_for: Ferry = null   # holding off a corridor this ferry has reserved
+var _giving_way := false         # (holding in at the dock for _waiting_for to come in)
 var _runs := {}                   # at_a -> _corridor_runs() for that direction
+# Route curves run between where a size-4 ferry's centre lies docked
+# (Layout.DOCK_U); a shorter one docks this much further in at both ends, a
+# longer one further out (negative).
+var _inset := 0.0
 
 
-func setup(s: Simulation, r: MapData.Route, nm: String) -> void:
+func setup(s: Simulation, r: MapData.Route, nm: String, size: int) -> void:
 	sim = s
 	route = r
+	fc = FerryClass.of(size)
 	ferry_name = nm
 	vessel_name = nm
 	name = nm
-	cruise = CRUISE
+	cruise = fc.cruise
 	yield_decel = YIELD_DECEL
+	_inset = Layout.FERRY_HALF - fc.half_length
 	# A capsule round the hull: its corners just touch, its ends cover the bows.
-	half_seg = HULL_HALF_LENGTH - 4.3
-	hull_radius = 4.3
+	half_seg = fc.half_seg()
+	hull_radius = fc.hull_radius
 	claim_step = 4.0
-	wake = WakeTrail.new(HULL_HALF_LENGTH, 8.0, 24.0, 46)
+	wake = WakeTrail.new(fc.half_length, 8.0 * fc.half_length / 15.0, 24.0, 46)
 	term_a = sim.terminals[r.a]
 	term_b = sim.terminals[r.b]
 	term_a.ferry_for[r.id] = self
 	term_b.ferry_for[r.id] = self
-	_slots.resize(CAPACITY)
+	_slots.resize(fc.capacity)
 	hull = MeshInstance3D.new()
-	hull.mesh = Models.ferry()
+	hull.mesh = Models.ferry(fc)
+	# Fixes which of its rooms are lit (lit_vc.gdshader); the origin would change every frame.
+	hull.set_instance_shader_parameter("room_seed", randf_range(1.0, 1000.0))
 	add_child(hull)
-	_place(0.0)
+	_place(-_inset)
 
 
 ## Spreads the fleet across different phases so the preview starts busy.
@@ -81,18 +90,18 @@ func start_staggered(i: int) -> void:
 			_begin_loading()
 		1:
 			state = State.SAILING
-			traveled = route.length * sim.rng.randf_range(0.25, 0.6)
-			speed = CRUISE
-			for k in sim.rng.randi_range(12, CAPACITY - 4):
-				var slot := _free_slot()
+			traveled = run_length() * sim.rng.randf_range(0.25, 0.6)
+			speed = fc.cruise
+			for k in sim.rng.randi_range(fc.capacity / 3, fc.capacity - fc.capacity / 9):
 				var car := sim.make_vehicle(self)
+				var slot := _free_slot(car.is_truck)
 				car.position = _slot_local(slot)
 				_slots[slot] = car
 				aboard.append(car)
-			_place(traveled)
+			_place(_route_s(traveled))
 		2:
 			at_a = false
-			_place(route.length)
+			_place(route.length + _inset)
 			_begin_loading()
 
 
@@ -104,19 +113,55 @@ func destination() -> Terminal:
 	return term_b if at_a else term_a
 
 
+## How much further in than the route curve's ends this ferry lies docked.
+func dock_inset() -> float:
+	return _inset
+
+
+## How far the hull's centre runs from dock to dock.
+func run_length() -> float:
+	return route.length + 2.0 * _inset
+
+
+## Where on the route curve the hull's centre is, `t` into this crossing (beyond
+## its ends, for a short ferry docking further in).
+func _route_s(t: float) -> float:
+	return t - _inset if at_a else route.length + _inset - t
+
+
+## Point `s` along the route curve, carried on straight past its ends (they run
+## square out from the slips).
+func route_point(s: float) -> Vector3:
+	var length := route.length
+	if s >= 0.0 and s <= length:
+		return route.curve.sample_baked(s)
+	var end := 0.0 if s < 0.0 else length
+	var inner := clampf(end + (1.5 if s < 0.0 else -1.5), 0.0, length)
+	var p := route.curve.sample_baked(end)
+	var dir := p - route.curve.sample_baked(inner)
+	dir.y = 0.0
+	return p + dir.normalized() * absf(s - end)
+
+
 func _slot_local(i: int) -> Vector3:
-	return Vector3(COLS[i % COLS.size()], Layout.DECK_Y, ROWS[floori(i / float(COLS.size()))])
+	return Vector3(fc.cols[i % fc.lanes], Layout.DECK_Y, fc.row_z[floori(i / float(fc.lanes))])
 
 
-## Fills from the far end first so cars drive in past the ones already parked.
-func _free_slot() -> int:
-	for r in ROWS.size():
-		var row := r if at_a else ROWS.size() - 1 - r
-		for c in COLS.size():
-			var idx := row * COLS.size() + c
+## Fills from the far end first so cars drive in past the ones already parked, and
+## sends trucks to the lanes with the headroom (cars to the others) while there's
+## room there.
+func _free_slot(truck := false) -> int:
+	var fallback := -1
+	for r in fc.rows:
+		var row := r if at_a else fc.rows - 1 - r
+		for c in fc.lanes:
+			var idx := row * fc.lanes + c
 			if _slots[idx] == null:
-				return idx
-	return -1
+				if fc.lane_suits(c, truck):
+					return idx
+				if fallback < 0:
+					fallback = idx
+	return fallback
 
 
 func _process(delta: float) -> void:
@@ -156,7 +201,7 @@ func _tick_unloading(delta: float) -> void:
 
 
 func _drive_off(car: Vehicle) -> void:
-	var exit_z := -END_Z if at_a else END_Z
+	var exit_z := -fc.end_z if at_a else fc.end_z
 	var start := to_global(Vector3(car.position.x, Layout.DECK_Y, exit_z))
 	car.reparent(sim.traffic)
 	var path := PackedVector3Array([start])
@@ -174,12 +219,12 @@ func _begin_loading() -> void:
 func _tick_loading(delta: float) -> void:
 	_dispatch_timer -= delta
 	var term := here()
-	if _dispatch_timer <= 0.0 and _state_time < MAX_DWELL and aboard.size() + _boarding < CAPACITY:
+	if _dispatch_timer <= 0.0 and _state_time < MAX_DWELL and aboard.size() + _boarding < fc.capacity:
 		var car := term.take_car(route.id)
 		if car != null:
 			_dispatch_timer = DISPATCH_GAP
 			_drive_on(car, term)
-	var full := aboard.size() + _boarding >= CAPACITY
+	var full := aboard.size() + _boarding >= fc.capacity
 	var queue_empty := term.queued_for(route.id) == 0
 	if _boarding == 0 and _state_time >= MIN_DWELL and (full or queue_empty or _state_time >= MAX_DWELL):
 		state = State.SAILING
@@ -191,11 +236,11 @@ func _tick_loading(delta: float) -> void:
 
 
 func _drive_on(car: Vehicle, term: Terminal) -> void:
-	var slot := _free_slot()
+	var slot := _free_slot(car.is_truck)
 	_slots[slot] = car
 	_boarding += 1
 	var local := _slot_local(slot)
-	var entry_z := -END_Z if at_a else END_Z
+	var entry_z := -fc.end_z if at_a else fc.end_z
 	var path := term.boarding_path(car, route.id)
 	path.append(to_global(Vector3(local.x, Layout.DECK_Y, entry_z)))
 	path.append(to_global(local))
@@ -212,9 +257,9 @@ func _on_boarded(car: Vehicle, slot: int) -> void:
 
 
 func _tick_sailing(delta: float) -> void:
-	var remaining := route.length - traveled
+	var remaining := run_length() - traveled
 	# Distance from the bow reaching the outer dolphins to being docked.
-	var zone := OUTER_DOLPHIN_U + HULL_HALF_LENGTH - Layout.DOCK_U
+	var zone := OUTER_DOLPHIN_U - Layout.PIER_END - 0.4
 	var rem := maxf(remaining, 0.0)
 	var brake_v: float
 	if rem > zone:
@@ -222,17 +267,17 @@ func _tick_sailing(delta: float) -> void:
 	else:
 		brake_v = 0.3 + (APPROACH_SPEED - 0.3) * sqrt(rem / zone)
 	# Picks up from wherever it is (it may have stopped for traffic mid-crossing).
-	var target := minf(CRUISE, minf(brake_v, yield_speed()))
+	var target := minf(fc.cruise, minf(brake_v, yield_speed()))
 	var wait := _corridor_wait()
 	hold = wait
 	target = minf(target, sqrt(2.0 * YIELD_DECEL * maxf(wait - 0.5, 0.0)))
 	speed = minf(target, speed + ACCEL * delta)
 	_thrust = move_toward(_thrust, 1.0 if rem < zone and rem > 0.5 else 0.0, delta * 0.8)
-	traveled = minf(traveled + speed * delta, route.length)
-	_place(traveled if at_a else route.length - traveled)
+	traveled = minf(traveled + speed * delta, run_length())
+	_place(_route_s(traveled))
 	_bob_time += delta
 	position.y = sin(_bob_time * 1.3) * 0.07
-	if traveled >= route.length - 0.01:
+	if traveled >= run_length() - 0.01:
 		_dock_corridors()
 		hold = INF
 		speed = 0.0
@@ -244,7 +289,7 @@ func _tick_sailing(delta: float) -> void:
 
 ## The corridors this crossing passes through, in order, grouped into runs where
 ## one starts before the last ends, as [start, end, [[end, corridor], ...]]
-## (distances along the crossing). A ferry takes a whole run at once, so under
+## (distances along the crossing, as `traveled`). A ferry takes a whole run at once, so under
 ## way it never sits holding one corridor while it waits for the next, and no
 ## ring of ferries can each be waiting on the one ahead.
 func _corridor_runs() -> Array:
@@ -253,8 +298,8 @@ func _corridor_runs() -> Array:
 	var list := []
 	for c: MarineTraffic.Corridor in sim.marine.corridors[route.id]:
 		var span: Vector2 = c.span[route.id]
-		var t0 := span.x if at_a else route.length - span.y
-		var t1 := span.y if at_a else route.length - span.x
+		var t0 := span.x + _inset if at_a else route.length + _inset - span.y
+		var t1 := span.y + _inset if at_a else route.length + _inset - span.x
 		list.append([t0, t1, c])
 	list.sort_custom(func(a, b): return a[0] < b[0])
 	var runs := []
@@ -273,6 +318,9 @@ func _corridor_runs() -> Array:
 ## the ferry leaves them behind.
 func _corridor_wait() -> float:
 	_waiting_for = null
+	_giving_way = false
+	if traveled < 0.5 and _blocked_at_dock():
+		return 0.0
 	for run in _corridor_runs():
 		for e in run[2]:
 			if traveled > e[0] and e[1].owner == self:
@@ -291,6 +339,56 @@ func _corridor_wait() -> float:
 			return run[0] - traveled
 		break
 	return INF
+
+
+## Ready to cast off: whether to hold in at the dock instead, because a stretch
+## of shared water not far out is taken by another ferry (rather than going out
+## only to stop short of it), or one coming in here has it still to pass (the
+## arrival goes first). Never for a ferry already waiting on this one, which
+## this one may be lying in the way of.
+func _blocked_at_dock() -> bool:
+	for run in _corridor_runs():
+		if run[0] - traveled > ARRIVAL_PRIORITY:
+			break
+		var holder := _run_holder(run, traveled)
+		if holder != null and holder._waiting_for != self:
+			_waiting_for = holder
+			return true
+		holder = _arriving_through(run)
+		if holder != null:
+			_waiting_for = holder
+			_giving_way = true
+			return true
+	return false
+
+
+## Another ferry coming in to the terminal this one is leaving that has a corridor
+## of `run` still to pass and is nearly there: the arrival goes first. (Not one
+## already waiting on this ferry, which may be lying in its way.)
+func _arriving_through(run: Array) -> Ferry:
+	for e in run[2]:
+		var c: MarineTraffic.Corridor = e[1]
+		for f: Ferry in c.ferry.values():
+			if f == self or f.state != State.SAILING or f.destination() != here() or f._waiting_for == self:
+				continue
+			var to_go := f.distance_to(c)
+			if to_go >= 0.0 and to_go < ARRIVAL_PRIORITY:
+				return f
+	return null
+
+
+## How far this ferry has to go to the run of corridors that holds `c` (0 once
+## in it), or -1 if it has passed it or isn't sailing.
+func distance_to(c: MarineTraffic.Corridor) -> float:
+	if state != State.SAILING:
+		return -1.0
+	for run in _corridor_runs():
+		for e in run[2]:
+			if e[1] == c:
+				if traveled > e[0]:
+					return -1.0
+				return maxf(run[0] - traveled, 0.0)
+	return -1.0
 
 
 ## Whether a ferry docked at the A end (`end_a`) or B end of the route is in the
@@ -335,13 +433,13 @@ func claim_corridors_at_start() -> void:
 			state = State.SAILING
 			_state_time = 0.0
 			for r in _corridor_runs():
-				if r[1] >= route.length - 1.0:
+				if r[1] >= run_length() - 1.0:
 					at = r[0]
 		else:
 			at = run[0]
-		traveled = maxf(at - HULL_HALF_LENGTH, 0.0)
+		traveled = maxf(at - fc.half_length, 0.0)
 		speed = 0.0
-		_place(traveled if at_a else route.length - traveled)
+		_place(_route_s(traveled))
 		claim_corridors_at_start()
 		return
 
@@ -352,7 +450,7 @@ func claim_corridors_at_start() -> void:
 ## again. Frees the rest.
 func _dock_corridors() -> void:
 	for run in _corridor_runs():
-		var keep: bool = run[1] >= route.length - 1.0 and _run_blocks_dock(run, not at_a)
+		var keep: bool = run[1] >= run_length() - 1.0 and _run_blocks_dock(run, not at_a)
 		for e in run[2]:
 			if keep:
 				# (Never from another ferry: one that has taken a corridor this one
@@ -378,20 +476,18 @@ func ahead(d: float) -> Vector2:
 	# Docked, `traveled` still counts the last crossing but at_a has flipped.
 	if state != State.SAILING:
 		return pos2()
-	var s := minf(traveled + d, route.length)
-	var p := route.curve.sample_baked(s if at_a else route.length - s)
+	var p := route_point(_route_s(minf(traveled + d, run_length())))
 	return Vector2(p.x, p.z)
 
 
 func path_left() -> float:
-	return route.length - traveled if state == State.SAILING else 0.0
+	return run_length() - traveled if state == State.SAILING else 0.0
 
 
-## Positions the ferry at distance s along the route. +Z always faces A → B.
+## Positions the ferry at distance s along the route curve. +Z always faces A → B.
 func _place(s: float) -> void:
-	var length := route.length
-	var p := route.curve.sample_baked(s)
-	var d := route.curve.sample_baked(minf(s + 1.5, length)) - route.curve.sample_baked(maxf(s - 1.5, 0.0))
+	var p := route_point(s)
+	var d := route_point(s + 1.5) - route_point(s - 1.5)
 	d.y = 0.0
 	if d.length_squared() < 1e-6:
 		return
@@ -412,7 +508,7 @@ func _update_trail(delta: float) -> void:
 	# the wrong end of the hull and fold the trail back on itself. The stern
 	# props ease off while the forward prop brakes.
 	wake.update(delta, global_position, moved.normalized() if moving else Vector3.ZERO, speed * delta,
-			speed / CRUISE * (1.0 - 0.6 * _thrust), state == State.SAILING and moving)
+			speed / fc.cruise * (1.0 - 0.6 * _thrust), state == State.SAILING and moving)
 
 
 func wake_shape() -> Vector4:
@@ -421,7 +517,7 @@ func wake_shape() -> Vector4:
 
 
 func wake_hull() -> Vector4:
-	return Vector4(HULL_HALF_BEAM, HULL_HALF_LENGTH * 2.0, 1.0, 1.0)
+	return Vector4(fc.half_beam, fc.half_length * 2.0, 1.0, 1.0)
 
 
 ## Reverse thrust from the forward prop, 0..1 (braking for, or holding at, the dock).
@@ -434,11 +530,13 @@ func load_count() -> int:
 
 
 func kind_text() -> String:
-	return "Ferry"
+	return fc.label
 
 
 func status_text() -> String:
 	if state == State.SAILING and speed < 0.2 and _waiting_for:
+		if _giving_way:
+			return "Holding in for %s to come in" % _waiting_for.ferry_name
 		return "Waiting for %s to clear the channel" % _waiting_for.ferry_name
 	var holding := holding_text()
 	if holding != "":
@@ -452,11 +550,11 @@ func status_text() -> String:
 
 
 func eta_minutes() -> float:
-	return (route.length - traveled) / (CRUISE * 0.85)
+	return (run_length() - traveled) / (fc.cruise * 0.85)
 
 
 func minutes_until_departure_from(term: Terminal) -> float:
-	var crossing := route.length / (CRUISE * 0.85)
+	var crossing := crossing_minutes()
 	var turnaround := 16.0
 	match state:
 		State.LOADING:
@@ -468,3 +566,7 @@ func minutes_until_departure_from(term: Terminal) -> float:
 	if destination() == term:
 		return eta_minutes() + turnaround
 	return eta_minutes() + turnaround + crossing + turnaround
+
+
+func crossing_minutes() -> float:
+	return run_length() / (fc.cruise * 0.85)

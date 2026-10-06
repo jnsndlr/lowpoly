@@ -14,12 +14,18 @@ render_mode cull_back;
 #include "res://shaders/clouds.gdshaderinc"
 
 global uniform float night_lights;
+global uniform float focus_distance;
 
 uniform vec3 window_color : source_color = vec3(1.0, 0.68, 0.36);
 uniform float window_energy = 2.6;
 uniform float lamp_energy = 1.6;
 // Must match Models.BLINK_PERIOD.
 uniform float lamp_blink_period = 4.0;
+// glow.gdshader's bokeh: past focus a lamp's glow opens into a soft disc, so its glass
+// fades out with it rather than leaving a sharp pixel in the middle. Must match there.
+uniform float bokeh_aperture = 20.0;
+uniform float bokeh_max = 12.0;
+uniform float bokeh_start = 1.8;
 
 // Which end of a ferry is the bow (+1: +Z), set per hull by NightLights.
 instance uniform float nav_flip = 0.0;
@@ -32,6 +38,9 @@ varying float local_z;
 // Flat: a whole face takes its first vertex's key (MeshBuilder starts both of a quad's
 // triangles there), so glass straddling a storey line doesn't hash per pixel.
 varying flat vec3 room_key;
+// 1 on walls, 0 on the top and bottom of glass: those key a room of their own, and
+// a lit sliver over a dark window shimmers as the hull rocks.
+varying flat float upright;
 
 vec3 srgb_to_linear(vec3 c) {
 	return mix(pow((c + 0.055) / 1.055, vec3(2.4)), c / 12.92, lessThan(c, vec3(0.04045)));
@@ -49,6 +58,7 @@ void vertex() {
 	// Instance origin (or room_seed), wall (normal) and storey: the same for a whole window.
 	vec3 origin = room_seed != 0.0 ? vec3(room_seed, room_seed * 1.7, room_seed * 2.3) : MODEL_MATRIX[3].xyz;
 	room_key = origin + round(NORMAL * 2.0) * 17.0 + floor(VERTEX.y / 2.5) * 5.3;
+	upright = step(abs(NORMAL.y), 0.5);
 }
 
 void fragment() {
@@ -59,6 +69,9 @@ void fragment() {
 		// Always-lit glass comes on with the first lights; rooms one by one after.
 		float on_at = COLOR.a < 0.25 ? 0.05 : 0.1 + h * 0.9;
 		float lit = smoothstep(on_at, on_at + 0.08, night_lights) * step(COLOR.a < 0.25 ? 0.0 : 0.3, h);
+		if (COLOR.a >= 0.25) {
+			lit *= upright;
+		}
 		// The key moves with ferries, so only rooms that may go dark vary in brightness.
 		float tint = COLOR.a < 0.25 ? 1.0 : mix(0.7, 1.15, fract(h * 7.1));
 		bool lamp = COLOR.a > 0.1 && COLOR.a < 0.2;
@@ -74,6 +87,9 @@ void fragment() {
 				float k = fract(TIME / lamp_blink_period + (round(COLOR.a * 255.0) - 180.0) / 64.0);
 				lit *= smoothstep(0.0, 0.04, k) * (1.0 - smoothstep(0.2, 0.32, k));
 			}
+			float z = -VERTEX.z;
+			float coc = min(bokeh_aperture * max(z - focus_distance * bokeh_start, 0.0) / z, bokeh_max);
+			lit *= 1.0 - smoothstep(1.5, 5.0, coc);
 			EMISSION = ALBEDO * lamp_energy * lit;
 		} else {
 			EMISSION = window_color * tint * window_energy * lit;

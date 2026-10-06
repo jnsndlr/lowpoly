@@ -175,7 +175,8 @@ void fragment() {
 		float a = atan(UV.y, UV.x);
 		float hex = r * cos(PI / 6.0) / cos(mod(a, PI / 3.0) - PI / 6.0);
 		float d = mix(r, hex, 0.5) / max(v_shape.y, 1e-3);
-		float disc = (1.0 - smoothstep(0.8, 1.0, d)) * (0.55 + 0.3 * smoothstep(0.5, 0.92, d)) + core * 0.6;
+		// No core: a defocused point is an even disc with a slightly brighter rim.
+		float disc = (1.0 - smoothstep(0.8, 1.0, d)) * (0.55 + 0.3 * smoothstep(0.5, 0.92, d));
 		f = mix(glow, disc, v_shape.z);
 	} else if (v_mode == POOL) {
 		f = max(1.0 - r * r, 0.0);
@@ -188,7 +189,6 @@ void fragment() {
 		float t = UV.y * 0.5 + 0.5;
 		f = exp(-UV.x * UV.x * 3.0) * pow(1.0 - t, 1.4);
 	} else {
-		// Broken up by the ripples: bands drift along it and its centre line wobbles.
 		// Broken up by the ripples: bands drift along it and its centre line wobbles,
 		// both washing out as it blurs.
 		float blur = v_shape.x;

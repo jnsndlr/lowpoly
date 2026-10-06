@@ -255,7 +255,7 @@ func _build_terminals() -> void:
 			u += 2.4
 
 		for i in isl.slips.size():
-			_build_slip(mb, isl.slip_offset(i), i > 0)
+			_build_slip(mb, isl.slip_offset(i))
 
 		# Terminal building beside the lot
 		var bv := hw + 5.0
@@ -304,9 +304,7 @@ func _build_terminals() -> void:
 			bu += 1.5
 
 
-## `shared_dolphin`: the slip before this one already put a dolphin where this
-## slip's port-side one would go (they're SLIP_SPACING apart), so don't double it.
-func _build_slip(mb: MeshBuilder, v: float, shared_dolphin: bool) -> void:
+func _build_slip(mb: MeshBuilder, v: float) -> void:
 	var ly := Layout.LOT_Y
 	var pe := Layout.PIER_END
 	var lf := Layout.LOT_FRONT
@@ -330,20 +328,21 @@ func _build_slip(mb: MeshBuilder, v: float, shared_dolphin: bool) -> void:
 		_perch(mb.xform * Vector3(v + side * 0.45, 5.65, pe - 1.0), mb.xform * Vector3(v + side * 2.9, 5.65, pe - 1.0),
 			0.0, Seagulls.Kind.LIFT)
 	for side: float in [-1.0, 1.0]:
-		mb.box(Vector3(v + side * 4.95, 0.3, pe + 5.0), Vector3(0.9, 4.0, 9.0), Models.WOOD)
+		var ww: Array = Layout.WING_WALL
+		for k in ww.size() - 1:
+			var w0: Vector2 = ww[k]
+			var w1: Vector2 = ww[k + 1]
+			_wing_wall(mb, Vector2(w0.x, v + side * w0.y), Vector2(w1.x, v + side * w1.y), side)
 		var mark := GlowBuilder.GREEN if side < 0 else GlowBuilder.RED
-		# Dolphin, with a lantern on its cap.
-		if not (shared_dolphin and side < 0):
-			var dolphin := Vector3(v + side * 5.7, -2.0, pe + 21.0)
-			mb.cylinder(dolphin, 1.0, 0.85, 4.6, 7, Models.WOOD, Color(0.85, 0.85, 0.8))
-			var cap := dolphin + Vector3(0, 4.6, 0)
-			Models.add_cage_lantern(mb, cap, mark, DOLPHIN_LANTERN)
-			glows.glow(Models.cage_lantern_glow_at(cap, DOLPHIN_LANTERN), mark, 0.14, 3.5, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
-			for dz: float in [-0.55, 0.55]:
-				var seat := mb.xform * (cap + Vector3(0, 0, dz))
-				_perch(seat, seat, 0.0, Seagulls.Kind.DOLPHIN)
+		var inner := Layout.DOLPHIN_INNER
+		_dolphin(mb, Vector3(v + side * inner.y, 0, inner.x), inner.z, 6)
+		# The outer dolphins carry the slip's lanterns.
+		var outer := Layout.DOLPHIN_OUTER
+		var cap := _dolphin(mb, Vector3(v + side * outer.y, 0, outer.x), outer.z, 8)
+		Models.add_cage_lantern(mb, cap, mark, DOLPHIN_LANTERN)
+		glows.glow(Models.cage_lantern_glow_at(cap, DOLPHIN_LANTERN), mark, 0.14, 3.5, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
 		# Channel buoy, flashing.
-		var buoy := Vector3(v + side * 8.0, 0.0, pe + 44.0)
+		var buoy := Vector3(v + side * 8.5, 0.0, pe + 46.0)
 		var phase := Models.blink_phase_at(mb.xform * buoy)
 		Models.add_buoy(mb, buoy, Color(0.2, 0.55, 0.3) if side < 0 else Color(0.8, 0.2, 0.15), mark, phase)
 		glows.glow(Models.buoy_glow_at(buoy), mark, 0.22, 7.0, true, Models.blink_of(phase), Vector3.ZERO, Models.LAMP_ON_AT)
@@ -354,6 +353,51 @@ func _build_slip(mb: MeshBuilder, v: float, shared_dolphin: bool) -> void:
 		glows.glow(Models.bulkhead_glow_at(lamp, out, LIFT_LAMP), GlowBuilder.WARM,
 			Models.bulkhead_glow_size(LIFT_LAMP), 5.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
 	glows.pool(Vector3(v, ly + 0.05, pe - 3.0), GlowBuilder.SODIUM, 3.5, 0.3)
+
+
+## A wing wall from `a` to `b` (u, v in the terminal frame), its fendered face on
+## the line, towards the slip, and its piles and bracing behind on the `side` (±1)
+## away from it.
+func _wing_wall(mb: MeshBuilder, a: Vector2, b: Vector2, side: float) -> void:
+	var p0 := Vector3(a.y, 0, a.x)
+	var p1 := Vector3(b.y, 0, b.x)
+	var along := (p1 - p0).normalized()
+	var out := Vector3(along.z, 0, -along.x)
+	if out.x * side < 0.0:
+		# (Keeping the frame right-handed.)
+		out = -out
+		along = -along
+	var length := p0.distance_to(p1)
+	var saved := mb.xform
+	mb.xform = saved * Transform3D(Basis(out, Vector3.UP, along), (p0 + p1) * 0.5)
+	# Fender panel, the timber wall behind it and a cap along the top.
+	mb.box(Vector3(0.12, 0.6, 0), Vector3(0.24, 3.6, length + 0.2), Models.HULL_DARK)
+	mb.box(Vector3(0.5, 0.4, 0), Vector3(0.55, 4.4, length), Models.WOOD)
+	mb.box(Vector3(0.45, 2.55, 0), Vector3(0.9, 0.18, length + 0.3), Color(0.72, 0.72, 0.7))
+	var n := maxi(2, ceili(length / 1.7))
+	for i in n + 1:
+		var z := -length * 0.5 + length * i / n
+		mb.cylinder(Vector3(1.0, -2.0, z), 0.24, 0.22, 4.6, 6, Models.WOOD, Color(0.62, 0.6, 0.56))
+	mb.xform = saved
+
+
+## A dolphin: a cluster of piles round one at `c` (on the waterline, terminal
+## frame), `r` across, under a concrete cap. Returns the top of the cap.
+func _dolphin(mb: MeshBuilder, c: Vector3, r: float, piles: int) -> Vector3:
+	var top := 3.4
+	mb.cylinder(c + Vector3(0, -2.0, 0), 0.3, 0.28, top + 2.0, 6, Models.WOOD)
+	for i in piles:
+		var ang := TAU * i / piles
+		var d := Vector3(cos(ang), 0, sin(ang))
+		var foot := c + d * (r - 0.05) + Vector3(0, -2.0, 0)
+		mb.cylinder(foot, 0.26, 0.22, top + 1.8, 6, Models.WOOD)
+	mb.cylinder(c + Vector3(0, top - 0.2, 0), r + 0.1, r, 0.55, piles, Color(0.74, 0.74, 0.71), Color(0.8, 0.8, 0.77))
+	var cap := c + Vector3(0, top + 0.35, 0)
+	for k in 3:
+		var ang := TAU * (k + 0.25) / 3.0
+		var seat := mb.xform * (cap + Vector3(cos(ang), 0, sin(ang)) * r * 0.55)
+		_perch(seat, seat, 0.0, Seagulls.Kind.DOLPHIN)
+	return cap
 
 
 # --- Roads & towns ------------------------------------------------------------------

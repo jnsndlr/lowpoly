@@ -341,8 +341,7 @@ func _find_dock(isl: MapData.Island, desired: Vector2, taken: Array[Vector3]) ->
 
 
 # Ferries leave and enter each slip on a straight run along its centreline, long
-# enough that the whole hull is lined up before the bow reaches the outer dolphins
-# (~21 m out from docked), and turn no tighter than TURN_RADIUS in between. Where
+# enough that the whole hull is lined up before the bow reaches the outer dolphins, and turn no tighter than TURN_RADIUS in between. Where
 # the coast or other slips leave no room, a shorter run-in and then a tighter turn
 # are tried, and a wide sweep only as a last resort.
 const RUN_IN := 30.0
@@ -351,11 +350,13 @@ const TURN_RADIUS := 32.0
 const TIGHT_RADIUS := 22.0
 const WIDE_RADIUS := 45.0
 # Each slip's pier, guide walls and dolphins are off limits to other routes' hulls.
-const ZONE_U := Layout.PIER_END + 25.0
+const ZONE_U := Layout.DOLPHIN_OUTER.x + 4.0
 const HULL_HALF_BEAM := 4.5
-# Lateral reach of a terminal's outermost dolphins (5.7 m off the slip centreline,
-# 1 m across) from its end slips, plus a little sea room.
-const OUTER_DOLPHIN_CLEAR := 8.5
+# Half the longest hull (FerryClass size 5).
+const HULL_HALF_LENGTH := 19.0
+# Lateral reach of a terminal's outermost dolphins from its end slips, plus a
+# little sea room.
+const OUTER_DOLPHIN_CLEAR := Layout.DOLPHIN_OUTER.y + Layout.DOLPHIN_OUTER.z + 2.0
 
 
 ## Route from dock centre `pa` (facing out along `na`) to dock centre `pb`: straight
@@ -491,9 +492,10 @@ func _clear_of_slips(c: Curve3D, route_id: int) -> bool:
 			var rel: Vector3 = p - z[0]
 			# Cheap reject: nowhere near this terminal.
 			var u: float = rel.dot(z[1])
-			if u > ZONE_U + 16.0 or u < Layout.LOT_FRONT - 16.0 or absf(rel.dot(z[2]) - z[3]) > Layout.SLIP_SPACING + 16.0:
+			var reach := HULL_HALF_LENGTH + 2.0
+			if u > ZONE_U + reach or u < Layout.LOT_FRONT - reach or absf(rel.dot(z[2]) - z[3]) > Layout.SLIP_SPACING + reach:
 				continue
-			for along: float in [-15.0, -7.5, 0.0, 7.5, 15.0]:
+			for along: float in [-HULL_HALF_LENGTH, -HULL_HALF_LENGTH * 0.5, 0.0, HULL_HALF_LENGTH * 0.5, HULL_HALF_LENGTH]:
 				for across: float in [-HULL_HALF_BEAM, 0.0, HULL_HALF_BEAM]:
 					var q := rel + t * along + side * across
 					var qu: float = q.dot(z[1])

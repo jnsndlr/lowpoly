@@ -79,7 +79,8 @@ func box(center: Vector3, size: Vector3, col: Color) -> void:
 
 
 ## Frustum / cone (r1 = 0) standing on `base`, with `sides` facets.
-func cylinder(base: Vector3, r0: float, r1: float, height: float, sides: int, col: Color, top_col := Color(-1, 0, 0), angle := 0.0) -> void:
+## `capped` closes the base too, for cylinders that don't stand on anything.
+func cylinder(base: Vector3, r0: float, r1: float, height: float, sides: int, col: Color, top_col := Color(-1, 0, 0), angle := 0.0, capped := false) -> void:
 	var cap_col := col if top_col.r < 0.0 else top_col
 	var top := base + Vector3(0, height, 0)
 	for i in sides:
@@ -90,6 +91,8 @@ func cylinder(base: Vector3, r0: float, r1: float, height: float, sides: int, co
 		var mid := (d0 + d1).normalized()
 		var p0 := base + d0 * r0
 		var p1 := base + d1 * r0
+		if capped:
+			tri(base, p1, p0, cap_col, Vector3.DOWN)
 		if r1 > 0.001:
 			var q0 := top + d0 * r1
 			var q1 := top + d1 * r1

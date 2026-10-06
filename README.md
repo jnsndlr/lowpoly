@@ -43,6 +43,7 @@ scripts/
   sim/terminal.gd         spawning, lane queues, boarding/exit paths
   sim/vessel.gd           base for anything afloat: hull capsule, path lookahead, right of way
   sim/ferry.gd            load → sail → unload state machine along a Curve3D
+  sim/ferry_class.gd      the five ferry sizes: lanes, rows, hull, speed, fittings
   sim/sailboat.gd         marina-to-marina sailing: back out, sail, wait for and enter a berth
   sim/cargo_ship.gd       container ships transiting the map edge to edge
   sim/marine_traffic.gd   all vessels: collision avoidance, ferry corridors, marina berths

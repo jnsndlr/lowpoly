@@ -33,15 +33,8 @@ const HOUSE_LAMP := Vector3(1.1, 1.45, 1.7)
 const HOUSE_LAMP_SCALE := 0.7
 const BLOCK_LAMP := Vector3(0.0, 2.35, 2.5)
 const BLOCK_LAMP_SCALE := 0.9
-# Ferry lamps in the hull's frame: x of the gallery pillars' outer faces, their lamps'
-# height and scale; mast tops over the wheelhouses; red / green sidelights.
-const FERRY_GALLERY_X := 4.2
-const FERRY_GALLERY_Y := 3.15
-const FERRY_GALLERY_LAMP := 0.9
-const FERRY_MAST_TOP := 9.2
+# Ferry fixture scales the glows were tuned at (FerryClass places them).
 const FERRY_LANTERN := 1.2
-# Sidelights on the wheelhouse walls (x is the wall, z the wheelhouse centre).
-const FERRY_SIDELIGHT := Vector3(2.15, 6.98, 7.4)
 const FERRY_SIDELIGHT_SCALE := 1.3
 # Sidelight lenses (lit_vc.gdshader reads the alpha): lit only at the end that's the
 # bow on this crossing, set by the hull's nav_flip.
@@ -131,14 +124,32 @@ static func house(wall: Color, roof: Color, stories: int) -> ArrayMesh:
 		var r1 := Vector3(hx, y0, hz)
 		var t0 := Vector3(0, y1, -hz)
 		var t1 := Vector3(0, y1, hz)
-		mb.quad(l0, l1, t1, t0, roof, Vector3(-1, 1, 0))
-		mb.quad(r0, t0, t1, r1, roof, Vector3(1, 1, 0))
+		# Each slope is a slab with some thickness, so the roof still reads when
+		# seen edge-on from the gable end.
+		_roof_slope(mb, l0, t0, hz, roof)
+		_roof_slope(mb, r0, t0, hz, roof)
 		mb.quad(l0, r0, r1, l1, roof.darkened(0.4), Vector3.DOWN)
 		mb.tri(Vector3(-1.4, y0, 1.7), Vector3(1.4, y0, 1.7), Vector3(0, y1 - 0.2, 1.7), wall, Vector3.BACK)
 		mb.tri(Vector3(-1.4, y0, -1.7), Vector3(1.4, y0, -1.7), Vector3(0, y1 - 0.2, -1.7), wall, Vector3.FORWARD)
 		mb.box(Vector3(0.8, y1 - 0.2, -0.7), Vector3(0.45, 1.2, 0.45), Color(0.55, 0.3, 0.24))
 		add_bulkhead_lamp(mb, HOUSE_LAMP, Vector3.BACK, Color(1.0, 0.7, 0.4), HOUSE_LAMP_SCALE, LAMP_DARK)
 		return mb.commit())
+
+
+## One slope of a gable roof, eave to ridge (both at -z), running to +z and
+## `thick` deep below its top face.
+static func _roof_slope(mb: MeshBuilder, eave: Vector3, ridge: Vector3, hz: float, col: Color, thick := 0.15) -> void:
+	var n := Vector3(eave.x - ridge.x, 0, 0).normalized() * (ridge.y - eave.y) + Vector3(0, absf(eave.x - ridge.x), 0)
+	n = n.normalized()
+	var z := Vector3(0, 0, hz * 2.0)
+	var e := eave - n * thick
+	var r := ridge - n * thick
+	var under := col.darkened(0.4)
+	mb.quad(eave, ridge, ridge + z, eave + z, col, n)
+	mb.quad(e, r, r + z, e + z, under, -n)
+	mb.quad(eave, eave + z, e + z, e, col.darkened(0.15), eave - ridge)
+	mb.quad(eave, ridge, r, e, col.darkened(0.15), Vector3.FORWARD)
+	mb.quad(eave + z, ridge + z, r + z, e + z, col.darkened(0.15), Vector3.BACK)
 
 
 static func block(wall: Color) -> ArrayMesh:
@@ -183,47 +194,262 @@ static func truck(color_index: int) -> ArrayMesh:
 		return mb.commit())
 
 
-## Double-ended car ferry, 30 long. +Z and -Z ends are identical; car deck top at DECK_Y.
-static func ferry() -> ArrayMesh:
-	return _cached("ferry", func():
+## Double-ended car ferry of class `fc` (see FerryClass). +Z and -Z ends are
+## identical; car deck top at DECK_Y.
+static func ferry(fc: FerryClass) -> ArrayMesh:
+	return _cached("ferry_%d" % fc.size, func():
 		var mb := MeshBuilder.new()
-		var hull := PackedVector2Array([Vector2(-4.2, -12), Vector2(-2.6, -15), Vector2(2.6, -15), Vector2(4.2, -12),
-			Vector2(4.2, 12), Vector2(2.6, 15), Vector2(-2.6, 15), Vector2(-4.2, 12)])
-		mb.extrude(hull, -1.4, 0.15, HULL_DARK, Color(0, 0, 0, 0), 0.8)
-		mb.extrude(hull, 0.15, 0.55, WSF_GREEN, Color(0, 0, 0, 0))
-		mb.extrude(hull, 0.55, 0.95, WHITE, Color(0.42, 0.44, 0.47))
-		mb.box(Vector3(0, 1.0, 0), Vector3(7.8, 0.1, 24.0), Color(0.45, 0.47, 0.5))
-		# Car deck side walls with an open gallery above.
-		for x: float in [-4.05, 4.05]:
-			mb.box(Vector3(x, 1.7, 0), Vector3(0.3, 1.3, 21.0), WHITE)
-			for z in range(-9, 10, 3):
-				mb.box(Vector3(x, 2.8, z), Vector3(0.3, 1.0, 0.4), WHITE)
-				add_bulkhead_lamp(mb, Vector3(signf(x) * FERRY_GALLERY_X, FERRY_GALLERY_Y, z), Vector3(signf(x), 0, 0),
-					GlowBuilder.WARM, FERRY_GALLERY_LAMP)
-		# Passenger deck
-		mb.box(Vector3(0, 3.35, 0), Vector3(8.75, 0.3, 20.2), WSF_GREEN)
-		mb.box(Vector3(0, 4.3, 0), Vector3(8.6, 1.6, 20.0), WHITE)
-		mb.box(Vector3(0, 4.4, 0), Vector3(8.7, 0.6, 18.4), WINDOW_LIT)
-		# Sun deck and upper cabin
-		mb.box(Vector3(0, 5.7, 0), Vector3(6.4, 1.2, 12.0), WHITE)
-		mb.box(Vector3(0, 5.8, 0), Vector3(6.5, 0.45, 10.6), WINDOW_LIT)
-		# Wheelhouses at both ends
-		for z: float in [-7.4, 7.4]:
-			mb.box(Vector3(0, 6.85, z), Vector3(4.2, 1.1, 2.4), WHITE)
-			mb.box(Vector3(0, 6.95, z), Vector3(4.3, 0.45, 2.5), WINDOW_LIT)
-			mb.box(Vector3(0, 8.3, z), Vector3(0.15, 1.8, 0.15), WHITE)
-			add_lantern(mb, Vector3(0, FERRY_MAST_TOP, z), GlowBuilder.LED, FERRY_LANTERN)
-			for x: float in [-1.0, 1.0]:
-				add_sidelight(mb, x, signf(z))
-		# Funnel
-		mb.box(Vector3(0, 7.4, 0), Vector3(1.6, 2.2, 2.6), WHITE)
-		mb.box(Vector3(0, 8.35, 0), Vector3(1.65, 0.35, 2.65), WSF_GREEN)
-		mb.box(Vector3(0, 8.8, 0), Vector3(1.7, 0.5, 2.7), Color(0.1, 0.1, 0.1))
-		# Lifeboats
-		for x: float in [-3.5, 3.5]:
-			for z: float in [-3.2, 3.2]:
-				mb.box(Vector3(x, 6.5, z), Vector3(0.8, 0.5, 2.2), Color(0.95, 0.45, 0.12))
+		var b := fc.half_beam
+		var l := fc.half_length
+		var hull := PackedVector2Array([Vector2(-b, -(l - fc.chamfer)), Vector2(-(b - fc.end_in), -l),
+			Vector2(b - fc.end_in, -l), Vector2(b, -(l - fc.chamfer)), Vector2(b, l - fc.chamfer),
+			Vector2(b - fc.end_in, l), Vector2(-(b - fc.end_in), l), Vector2(-b, l - fc.chamfer)])
+		if fc.portal:
+			# Dark to the deck, the green running up the bulwarks.
+			mb.extrude(hull, -1.4, 0.55, HULL_DARK, Color(0, 0, 0, 0), 0.8)
+			mb.extrude(hull, 0.55, 0.95, WSF_GREEN, Color(0.42, 0.44, 0.47))
+		else:
+			mb.extrude(hull, -1.4, 0.15, HULL_DARK, Color(0, 0, 0, 0), 0.8)
+			mb.extrude(hull, 0.15, 0.55, WSF_GREEN, Color(0, 0, 0, 0))
+			mb.extrude(hull, 0.55, 0.95, WHITE, Color(0.42, 0.44, 0.47))
+		if fc.open_deck:
+			_open_ferry(mb, fc)
+		elif fc.portal:
+			_portal_ferry(mb, fc)
+		else:
+			_full_ferry(mb, fc)
+		for p in fc.lanterns:
+			add_lantern(mb, p, GlowBuilder.LED, fc.lantern_scale)
+		for sl: Array in fc.sidelights:
+			add_sidelight(mb, sl[0], sl[1], sl[2], fc.sidelight_scale)
+		for lp: Array in fc.lamps:
+			add_bulkhead_lamp(mb, lp[0], lp[1], GlowBuilder.WARM, fc.lamp_scale)
 		return mb.commit())
+
+
+## Sizes 3-5: an enclosed car deck with open galleries above, a passenger deck over
+## it all, a sun-deck cabin, wheelhouses at both ends and the funnel(s) amidships.
+static func _full_ferry(mb: MeshBuilder, fc: FerryClass) -> void:
+	var b := fc.half_beam
+	var l := fc.half_length
+	mb.box(Vector3(0, 1.0, 0), Vector3(2.0 * b - 0.6, 0.1, 2.0 * (l - 3.0)), Color(0.45, 0.47, 0.5))
+	# Car deck side walls with an open gallery above.
+	for x: float in [-(b - 0.15), b - 0.15]:
+		mb.box(Vector3(x, 1.7, 0), Vector3(0.3, 1.3, 2.0 * (l - 4.5)), WHITE)
+		for z in fc.gallery:
+			mb.box(Vector3(x, 2.8, z), Vector3(0.3, 1.0, 0.4), WHITE)
+	# Passenger deck
+	mb.box(Vector3(0, 3.35, 0), Vector3(2.0 * b + 0.35, 0.3, 2.0 * (l - 4.9)), WSF_GREEN)
+	mb.box(Vector3(0, 4.3, 0), Vector3(2.0 * b + 0.2, 1.6, 2.0 * (l - 5.0)), WHITE)
+	mb.box(Vector3(0, 4.4, 0), Vector3(2.0 * b + 0.3, 0.6, 2.0 * (l - 5.8)), WINDOW_LIT)
+	# Sun deck and upper cabin
+	mb.box(Vector3(0, 5.7, 0), Vector3(2.0 * b - 2.0, 1.2, 2.0 * fc.sun_half), WHITE)
+	mb.box(Vector3(0, 5.8, 0), Vector3(2.0 * b - 1.9, 0.45, 2.0 * fc.sun_half - 1.4), WINDOW_LIT)
+	# Wheelhouses at both ends
+	var ww := 2.0 * fc.wheel_half_w
+	for z: float in [-fc.wheel_z, fc.wheel_z]:
+		mb.box(Vector3(0, 6.85, z), Vector3(ww, 1.1, 2.4), WHITE)
+		mb.box(Vector3(0, 6.95, z), Vector3(ww + 0.1, 0.45, 2.5), WINDOW_LIT)
+		mb.box(Vector3(0, 8.3, z), Vector3(0.15, 1.8, 0.15), WHITE)
+	# Funnels
+	for z in fc.funnels:
+		mb.box(Vector3(0, 7.4, z), Vector3(1.6, 2.2, 2.6), WHITE)
+		mb.box(Vector3(0, 8.35, z), Vector3(1.65, 0.35, 2.65), WSF_GREEN)
+		mb.box(Vector3(0, 8.8, z), Vector3(1.7, 0.5, 2.7), Color(0.1, 0.1, 0.1))
+	# Lifeboats
+	for x: float in [-(b - 0.7), b - 0.7]:
+		for z in fc.lifeboats:
+			mb.box(Vector3(x, 6.5, z), Vector3(0.8, 0.5, 2.2), Color(0.95, 0.45, 0.12))
+
+
+## The car deck of sizes 1 and 2, open to the sky at the ends: between bulwarks,
+## with lane stripes down it.
+static func _open_car_deck(mb: MeshBuilder, fc: FerryClass, bulwark := WHITE) -> void:
+	var b := fc.half_beam
+	var l := fc.half_length
+	var deck_col := Color(0.45, 0.47, 0.5)
+	var deck_l := l - 2.4
+	mb.box(Vector3(0, 1.0, 0), Vector3(2.0 * b - 0.4, 0.1, 2.0 * deck_l), deck_col)
+	for z: float in [-1.0, 1.0]:
+		mb.box(Vector3(0, 0.99, z * (deck_l + 1.1)), Vector3(2.0 * (b - fc.end_in) - 0.2, 0.08, 2.2), deck_col)
+	# Lane stripes, stopping short of the ends.
+	for c in range(fc.cols.size() - 1):
+		var x := (fc.cols[c] + fc.cols[c + 1]) * 0.5
+		mb.box(Vector3(x, 1.06, 0), Vector3(0.06, 0.02, 2.0 * deck_l - 1.0), Color(0.9, 0.9, 0.85))
+	# Bulwarks along both sides, open at the ends for the cars, with a life ring.
+	var bl := l - fc.chamfer + 0.3
+	for x: float in [-1.0, 1.0]:
+		mb.box(Vector3(x * (b - 0.12), 1.45, 0), Vector3(0.24, 0.9, 2.0 * bl), bulwark)
+		mb.box(Vector3(x * (b - 0.12), 1.92, 0), Vector3(0.3, 0.06, 2.0 * bl), bulwark.lightened(0.15))
+		for z: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * (b + 0.01), 1.4, z * (bl - 1.2)), Vector3(0.06, 0.5, 0.5), Color(0.95, 0.45, 0.12))
+
+
+## Size 1: the open car deck, the wheelhouse up on a stair column on the +X side
+## and the exhaust stack standing against the -X bulwark.
+static func _open_ferry(mb: MeshBuilder, fc: FerryClass) -> void:
+	_open_car_deck(mb, fc)
+	# Posts for the deck lamps on the -X side.
+	for lp: Array in fc.lamps:
+		var p: Vector3 = lp[0]
+		if p.x < 0.0:
+			mb.box(Vector3(p.x - 0.03, 2.0, p.z), Vector3(0.16, 2.0, 0.16), WHITE)
+	# The house.
+	var hx := fc.house_x
+	var hw := fc.house_half_w
+	var wy := fc.wheel_y
+	var whw := fc.wheel_half_w_open()
+	# Stair column, with a door at deck level and a railed landing halfway.
+	mb.box(Vector3(hx, (1.0 + wy) * 0.5, 0), Vector3(2.0 * hw, wy - 1.0, 2.0 * fc.house_half_len), WHITE)
+	mb.box(Vector3(hx - hw - 0.01, 1.85, 0), Vector3(0.04, 1.5, 0.7), Color(0.55, 0.57, 0.6))
+	mb.box(Vector3(hx, 2.6, 0), Vector3(2.0 * hw + 0.5, 0.08, 2.0 * fc.house_half_len + 0.5), WSF_GREEN)
+	# Wheelhouse, with windows all round, and its mast.
+	var top := wy + fc.wheel_h
+	mb.box(Vector3(hx, wy + 0.04, 0), Vector3(2.0 * whw + 0.3, 0.08, 2.0 * fc.wheel_half_len + 0.3), WSF_GREEN)
+	mb.box(Vector3(hx, wy + fc.wheel_h * 0.5, 0), Vector3(2.0 * whw, fc.wheel_h, 2.0 * fc.wheel_half_len), WHITE)
+	mb.box(Vector3(hx, wy + 0.75, 0), Vector3(2.0 * whw + 0.1, 0.42, 2.0 * fc.wheel_half_len + 0.1), WINDOW_LIT)
+	mb.box(Vector3(hx, top + 0.03, 0), Vector3(2.0 * whw + 0.2, 0.06, 2.0 * fc.wheel_half_len + 0.2), WHITE)
+	mb.box(Vector3(hx, top + 0.75, 0), Vector3(0.12, 1.5, 0.12), WHITE)
+	mb.box(Vector3(hx, top + 1.0, 0), Vector3(0.9, 0.06, 0.06), WHITE)
+	# Exhaust stack against the far bulwark.
+	var sx := fc.stack_x
+	mb.box(Vector3(sx, 1.6, 0), Vector3(0.6, 1.2, 1.0), WHITE)
+	mb.cylinder(Vector3(sx, 2.2, 0), 0.2, 0.2, fc.stack_top - 2.6, 6, Color(0.3, 0.3, 0.32))
+	mb.cylinder(Vector3(sx, fc.stack_top - 0.4, 0), 0.22, 0.22, 0.4, 6, Color(0.1, 0.1, 0.1))
+
+
+## Size 2, after the M/V Hiyu: the open car deck runs through a portal amidships.
+## Passenger cabins sit over the two outer lanes on slim pillars, a bridge spans
+## the tall centre lane between them, and the upper deck on top, railed all round,
+## carries the double-ended pilothouse, the stacks, a rescue boat and life rafts.
+static func _portal_ferry(mb: MeshBuilder, fc: FerryClass) -> void:
+	_open_car_deck(mb, fc, WSF_GREEN)
+	var b := fc.half_beam
+	var hl := fc.house_half_len
+	var si := fc.side_in
+	var lo := fc.low_y
+	var ct := fc.cabin_top
+	var dark := Color(0.2, 0.21, 0.23)
+	var sign_y := Color(0.95, 0.78, 0.15)
+	for x: float in [-1.0, 1.0]:
+		# The outer wall down to the bulwark, shorter than the cabin and curving up
+		# into its ends, with the car deck's openings in it.
+		var ll := fc.low_half_len
+		mb.box(Vector3(x * (b - 0.15), (1.9 + lo) * 0.5, 0), Vector3(0.3, lo - 1.9, 2.0 * ll), WHITE)
+		for zs: float in [-1.0, 1.0]:
+			_fillet(mb, x * (b - 0.3), x * b, zs * ll, zs * hl, 1.9, lo, WHITE)
+		var z := -(ll - 0.8)
+		while z <= ll - 0.8 + 0.01:
+			mb.box(Vector3(x * (b - 0.1), 2.25, z), Vector3(0.3, 0.45, 0.9), dark)
+			z += 2.0 * (ll - 0.8) / 3.0
+		# The cabin over the outer lane, a green line at its foot, windows down the
+		# side, on the inboard face and at the ends.
+		var cx := x * (si + b) * 0.5
+		mb.box(Vector3(cx, (lo + ct) * 0.5, 0), Vector3(b - si, ct - lo, 2.0 * hl), WHITE)
+		mb.box(Vector3(cx, lo + 0.06, 0), Vector3(b - si + 0.04, 0.12, 2.0 * hl + 0.04), WSF_GREEN)
+		z = -(hl - 0.9)
+		while z <= hl - 0.9 + 0.01:
+			mb.box(Vector3(x * b, 3.45, z), Vector3(0.1, 0.55, 1.0), WINDOW)
+			z += fc.cabin_window_step()
+		for zs: float in [-1.0, 1.0]:
+			mb.box(Vector3(x * si, 3.45, zs * (fc.span_half_len + 0.5 * (hl - fc.span_half_len))),
+				Vector3(0.1, 0.5, hl - fc.span_half_len - 0.8), WINDOW)
+			mb.box(Vector3(x * (b - 0.9), 3.45, zs * hl), Vector3(1.0, 0.55, 0.1), WINDOW)
+			# A clearance board on the overhang's end, yellow with black stripes.
+			mb.box(Vector3(x * (si + 0.45), lo + 0.15, zs * (hl + 0.01)), Vector3(0.7, 0.2, 0.04), sign_y)
+			for k in 3:
+				mb.box(Vector3(x * (si + 0.2 + 0.25 * k), lo + 0.15, zs * (hl + 0.02)), Vector3(0.07, 0.2, 0.04), dark)
+		# Pillars along the overhang's edge.
+		for pz in fc.pillars:
+			mb.box(Vector3(x * (si + 0.1), (1.0 + lo) * 0.5, pz), Vector3(0.16, lo - 1.0, 0.16), WHITE)
+	# The bridge over the centre lane, with its own clearance board.
+	mb.box(Vector3(0, (fc.span_y + ct) * 0.5, 0), Vector3(2.0 * si + 0.02, ct - fc.span_y, 2.0 * fc.span_half_len), WHITE)
+	for zs: float in [-1.0, 1.0]:
+		mb.box(Vector3(0, fc.span_y + 0.32, zs * (fc.span_half_len + 0.01)), Vector3(1.4, 0.18, 0.04), sign_y)
+	# The upper deck over the cabins and the bridge (open over the lane either side
+	# of it), edged green and railed all round.
+	var floor_col := Color(0.5, 0.52, 0.54)
+	for x: float in [-1.0, 1.0]:
+		mb.box(Vector3(x * (si + b) * 0.5, ct + 0.04, 0), Vector3(b - si + 0.1, 0.08, 2.0 * hl + 0.1), floor_col)
+		mb.box(Vector3(x * (si + b) * 0.5, ct - 0.08, 0), Vector3(b - si + 0.12, 0.16, 2.0 * hl + 0.12), WSF_GREEN)
+	mb.box(Vector3(0, ct + 0.04, 0), Vector3(2.0 * si, 0.08, 2.0 * fc.span_half_len + 0.1), floor_col)
+	mb.box(Vector3(0, ct - 0.08, 0), Vector3(2.0 * si, 0.16, 2.0 * fc.span_half_len + 0.12), WSF_GREEN)
+	var rail := Color(0.12, 0.42, 0.3)
+	for x: float in [-1.0, 1.0]:
+		_rail(mb, Vector3(x * (b - 0.05), ct, -hl), Vector3(x * (b - 0.05), ct, hl), rail)
+		for zs: float in [-1.0, 1.0]:
+			_rail(mb, Vector3(x * (b - 0.05), ct, zs * (hl - 0.05)), Vector3(x * si, ct, zs * (hl - 0.05)), rail)
+			_rail(mb, Vector3(x * si, ct, zs * (hl - 0.05)), Vector3(x * si, ct, zs * fc.span_half_len), rail)
+	for zs: float in [-1.0, 1.0]:
+		_rail(mb, Vector3(-si, ct, zs * fc.span_half_len), Vector3(si, ct, zs * fc.span_half_len), rail)
+	# The pilothouse, windows all round so it cons either way, and its two masts.
+	var wy := fc.wheel_y
+	var whw := fc.wheel_half_w
+	var wl := fc.wheel_half_len
+	var top := wy + fc.wheel_h
+	mb.box(Vector3(0, wy + fc.wheel_h * 0.5, 0), Vector3(2.0 * whw, fc.wheel_h, 2.0 * wl), WHITE)
+	mb.box(Vector3(0, wy + 0.85, 0), Vector3(2.0 * whw + 0.1, 0.6, 2.0 * wl + 0.1), WINDOW_LIT)
+	mb.box(Vector3(0, top - 0.1, 0), Vector3(2.0 * whw + 0.24, 0.2, 2.0 * wl + 0.24), WSF_GREEN)
+	mb.box(Vector3(0, top + 0.02, 0), Vector3(2.0 * whw + 0.1, 0.05, 2.0 * wl + 0.1), WHITE)
+	for zs: float in [-1.0, 1.0]:
+		var mz := zs * fc.mast_z
+		mb.box(Vector3(0, (top + fc.mast_top) * 0.5, mz), Vector3(0.12, fc.mast_top - top, 0.12), Color(0.3, 0.3, 0.32))
+		mb.box(Vector3(0, top + 0.9, mz), Vector3(1.4, 0.06, 0.06), Color(0.3, 0.3, 0.32))
+		mb.box(Vector3(0, top + 1.45, mz), Vector3(0.9, 0.05, 0.08), WHITE)
+	mb.box(Vector3(whw - 0.3, top + 0.9, 0), Vector3(0.05, 1.8, 0.05), Color(0.3, 0.3, 0.32))
+	# Stacks either side of the pilothouse.
+	for x: float in [-1.0, 1.0]:
+		var sx := x * fc.stack_dx()
+		mb.box(Vector3(sx, ct + 0.35, 0), Vector3(0.6, 0.7, 0.8), WHITE)
+		mb.cylinder(Vector3(sx, ct + 0.7, 0), 0.16, 0.16, fc.stack_top - ct - 1.0, 6, Color(0.3, 0.3, 0.32))
+		mb.cylinder(Vector3(sx, fc.stack_top - 0.3, 0), 0.18, 0.18, 0.3, 6, Color(0.1, 0.1, 0.1))
+	# The rescue boat in its cradle at one end, life-raft canisters at the others.
+	var rx := b - 1.0
+	mb.box(Vector3(rx, ct + 0.15, -(hl - 1.6)), Vector3(0.6, 0.3, 1.8), Color(0.55, 0.57, 0.6))
+	mb.box(Vector3(rx, ct + 0.45, -(hl - 1.6)), Vector3(0.75, 0.3, 2.0), Color(0.95, 0.45, 0.12))
+	mb.box(Vector3(rx, ct + 0.58, -(hl - 1.7)), Vector3(0.4, 0.12, 1.0), Color(0.2, 0.2, 0.22))
+	for p: Vector3 in [Vector3(rx, 0, hl - 1.4), Vector3(-rx, 0, hl - 1.4), Vector3(-rx, 0, -(hl - 1.4))]:
+		mb.cylinder(Vector3(p.x, ct + 0.08, p.z), 0.26, 0.26, 0.5, 6, WHITE)
+
+
+## A concave fillet between x0 and x1: fills the corner of the (z, y) rectangle from
+## (z0, y0) to (z1, y1) that lies off the quarter ellipse centred on (z1, y0), so a
+## wall ending at z0 sweeps out under an overhang reaching to z1.
+static func _fillet(mb: MeshBuilder, x0: float, x1: float, z0: float, z1: float, y0: float, y1: float, col: Color) -> void:
+	const STEPS := 5
+	var corner := Vector2(z0, y1)
+	var centre := Vector2(z1, y0)
+	var arc: Array[Vector2] = []
+	for i in STEPS + 1:
+		var t := PI * 0.5 * i / STEPS
+		arc.append(Vector2(z1 - (z1 - z0) * cos(t), y0 + (y1 - y0) * sin(t)))
+	var out_x := Vector3(signf(x1 - x0), 0, 0)
+	for i in STEPS:
+		var a := arc[i]
+		var c := arc[i + 1]
+		for side: Array in [[x0, -out_x], [x1, out_x]]:
+			var x: float = side[0]
+			mb.tri(Vector3(x, corner.y, corner.x), Vector3(x, a.y, a.x), Vector3(x, c.y, c.x), col, side[1])
+		var m := (a + c) * 0.5
+		var out := Vector3(0, centre.y - m.y, centre.x - m.x)
+		mb.quad(Vector3(x0, a.y, a.x), Vector3(x1, a.y, a.x), Vector3(x1, c.y, c.x), Vector3(x0, c.y, c.x), col, out)
+
+
+## A railing along the deck from `a` to `b` (level, square to an axis): top and
+## middle rails on posts about a metre apart.
+static func _rail(mb: MeshBuilder, a: Vector3, b: Vector3, col: Color) -> void:
+	var d := b - a
+	var len := d.length()
+	if len < 0.05:
+		return
+	var along_x := absf(d.x) > absf(d.z)
+	var mid := (a + b) * 0.5
+	for h: float in [0.9, 0.5]:
+		mb.box(Vector3(mid.x, a.y + h, mid.z), Vector3(len if along_x else 0.05, 0.05, 0.05 if along_x else len), col)
+	var n := maxi(1, ceili(len / 1.1))
+	for i in n + 1:
+		var p := a + d * (float(i) / n)
+		mb.box(Vector3(p.x, a.y + 0.45, p.z), Vector3(0.05, 0.9, 0.05), col)
 
 
 ## A gull, about 1.4 m across (+Z forward, wings out along X, upper sides facing
@@ -376,33 +602,22 @@ static func car_lights() -> ArrayMesh:
 		return gb.commit())
 
 
-## Ferry lights in the hull's frame: masthead lights over both wheelhouses, red /
-## green sidelights, a row of lamps along each car-deck gallery, and the lit cabin
-## windows' reflections on the water.
-static func ferry_lights() -> ArrayMesh:
-	return _cached("ferry_lights", func():
+## Lights of ferry class `fc` in the hull's frame: masthead lights, red / green
+## sidelights, the deck lamps, and the lit windows' reflections on the water.
+static func ferry_lights(fc: FerryClass) -> ArrayMesh:
+	return _cached("ferry_lights_%d" % fc.size, func():
 		var gb := GlowBuilder.new()
-		for z: float in [-7.4, 7.4]:
-			gb.glow(lantern_glow_at(Vector3(0, FERRY_MAST_TOP, z), FERRY_LANTERN), GlowBuilder.LED, 0.3, 9.0, true, 0.0, Vector3.ZERO, 0.0)
-			for x: float in [-1.0, 1.0]:
-				gb.nav(sidelight_glow_at(x, signf(z)), 0.22, 7.0, Vector3(x, 0, signf(z) * 0.8))
-		for x: float in [-1.0, 1.0]:
-			var out := Vector3(x, 0, 0)
-			for z in range(-9, 10, 3):
-				var lamp := Vector3(x * FERRY_GALLERY_X, FERRY_GALLERY_Y, z)
-				gb.glow(bulkhead_glow_at(lamp, out, FERRY_GALLERY_LAMP), GlowBuilder.WARM, bulkhead_glow_size(FERRY_GALLERY_LAMP),
-					4.0, true, 0.0, out, 0.0)
-		# Window rows (Models.WINDOW_LIT): passenger deck, sun deck, and the ends.
+		for p in fc.lanterns:
+			gb.glow(lantern_glow_at(p, fc.lantern_scale), GlowBuilder.LED, 0.3 * fc.lantern_scale / FERRY_LANTERN, 9.0, true, 0.0, Vector3.ZERO, 0.0)
+		for sl: Array in fc.sidelights:
+			gb.nav(sidelight_glow_at(sl[0], sl[1], fc.sidelight_scale), 0.22 * fc.sidelight_scale / FERRY_SIDELIGHT_SCALE, 7.0,
+				Vector3(sl[1], 0, sl[2] * 0.8))
+		for lp: Array in fc.lamps:
+			gb.glow(bulkhead_glow_at(lp[0], lp[1], fc.lamp_scale), GlowBuilder.WARM, bulkhead_glow_size(fc.lamp_scale),
+				4.0, true, 0.0, lp[1], 0.0)
 		var window := Color(1.0, 0.74, 0.42)
-		for x: float in [-4.35, 4.35]:
-			for i in 13:
-				gb.reflection(Vector3(x, 4.4, -9.0 + i * 1.5), window, 0.3, 2.2, Vector3(signf(x), 0, 0))
-		for x: float in [-3.25, 3.25]:
-			for i in 6:
-				gb.reflection(Vector3(x, 5.8, -5.0 + i * 2.0), window, 0.22, 1.6, Vector3(signf(x), 0, 0))
-		for z: float in [-9.2, 9.2]:
-			for i in 5:
-				gb.reflection(Vector3(-3.0 + i * 1.5, 4.4, z), window, 0.3, 2.2, Vector3(0, 0, signf(z)))
+		for w: Array in fc.windows:
+			gb.reflection(w[0], window, w[1], w[2], w[3])
 		return gb.commit())
 
 
@@ -721,9 +936,9 @@ static func trawler(variant: int) -> ArrayMesh:
 		mb.box(Vector3(0, d + 0.25, -2.6), Vector3(1.8, 0.5, 1.8), steel)
 		var saved := mb.xform
 		mb.xform = saved * Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(1.8, d + 1.1, -6.4))
-		mb.cylinder(Vector3.ZERO, 0.85, 0.85, 3.6, 10, net)
-		mb.cylinder(Vector3(0, -0.06, 0), 1.05, 1.05, 0.12, 10, steel)
-		mb.cylinder(Vector3(0, 3.54, 0), 1.05, 1.05, 0.12, 10, steel)
+		mb.cylinder(Vector3.ZERO, 0.85, 0.85, 3.6, 10, net, Color(-1, 0, 0), 0.0, true)
+		mb.cylinder(Vector3(0, -0.06, 0), 1.05, 1.05, 0.12, 10, steel, Color(-1, 0, 0), 0.0, true)
+		mb.cylinder(Vector3(0, 3.54, 0), 1.05, 1.05, 0.12, 10, steel, Color(-1, 0, 0), 0.0, true)
 		mb.xform = saved
 		for x: float in [-1.0, 1.0]:
 			mb.box(Vector3(x * 1.95, d + 0.55, -6.4), Vector3(0.2, 1.1, 0.4), steel)
@@ -1272,13 +1487,11 @@ static func cage_lantern_glow_at(base: Vector3, s := 1.0) -> Vector3:
 	return base + Vector3(0, 0.17 * s, 0)
 
 
-## A sidelight on the wheelhouse wall at side `sx` (±1) of the end `sz` (±1): a lens
-## drum on a bracket, a cap, and a screen on its aft side so it only shows ahead and
-## abeam. Whichever end is the bow, port is where x and z have the same sign, so
-## that lens is red and the other green.
-static func add_sidelight(mb: MeshBuilder, sx: float, sz: float) -> void:
-	var s := FERRY_SIDELIGHT_SCALE
-	var w := Vector3(sx * FERRY_SIDELIGHT.x, FERRY_SIDELIGHT.y, sz * FERRY_SIDELIGHT.z)
+## A sidelight on a wheelhouse wall at `w` (on its side `sx`, ±1, and the end
+## `sz`, ±1, it serves): a lens drum on a bracket, a cap, and a screen on its aft
+## side so it only shows ahead and abeam. Whichever end is the bow, port is where x
+## and z have the same sign, so that lens is red and the other green.
+static func add_sidelight(mb: MeshBuilder, w: Vector3, sx: float, sz: float, s := FERRY_SIDELIGHT_SCALE) -> void:
 	var c := w + Vector3(sx * 0.2 * s, 0, 0)
 	var none := Color(-1, 0, 0)
 	mb.box(w + Vector3(sx * 0.1 * s, -0.13 * s, 0), Vector3(0.24 * s, 0.04 * s, 0.34 * s), LAMP_DARK)
@@ -1289,8 +1502,8 @@ static func add_sidelight(mb: MeshBuilder, sx: float, sz: float) -> void:
 	mb.box(c + Vector3(-sx * 0.02 * s, -0.01 * s, -sz * 0.14 * s), Vector3(0.3 * s, 0.26 * s, 0.03 * s), LAMP_DARK)
 
 
-static func sidelight_glow_at(sx: float, sz: float) -> Vector3:
-	return Vector3(sx * (FERRY_SIDELIGHT.x + 0.2 * FERRY_SIDELIGHT_SCALE), FERRY_SIDELIGHT.y, sz * FERRY_SIDELIGHT.z)
+static func sidelight_glow_at(w: Vector3, sx: float, s := FERRY_SIDELIGHT_SCALE) -> Vector3:
+	return w + Vector3(sx * 0.2 * s, 0, 0)
 
 
 ## Frame for a wall fixture at `p`: +Z out from the wall, +Y up, scaled by `s`.

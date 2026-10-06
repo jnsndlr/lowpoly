@@ -47,10 +47,12 @@ func setup(m: MapData, t: Terrain) -> void:
 			add_child(term)
 			term.setup(self, isl)
 			terminals[isl.id] = term
-	for r in map.routes:
+	var sizes := _ferry_sizes()
+	for i in map.routes.size():
+		var r := map.routes[i]
 		var f := Ferry.new()
 		add_child(f)
-		f.setup(self, r, FERRY_NAMES[r.id % FERRY_NAMES.size()])
+		f.setup(self, r, FERRY_NAMES[r.id % FERRY_NAMES.size()], sizes[i])
 		ferries.append(f)
 	for term: Terminal in terminals.values():
 		term.prefill()
@@ -63,6 +65,27 @@ func setup(m: MapData, t: Terrain) -> void:
 	marine = MarineTraffic.new()
 	add_child(marine)
 	marine.setup(self)
+
+
+## The size of ferry each route gets (FerryClass), by how busy it is: the mean
+## population of the islands it links, the mainland counting as busy as the
+## busiest island can be. `--ferry-sizes=1,3,5` on the command line hands sizes
+## out to the routes in turn instead.
+func _ferry_sizes() -> Array[int]:
+	var demand: Array[float] = []
+	for r in map.routes:
+		var pop := 0.0
+		for id in [r.a, r.b]:
+			var isl: MapData.Island = terminals[id].island
+			pop += 8000.0 if isl.is_mainland else float(isl.population)
+		demand.append(pop * 0.5)
+	var sizes := FerryClass.sizes_by_demand(demand)
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--ferry-sizes="):
+			var forced := arg.substr(14).split(",")
+			for i in sizes.size():
+				sizes[i] = clampi(int(forced[i % forced.size()]), 1, 5)
+	return sizes
 
 
 func _process(delta: float) -> void:

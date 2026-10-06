@@ -35,16 +35,6 @@ const COMPANY := 0.8
 const HUDDLE := 0.6
 const PERCH_RANGE := 240.0
 const PERCH_FALLOFF := 70.0
-# Ferry-local perches (Models.ferry) as (from, to, spread): wheelhouse roofs, the
-# upper cabin roof either side of the funnel, the passenger-deck edges, the funnel
-# top and the lifeboats.
-const FERRY_PERCHES := [
-	[Vector3(-1.7, 7.4, 7.4), Vector3(1.7, 7.4, 7.4), 0.8], [Vector3(-1.7, 7.4, -7.4), Vector3(1.7, 7.4, -7.4), 0.8],
-	[Vector3(0, 6.3, 1.8), Vector3(0, 6.3, 5.6), 2.8], [Vector3(0, 6.3, -1.8), Vector3(0, 6.3, -5.6), 2.8],
-	[Vector3(3.95, 5.1, -9.6), Vector3(3.95, 5.1, 9.6), 0.0], [Vector3(-3.95, 5.1, -9.6), Vector3(-3.95, 5.1, 9.6), 0.0],
-	[Vector3(0, 9.05, -1.1), Vector3(0, 9.05, 1.1), 0.0],
-	[Vector3(3.5, 6.75, 2.3), Vector3(3.5, 6.75, 4.1), 0.0], [Vector3(-3.5, 6.75, -2.3), Vector3(-3.5, 6.75, -4.1), 0.0],
-]
 # Trawler-local perches (Models.trawler), used while it lies alongside: the
 # wheelhouse roof, the gantry's crossbar, the bulwark rails and the foredeck.
 const TRAWLER_PERCHES := [
@@ -198,7 +188,7 @@ func setup(s: Simulation, d: DayCycle, perches: Array[Perch]) -> void:
 	_wind_yaw = atan2(sin(a), -cos(a))
 	_perches.append_array(perches)
 	for f in sim.ferries:
-		for fp: Array in FERRY_PERCHES:
+		for fp: Array in f.fc.perches:
 			_perches.append(Perch.new(fp[0], fp[1], fp[2], Kind.FERRY, f))
 	for b in sim.marine.fishing_boats:
 		for bp: Array in TRAWLER_PERCHES:

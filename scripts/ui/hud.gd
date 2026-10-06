@@ -509,9 +509,10 @@ func _refresh_panels() -> void:
 		_info_sub.text = "M/V · %s ⇄ %s" % [f.term_a.island.name, f.term_b.island.name]
 		_set_rows([
 			["Status", f.status_text()],
-			["Vehicles aboard", "%d / %d" % [f.load_count(), Ferry.CAPACITY]],
+			["Class", f.fc.label],
+			["Vehicles aboard", "%d / %d" % [f.load_count(), f.fc.capacity]],
 			["Speed", "%.1f kn" % (f.speed * 1.6)],
-			["Crossing time", "~%d min" % roundi(f.route.length / (Ferry.CRUISE * 0.85))],
+			["Crossing time", "~%d min" % roundi(f.crossing_minutes())],
 			["Crossings", str(f.trips)],
 		])
 		_info_button.text = "Stop following" if rig.follow == f else "Follow"
@@ -664,7 +665,7 @@ func _rebuild_fleet() -> void:
 			_fleet_list.add_child(b)
 	for i in sim.ferries.size():
 		var f := sim.ferries[i]
-		(_fleet_list.get_child(i) as Button).text = "%s  ·  %d/%d  ·  %s" % [f.ferry_name, f.load_count(), Ferry.CAPACITY, f.status_text()]
+		(_fleet_list.get_child(i) as Button).text = "%s  ·  %d/%d  ·  %s" % [f.ferry_name, f.load_count(), f.fc.capacity, f.status_text()]
 
 
 # --- Wildlife ----------------------------------------------------------------------

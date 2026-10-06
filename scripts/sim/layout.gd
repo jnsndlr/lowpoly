@@ -15,9 +15,23 @@ const LANE_WIDTH := 2.4
 const EXIT_CLEAR := 2.9         # lanes keep clear of the central exit lane
 const EXIT_V := 0.8             # lateral position of the exit lane
 const SLOT := 2.6               # spacing between queued cars
-const SLIP_SPACING := 11.0
+# Far enough apart that ferries at neighbouring slips, lying alongside or
+# coming and going straight in and out, never come near each other.
+const SLIP_SPACING := 20.0
 const FERRY_HALF := 15.0
-const DOCK_U := PIER_END + FERRY_HALF + 0.4  # ferry centre when docked
+const DOCK_U := PIER_END + FERRY_HALF + 0.4  # a size-4 ferry's centre when docked
+# Each slip's wing walls (u, v of the starboard one's ends, mirrored to port): one
+# straight wall either side, splayed WING_ANGLE off the centreline, that takes
+# any size of hull's end.
+const WING_ANGLE := deg_to_rad(38.0)
+const WING_LENGTH := 8.0
+const WING_WALL := [Vector2(PIER_END + 0.3, 3.0),
+	Vector2(PIER_END + 0.3 + WING_LENGTH * cos(WING_ANGLE), 3.0 + WING_LENGTH * sin(WING_ANGLE))]
+# Guide dolphins either side of each slip (u, v off the centreline, cluster
+# radius): an inner pair the longer hulls lie against, and a lit outer pair that
+# lines ferries up coming in.
+const DOLPHIN_INNER := Vector3(PIER_END + 17.0, 5.9, 1.05)
+const DOLPHIN_OUTER := Vector3(PIER_END + 29.0, 6.9, 1.35)
 const DECK_Y := LOT_Y
 
 # Marina frame, like a terminal's: origin where the pier meets the shore, +Z ("u")
