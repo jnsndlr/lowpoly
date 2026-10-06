@@ -128,6 +128,15 @@ func apply(h: float) -> void:
 	env.glow_intensity = p.glow
 	env.adjustment_saturation = p.saturation
 	sky_mat.sun_angle_max = p.sun_glow
+	# For the hand-lit backdrop (mainland haze, horizon cumulus).
+	var sl: Color = (p.light as Color).srgb_to_linear() * p.energy
+	RenderingServer.global_shader_parameter_set("sun_light", Vector3(sl.r, sl.g, sl.b))
+	var zc: Color = (p.top as Color).srgb_to_linear()
+	RenderingServer.global_shader_parameter_set("sky_zenith", Vector3(zc.r, zc.g, zc.b))
+	var hc: Color = (p.horizon as Color).srgb_to_linear()
+	RenderingServer.global_shader_parameter_set("haze_sky", Vector3(hc.r, hc.g, hc.b))
+	var fc: Color = (p.fog as Color).srgb_to_linear()
+	RenderingServer.global_shader_parameter_set("haze_fog", Vector3(fc.r, fc.g, fc.b))
 	if water_mat:
 		water_mat.set_shader_parameter("daylight", clampf(elev / 20.0, 0.0, 1.0))
 		water_mat.set_shader_parameter("sky_top_color", p.top)

@@ -8,6 +8,7 @@ extends Node3D
 ##   --orcas (start an orca visit now and follow it)
 ##   --vessel=cargo|sail|yacht|pilot|tug (follow a cargo ship, a sailboat under way, a
 ##     motor yacht, a pilot boat or a tug)
+##   --aa=msaa|smaa|none (anti-aliasing, to compare)
 
 static var map_seed := 0
 
@@ -62,6 +63,9 @@ func _ready() -> void:
 	var clouds := CloudLayer.new()
 	clouds.setup(sim.weather, sim.wind_dir, sim.wind_speed)
 	add_child(clouds)
+	var backdrop := Backdrop.new()
+	add_child(backdrop)
+	backdrop.setup(terrain, sim.weather)
 	day_cycle = DayCycle.new()
 	day_cycle.name = "DayCycle"
 	day_cycle.sim = sim
@@ -162,6 +166,7 @@ func _process(_delta: float) -> void:
 	sun.directional_shadow_max_distance = clampf(rig.distance * 2.6, 120.0, 1200.0)
 	env.fog_depth_begin = rig.distance * 1.6 + 200.0
 	env.fog_depth_end = rig.distance * 4.0 + 700.0
+	RenderingServer.global_shader_parameter_set("fog_range", Vector2(env.fog_depth_begin, env.fog_depth_end))
 	env.volumetric_fog_length = clampf(rig.distance * 2.4, 250.0, 1600.0)
 
 
@@ -175,6 +180,10 @@ func _parse_args() -> void:
 
 
 func _apply_debug_args() -> void:
+	if _args.has("aa"):
+		var aa := str(_args["aa"])
+		get_viewport().msaa_3d = Viewport.MSAA_2X if aa == "msaa" else Viewport.MSAA_DISABLED
+		get_viewport().screen_space_aa = Viewport.SCREEN_SPACE_AA_SMAA if aa == "smaa" else Viewport.SCREEN_SPACE_AA_DISABLED
 	if _args.has("time"):
 		day_cycle.set_hour(float(_args["time"]))
 		day_cycle.apply(day_cycle.hour())

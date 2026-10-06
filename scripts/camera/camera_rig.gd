@@ -9,7 +9,9 @@ signal ground_clicked(screen_pos: Vector2)
 
 const MIN_DIST := 14.0
 const MAX_DIST := 620.0
-const MIN_PITCH := 0.38   # ~22°
+const MIN_PITCH := 0.06   # ~3.5°: down near the water, looking up the passage
+## The camera never goes lower than this above the water or ground.
+const MIN_EYE := 2.5
 const MAX_PITCH := 1.50   # ~86°
 
 var camera: Camera3D
@@ -38,7 +40,7 @@ func _ready() -> void:
 	camera = Camera3D.new()
 	camera.fov = 42.0
 	camera.near = 0.5
-	camera.far = 5000.0
+	camera.far = 15000.0 # the mainland's far peaks, seen across the map
 	add_child(camera)
 	_last_ticks = Time.get_ticks_usec()
 	_update_camera()
@@ -212,5 +214,9 @@ func _update_camera() -> void:
 	if camera == null:
 		return
 	var b := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -pitch)
-	camera.global_position = position + b * Vector3(0.0, 0.0, distance)
+	var eye := position + b * Vector3(0.0, 0.0, distance)
+	# At low pitch and close zoom, sit just above the water (or a hill) instead.
+	var ground := maxf(terrain.height_at(eye.x, eye.z), 0.0) if terrain else 0.0
+	eye.y = maxf(eye.y, ground + MIN_EYE)
+	camera.global_position = eye
 	camera.look_at(position, Vector3.UP)

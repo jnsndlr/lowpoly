@@ -423,10 +423,15 @@ func release_spot(sp: Anchorage.Spot, boat: Vessel) -> void:
 func _spawn_cargo(midway := false) -> void:
 	var hs := sim.map.half_size
 	for attempt in 8:
-		var side_a := rng.randi_range(0, 3)
-		var side_b := (side_a + rng.randi_range(1, 3)) % 4
+		# Ships use the passage: in at one open end of the channel, out at the other.
+		var ends := [0, 1] if sim.terrain.mainland.axis == 0 else [2, 3]
+		var flip := rng.randi_range(0, 1)
+		var side_a: int = ends[flip]
+		var side_b: int = ends[1 - flip]
 		var a := _edge_point(side_a, hs + 80.0)
 		var b := _edge_point(side_b, hs + 80.0)
+		if not _open_water(a, _edge_normal(side_a)) or not _open_water(b, _edge_normal(side_b)):
+			continue
 		var pts := nav.find_path(a, b, true)
 		if pts.size() < 2:
 			continue
@@ -436,6 +441,10 @@ func _spawn_cargo(midway := false) -> void:
 		# Kept right all the way out, so ships coming and going there pass too.
 		var sp := VesselTypes.pick(VesselTypes.cargo_ships(), rng)
 		pts = nav.finish(pts, 10.0, 14.0, 3, sp.half_beam + 2.0, 0.0)
+		# finish() hands back the raw track if no smoothing stays afloat; out past the
+		# map's edge that could cut a headland of the mainland.
+		if not nav.afloat(pts, sp.half_beam):
+			continue
 		var path := NavPath.new(pts)
 		var s0 := path.length * rng.randf_range(0.3, 0.55) if midway else 0.0
 		if not is_clear(path.sample(s0), 90.0) or _meets_head_on(path):
@@ -470,6 +479,15 @@ func _edge_point(side: int, e: float) -> Vector2:
 		2:
 			return Vector2(t, -e)
 	return Vector2(t, e)
+
+
+## True if the run out from `p` along `out`, past the nav grid, stays in deep water.
+func _open_water(p: Vector2, out: Vector2) -> bool:
+	for k in 13:
+		var q := p + out * (k * 15.0)
+		if sim.terrain.height_at(q.x, q.y) > -3.5:
+			return false
+	return true
 
 
 func _edge_normal(side: int) -> Vector2:

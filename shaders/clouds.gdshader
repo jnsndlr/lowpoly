@@ -10,6 +10,10 @@ uniform float opacity = 0.85;
 uniform float near_fade_start = 180.0;
 uniform float near_fade_end = 520.0;
 uniform float puff = 5.0;
+// Out over the mainland the deck thins away and the backdrop's cumulus take over
+// (keep in sync with backdrop.gdshader).
+uniform float far_fade_start = 900.0;
+uniform float far_fade_end = 1600.0;
 
 varying vec3 world_pos;
 
@@ -38,5 +42,9 @@ void fragment() {
 
 	float near = mix(0.12, 1.0, smoothstep(near_fade_start, near_fade_end, length(VERTEX)));
 	ALBEDO = mix(vec3(0.78, 0.8, 0.86), vec3(1.0), d);
-	ALPHA = d * opacity * near;
+	float far = 1.0 - smoothstep(far_fade_start, far_fade_end, length(world_pos.xz));
+	// Seen edge-on the deck smears into streaks across the mountains: thin it out.
+	vec3 up = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
+	float grazing = smoothstep(0.06, 0.22, abs(dot(normalize(VIEW), up)));
+	ALPHA = d * opacity * near * far * grazing;
 }

@@ -3,7 +3,7 @@ extends SceneTree
 ## costs. GPU timings need Vulkan on macOS (Metal has no timestamp queries); a game
 ## running at the same time skews the numbers, so compare runs made back to back.
 ##   godot --path . --rendering-driver vulkan --resolution 3200x1920 --script tools/perf_probe.gd \
-##     -- --seed=9164 [--off=ssao,vfog,glow,shadow,shadow2,msaa,water,clouds,scale75,census]
+##     -- --seed=9164 [--off=ssao,vfog,glow,shadow,shadow2,aa,msaa,water,clouds,backdrop,mtrees,scale75,census]
 var main: Node
 var frames := 0
 var off := ""
@@ -19,7 +19,7 @@ func _initialize() -> void:
 	RenderingServer.viewport_set_measure_render_time(root.get_viewport_rid(), true)
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
-	main.uncapped = true
+	main.set("uncapped", true)
 	Engine.max_fps = 0
 
 func _apply() -> void:
@@ -31,10 +31,19 @@ func _apply() -> void:
 			"glow": env.glow_enabled = false
 			"shadow": main.sun.shadow_enabled = false
 			"shadow2": main.sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-			"msaa": root.msaa_3d = Viewport.MSAA_DISABLED
+			"aa": root.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+			"msaa":
+				# The old setting, for comparison: MSAA 2x instead of SMAA.
+				root.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+				root.msaa_3d = Viewport.MSAA_2X
 			"water": _hide(main, "Water")
 			"scale75": root.scaling_3d_scale = 0.75
 			"clouds": _hide(main, "Clouds")
+			"backdrop": _hide(main, "Backdrop")
+			"mtrees": _hide(main, "MainlandPines*")
+			"cards": _hide(main, "TreeCards*")
+			"mland": _hide(main, "Mainland")
+			"cumulus": _hide(main, "Cumulus")
 
 func _hide(n: Node, nm: String) -> void:
 	for c in n.find_children(nm, "", true, false):

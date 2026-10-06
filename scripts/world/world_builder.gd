@@ -157,7 +157,7 @@ func _build_terrain() -> void:
 	_add_mesh(mb.commit(), "Terrain")
 
 	var floor_mesh := PlaneMesh.new()
-	floor_mesh.size = Vector2(6000, 6000)
+	floor_mesh.size = Vector2.ONE * (Mainland.FAR * 2.0 + 1000.0)
 	var floor_mat := StandardMaterial3D.new()
 	floor_mat.albedo_color = Color(0.4, 0.45, 0.36)
 	floor_mesh.material = floor_mat
@@ -215,7 +215,7 @@ func _build_water() -> void:
 	water.material_override = mat
 
 	# Flat ring out to the horizon around the detailed plane.
-	var o := 3000.0
+	var o := Mainland.FAR + 300.0
 	var w := inner
 	var mb := MeshBuilder.new()
 	var col := Color.WHITE

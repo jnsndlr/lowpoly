@@ -14,6 +14,10 @@ var h_grid := PackedFloat32Array()  # final heights
 var warp := FastNoiseLite.new()
 var detail := FastNoiseLite.new()
 var flats: Array[Dictionary] = []
+## The land past the grid's edge (heights there come from it, see outer_height).
+var mainland: Mainland
+# Stamps that reach past the grid's edge (x, z, radius, strength), continued by outer_height.
+var _edge_stamps: Array[Vector4] = []
 
 
 func _init(map_seed: int, half: float) -> void:
@@ -26,6 +30,7 @@ func _init(map_seed: int, half: float) -> void:
 	warp.fractal_octaves = 3
 	detail.seed = map_seed + 17
 	detail.frequency = 0.05
+	mainland = Mainland.new(map_seed, half)
 
 
 func _index_of(coord: float) -> int:
@@ -34,6 +39,8 @@ func _index_of(coord: float) -> int:
 
 func stamp_island(center: Vector2, radius: float, strength: float) -> void:
 	var reach := radius * 1.7
+	if maxf(absf(center.x), absf(center.y)) + reach > half_size:
+		_edge_stamps.append(Vector4(center.x, center.y, radius, strength))
 	var i0 := _index_of(center.x - reach)
 	var i1 := _index_of(center.x + reach)
 	var j0 := _index_of(center.y - reach)
@@ -42,25 +49,47 @@ func stamp_island(center: Vector2, radius: float, strength: float) -> void:
 		var z := -half_size + j * CELL
 		for i in range(i0, i1 + 1):
 			var x := -half_size + i * CELL
-			var d := Vector2(x, z).distance_to(center) / radius + warp.get_noise_2d(x, z) * 0.3
-			var e := clampf(1.0 - d, 0.0, 1.0) * strength
+			var e := _stamp_e(center, radius, strength, x, z)
 			var k := j * (n + 1) + i
 			if e > e_grid[k]:
 				e_grid[k] = e
 
 
-## Turns elevation into heights: a steep rocky shoreline, then gentle hills.
+func _stamp_e(center: Vector2, radius: float, strength: float, x: float, z: float) -> float:
+	var d := Vector2(x, z).distance_to(center) / radius + warp.get_noise_2d(x, z) * 0.3
+	return clampf(1.0 - d, 0.0, 1.0) * strength
+
+
+## Turns elevation into heights. The grid's edge needs no fade: the Backdrop carries
+## the land on from it (outer_height), so the mainland runs on past it.
 func finalize() -> void:
 	h_grid.resize(e_grid.size())
 	for j in n + 1:
 		var z := -half_size + j * CELL
 		for i in n + 1:
 			var x := -half_size + i * CELL
-			var k := j * (n + 1) + i
-			var edge := 1.0 - smoothstep(half_size - 45.0, half_size - 4.0, maxf(absf(x), absf(z)))
-			var e := e_grid[k] * edge
-			var land := smoothstep(0.2, 0.32, e)
-			h_grid[k] = SEA_FLOOR + land * 6.2 + e * 7.0 + detail.get_noise_2d(x, z) * 1.8 * land
+			h_grid[j * (n + 1) + i] = _height_of(e_grid[j * (n + 1) + i], x, z)
+
+
+## A steep rocky shoreline, then gentle hills.
+func _height_of(e: float, x: float, z: float) -> float:
+	var land := smoothstep(0.2, 0.32, e)
+	return SEA_FLOOR + land * 6.2 + e * 7.0 + detail.get_noise_2d(x, z) * 1.8 * land
+
+
+## Height past the grid: the mainland's shores, hills and mountains, and the parts
+## of island stamps that reach out past the edge.
+func outer_height(x: float, z: float) -> float:
+	var inl := mainland.inland(x, z)
+	var e := mainland.elev(x, z, inl)
+	# Out in the open channel, stamps sink away just past the edge so they leave
+	# the shipping lanes clear; near the shores they run on into the mainland.
+	var out := maxf(absf(x), absf(z)) - half_size
+	var keep := 1.0 - smoothstep(0.0, 60.0, out) * (1.0 - smoothstep(-220.0, -60.0, inl))
+	if keep > 0.0:
+		for s in _edge_stamps:
+			e = maxf(e, _stamp_e(Vector2(s.x, s.y), s.z, s.w, x, z) * keep)
+	return _height_of(e, x, z) + mainland.relief(x, z, inl, e)
 
 
 func add_flat(origin: Vector3, dir: Vector3, u0: float, u1: float, v0: float, v1: float, height: float, blend: float) -> void:
@@ -107,7 +136,7 @@ func height_at(x: float, z: float) -> float:
 	var fx := (x + half_size) / CELL
 	var fz := (z + half_size) / CELL
 	if fx < 0.0 or fz < 0.0 or fx >= n or fz >= n:
-		return SEA_FLOOR
+		return outer_height(x, z)
 	var i := int(fx)
 	var j := int(fz)
 	var tx := fx - i
