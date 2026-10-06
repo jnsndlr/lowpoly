@@ -11,10 +11,15 @@ var rng := RandomNumberGenerator.new()
 var terrain: Terrain
 var map: MapData
 var _route_samples := PackedVector3Array()
-var _slip_zones: Array = []   # [shore, dock_dir, lateral, slip offset, route id]
+var _slip_zones: Array = []   # [shore, dock_dir, lateral, slip offset, route id, lateral min, lateral max]
 
 const DOCK_MIN_ANGLE := deg_to_rad(35.0)   # no two docks face within this of each other
+const ISLAND_GAP := 120.0
 const QUAY_DEPTH := -2.9      # the shallowest water a fish quay's boats come and go through
+const MAX_SPREAD := deg_to_rad(160.0)  # widest arc of neighbours one terminal serves
+const MIN_CROSSING := 90.0    # dock to dock, so a ferry has room to line up both ends
+const MAX_DETOUR := 1.45      # route length over the dock-to-dock distance
+const MAX_TURN := deg_to_rad(200.0)    # total heading change along a route
 
 
 func generate(map_seed: int) -> MapData:
@@ -73,7 +78,7 @@ func _place_islands() -> void:
 		var ok := true
 		for o in map.islands:
 			var reach := o.radius * (0.72 if o.is_mainland else 1.0)
-			if c.distance_to(o.center) < r + reach + 85.0:
+			if c.distance_to(o.center) < r + reach + (85.0 if o.is_mainland else ISLAND_GAP):
 				ok = false
 				break
 		if ok:
@@ -96,42 +101,63 @@ static func _find(parent: Array, i: int) -> int:
 
 
 ## Picks island pairs (a spanning tree plus a few extra links), finds a dock site on
-## each connected island, then keeps only routes a ferry can actually sail.
+## each connected island, then keeps only routes a ferry can sail sensibly. A link
+## whose route would loop round, double back or cut through another slip is
+## banned and the network planned again without it, so the docks face the links
+## that remain.
 func _plan_routes() -> void:
 	var mains := _main_islands()
+	var banned := {}
+	while true:
+		var bad := _try_routes(mains, banned)
+		if bad.is_empty():
+			break
+		for key in bad:
+			banned[key] = true
+	for r in map.routes:
+		_route_samples.append_array(r.curve.get_baked_points())
+
+
+## One planning pass with the `banned` links left out. Returns the links (as
+## Vector2i of indices into `mains`) whose routes turned out not to make sense.
+func _try_routes(mains: Array[MapData.Island], banned: Dictionary) -> Array:
+	map.routes.clear()
+	_slip_zones.clear()
+	for isl in mains:
+		isl.has_terminal = false
+		isl.slips.clear()
 	var edges: Array = []
 	for i in mains.size():
 		for j in range(i + 1, mains.size()):
 			var d := mains[i].center.distance_to(mains[j].center)
-			if d < 430.0:
+			if d < 430.0 and not banned.has(Vector2i(i, j)):
 				edges.append([d, i, j])
 	edges.sort_custom(func(a, b): return a[0] < b[0])
 
 	var parent: Array = range(mains.size())
 	var degree := PackedInt32Array()
 	degree.resize(mains.size())
+	var bearings: Array = []
+	for i in mains.size():
+		bearings.append(PackedFloat32Array())
 	var chosen: Array = []
 	for e in edges:
 		var a: int = e[1]
 		var b: int = e[2]
-		if degree[a] >= 3 or degree[b] >= 3:
+		if degree[a] >= 3 or degree[b] >= 3 or not _fits_terminal(mains, bearings, a, b):
 			continue
 		var ra := _find(parent, a)
 		var rb := _find(parent, b)
 		if ra != rb:
 			parent[ra] = rb
-			chosen.append(e)
-			degree[a] += 1
-			degree[b] += 1
+			_link(mains, bearings, degree, chosen, e)
 	for e in edges:
 		var a: int = e[1]
 		var b: int = e[2]
-		if chosen.has(e) or e[0] > 260.0 or degree[a] >= 2 or degree[b] >= 2:
+		if chosen.has(e) or e[0] > 260.0 or degree[a] >= 2 or degree[b] >= 2 or not _fits_terminal(mains, bearings, a, b):
 			continue
 		if rng.randf() < 0.6:
-			chosen.append(e)
-			degree[a] += 1
-			degree[b] += 1
+			_link(mains, bearings, degree, chosen, e)
 
 	# Dock sites face the average direction of each island's neighbours.
 	var desired := {}
@@ -151,13 +177,16 @@ func _plan_routes() -> void:
 			if isl.has_terminal:
 				taken.append(isl.dock_dir)
 
+	var bad: Array = []
+	var link := {}
 	for e in chosen:
 		var a: MapData.Island = mains[e[1]]
 		var b: MapData.Island = mains[e[2]]
 		if not (a.has_terminal and b.has_terminal):
 			continue
 		var test := _route_curve(a.shore + a.dock_dir * Layout.DOCK_U, a.dock_dir, b.shore + b.dock_dir * Layout.DOCK_U, b.dock_dir)
-		if test == null:
+		if test == null or not _route_sensible(test):
+			bad.append(Vector2i(e[1], e[2]))
 			continue
 		var r := MapData.Route.new()
 		r.id = map.routes.size()
@@ -165,8 +194,11 @@ func _plan_routes() -> void:
 		r.b = b.id
 		r.curve = test
 		map.routes.append(r)
+		link[r.id] = Vector2i(e[1], e[2])
 		a.slips.append(r.id)
 		b.slips.append(r.id)
+	if not bad.is_empty():
+		return bad
 
 	for isl in mains:
 		if isl.slips.is_empty():
@@ -175,22 +207,77 @@ func _plan_routes() -> void:
 		var lat := isl.lateral()
 		isl.slips.sort_custom(func(ra, rb): return _departure_lateral(isl, ra, lat) < _departure_lateral(isl, rb, lat))
 		isl.lot_half_width = maxf(12.0, (isl.slips.size() - 1) * Layout.SLIP_SPACING * 0.5 + 5.0)
-		for rid in isl.slips:
-			_slip_zones.append([isl.shore, isl.dock_dir, lat, isl.slip_offset(isl.slip_index(rid)), rid])
+		var last := isl.slips.size() - 1
+		for i in isl.slips.size():
+			# Slips butt up against each other; the end ones reach out past their
+			# outer dolphins.
+			var lo := -(OUTER_DOLPHIN_CLEAR if i == 0 else Layout.SLIP_SPACING * 0.5)
+			var hi := OUTER_DOLPHIN_CLEAR if i == last else Layout.SLIP_SPACING * 0.5
+			_slip_zones.append([isl.shore, isl.dock_dir, lat, isl.slip_offset(i), isl.slips[i], lo, hi])
 
 	for r in map.routes:
 		var a := map.islands[r.a]
 		var b := map.islands[r.b]
 		var pa := a.dock_center(r.id)
 		var pb := b.dock_center(r.id)
-		# Keep clear of every other slip; only if that's impossible, settle for
-		# clear of land.
-		var c := _route_curve(pa, a.dock_dir, pb, b.dock_dir, true, r.id)
-		if c == null:
-			c = _route_curve(pa, a.dock_dir, pb, b.dock_dir, false)
-		r.curve = c
+		# Every route keeps clear of every other slip and of land.
+		r.curve = _route_curve(pa, a.dock_dir, pb, b.dock_dir, r.id)
+		if r.curve == null or not _route_sensible(r.curve):
+			bad.append(link[r.id])
+			continue
 		r.length = r.curve.get_baked_length()
-		_route_samples.append_array(r.curve.get_baked_points())
+	return bad
+
+
+func _link(mains: Array[MapData.Island], bearings: Array, degree: PackedInt32Array, chosen: Array, e: Array) -> void:
+	var a: int = e[1]
+	var b: int = e[2]
+	var ab := mains[b].center - mains[a].center
+	bearings[a].append(ab.angle())
+	bearings[b].append((-ab).angle())
+	degree[a] += 1
+	degree[b] += 1
+	chosen.append(e)
+
+
+## True if a single terminal on each of `a` and `b` could serve one more link
+## between them: every neighbour of an island must lie within MAX_SPREAD of the
+## others, so the dock faces them all rather than splitting the difference
+## between opposite shores and sending ferries off the wrong way.
+func _fits_terminal(mains: Array[MapData.Island], bearings: Array, a: int, b: int) -> bool:
+	var ab := mains[b].center - mains[a].center
+	return _spread(bearings[a], ab.angle()) <= MAX_SPREAD and _spread(bearings[b], (-ab).angle()) <= MAX_SPREAD
+
+
+## The narrowest arc holding all of `angles` plus `extra`.
+static func _spread(angles: PackedFloat32Array, extra: float) -> float:
+	var all := angles.duplicate()
+	all.append(extra)
+	for i in all.size():
+		all[i] = fposmod(all[i], TAU)
+	all.sort()
+	var widest_gap := TAU - all[all.size() - 1] + all[0]
+	for i in range(1, all.size()):
+		widest_gap = maxf(widest_gap, all[i] - all[i - 1])
+	return TAU - widest_gap
+
+
+## A route a real ferry would run: a proper crossing rather than a hop, no more
+## than a little longer than the straight line, and never swinging further round
+## than a U-turn and back a bit.
+func _route_sensible(c: Curve3D) -> bool:
+	var pts := c.get_baked_points()
+	var chord := pts[0].distance_to(pts[pts.size() - 1])
+	if chord < MIN_CROSSING or c.get_baked_length() > chord * MAX_DETOUR:
+		return false
+	var turn := 0.0
+	var prev := Vector3.ZERO
+	for i in range(4, pts.size(), 4):
+		var h := (pts[i] - pts[i - 4]).normalized()
+		if prev != Vector3.ZERO:
+			turn += absf(prev.signed_angle_to(h, Vector3.UP))
+		prev = h
+	return turn <= MAX_TURN
 
 
 ## Which side the route heads off to once clear of the terminal, from its planning
@@ -266,14 +353,16 @@ const WIDE_RADIUS := 45.0
 # Each slip's pier, guide walls and dolphins are off limits to other routes' hulls.
 const ZONE_U := Layout.PIER_END + 25.0
 const HULL_HALF_BEAM := 4.5
+# Lateral reach of a terminal's outermost dolphins (5.7 m off the slip centreline,
+# 1 m across) from its end slips, plus a little sea room.
+const OUTER_DOLPHIN_CLEAR := 8.5
 
 
 ## Route from dock centre `pa` (facing out along `na`) to dock centre `pb`: straight
 ## out, the shortest turn–straight–turn path between the run-in ends, straight in.
-## Returns the shortest clear one, or null if none is clear and `need_clear` is set
-## (otherwise the shortest regardless). With `route_id` set it must also keep out of
-## every slip but that route's own.
-func _route_curve(pa: Vector3, na: Vector3, pb: Vector3, nb: Vector3, need_clear := true, route_id := -1) -> Curve3D:
+## Returns the shortest one clear of land, or null if there is none. With
+## `route_id` set it must also keep out of every slip but that route's own.
+func _route_curve(pa: Vector3, na: Vector3, pb: Vector3, nb: Vector3, route_id := -1) -> Curve3D:
 	var h0 := Vector2(na.x, na.z).normalized()
 	var h1 := -Vector2(nb.x, nb.z).normalized()
 	# Every path for every option, scored by length plus a penalty for each
@@ -292,8 +381,7 @@ func _route_curve(pa: Vector3, na: Vector3, pb: Vector3, nb: Vector3, need_clear
 		if _route_clear(c) and (route_id < 0 or _clear_of_slips(c, route_id)):
 			return c
 	# Nothing standard keeps out of every other slip: try longer straight runs out
-	# of either end and wider turns before settling for crossing one (a ferry
-	# would then have to wait whenever that slip is occupied).
+	# of either end and wider turns before giving up on the link.
 	if route_id >= 0:
 		var more := []
 		for ra: float in [SHORT_RUN_IN, RUN_IN, 45.0, 60.0, 80.0]:
@@ -308,9 +396,7 @@ func _route_curve(pa: Vector3, na: Vector3, pb: Vector3, nb: Vector3, need_clear
 			var c := _curve_from(pa, cand[1], pb, cand[2], cand[3])
 			if _route_clear(c) and _clear_of_slips(c, route_id):
 				return c
-	if need_clear or candidates.is_empty():
-		return null
-	return _curve_from(pa, candidates[0][1], pb, candidates[0][2])
+	return null
 
 
 static func _left(v: Vector2) -> Vector2:
@@ -411,7 +497,8 @@ func _clear_of_slips(c: Curve3D, route_id: int) -> bool:
 				for across: float in [-HULL_HALF_BEAM, 0.0, HULL_HALF_BEAM]:
 					var q := rel + t * along + side * across
 					var qu: float = q.dot(z[1])
-					if qu < ZONE_U and qu > Layout.LOT_FRONT and absf(q.dot(z[2]) - z[3]) < Layout.SLIP_SPACING * 0.5:
+					var qv: float = q.dot(z[2]) - z[3]
+					if qu < ZONE_U and qu > Layout.LOT_FRONT and qv > z[5] and qv < z[6]:
 						return false
 		s += 2.0
 	return true

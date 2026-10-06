@@ -25,9 +25,18 @@ var route_overlay: MeshInstance3D
 var orcas: Orcas
 var _args := {}
 
+## Frame caps: the sim is slow-paced, so 60 fps is plenty, and nobody is watching
+## when the window is in the background. Headless runs (soak tests) stay uncapped.
+const MAX_FPS := 60
+const BACKGROUND_FPS := 15
+## Benchmarks render flat out regardless of focus.
+var uncapped := false
+
 
 func _ready() -> void:
 	_parse_args()
+	if not uncapped and DisplayServer.get_name() != "headless":
+		Engine.max_fps = MAX_FPS
 	if map_seed == 0:
 		map_seed = int(_args["seed"]) if _args.has("seed") else randi_range(1, 99999)
 	var t0 := Time.get_ticks_msec()
@@ -139,6 +148,15 @@ func _setup_environment() -> void:
 	add_child(sun)
 
 
+func _notification(what: int) -> void:
+	if uncapped or DisplayServer.get_name() == "headless":
+		return
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		Engine.max_fps = BACKGROUND_FPS
+	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		Engine.max_fps = MAX_FPS
+
+
 func _process(_delta: float) -> void:
 	# Keep shadows crisp and fog sensible at every zoom level.
 	sun.directional_shadow_max_distance = clampf(rig.distance * 2.6, 120.0, 1200.0)
@@ -206,6 +224,8 @@ func _apply_debug_args() -> void:
 ## Prints averaged frame / GPU time and render stats after a warm-up, then quits.
 ## GPU time needs a driver with timestamp queries (e.g. --rendering-driver vulkan).
 func _bench(seconds: float) -> void:
+	uncapped = true
+	Engine.max_fps = 0
 	var vp := get_viewport().get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(vp, true)
 	await get_tree().create_timer(3.0, true, false, true).timeout

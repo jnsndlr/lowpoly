@@ -18,7 +18,7 @@ render_mode blend_mix, cull_back, specular_schlick_ggx;
 
 #include "res://shaders/clouds.gdshaderinc"
 
-uniform sampler2D screen_texture : hint_screen_texture, filter_linear_mipmap;
+uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 uniform sampler2D depth_texture : hint_depth_texture, filter_linear;
 
 group_uniforms waves;
@@ -107,15 +107,50 @@ float gnoise(vec2 p) {
 	return mix(mix(n0, n1, u.x), mix(n2, n3, u.x), u.y) * 1.5;
 }
 
+// gnoise() and its gradient `d`.
+float gnoise_d(vec2 p, out vec2 d) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+	vec2 g0 = grad(i);
+	vec2 g1 = grad(i + vec2(1.0, 0.0));
+	vec2 g2 = grad(i + vec2(0.0, 1.0));
+	vec2 g3 = grad(i + vec2(1.0, 1.0));
+	float n0 = dot(g0, f);
+	float n1 = dot(g1, f - vec2(1.0, 0.0));
+	float n2 = dot(g2, f - vec2(0.0, 1.0));
+	float n3 = dot(g3, f - vec2(1.0, 1.0));
+	float k = n0 - n1 - n2 + n3;
+	d = (g0 + u.x * (g1 - g0) + u.y * (g2 - g0) + u.x * u.y * (g0 - g1 - g2 + g3)
+			+ du * (vec2(n1 - n0, n2 - n0) + u.yx * k)) * 1.5;
+	return (n0 + u.x * (n1 - n0) + u.y * (n2 - n0) + u.x * u.y * k) * 1.5;
+}
+
 // One choppy octave, 0..1: sharp ridges along a warped grid with rounded troughs
 // between them. The noise warp is at the same scale as the ridges, so they bend,
-// split and merge instead of lining up.
-float chop(vec2 uv, float choppy) {
-	uv += gnoise(uv) * 0.9;
-	vec2 wv = 1.0 - abs(sin(uv));
-	vec2 swv = abs(cos(uv));
-	wv = mix(wv, swv, wv);
-	return pow(1.0 - pow(wv.x * wv.y, 0.65), choppy);
+// split and merge instead of lining up. Also outputs its gradient `d` (worked out
+// exactly, so the surface normal costs one pass over the octaves, not three).
+float chop_d(vec2 uv, float choppy, out vec2 d) {
+	vec2 nd;
+	vec2 v = uv + gnoise_d(uv, nd) * 0.9;
+	vec2 sv = sin(v);
+	vec2 cv = cos(v);
+	vec2 a = 1.0 - abs(sv);
+	vec2 b = abs(cv);
+	vec2 da = -sign(sv) * cv;
+	vec2 db = -sign(cv) * sv;
+	vec2 m = a + (b - a) * a;
+	vec2 dm = da * (1.0 + b - 2.0 * a) + a * db;
+	float x = max(m.x * m.y, 1e-6);
+	float y = pow(x, 0.65);
+	float r = max(1.0 - y, 1e-6);
+	float c = pow(r, choppy);
+	// dc/dv, per component of v.
+	vec2 dv = -choppy * pow(r, choppy - 1.0) * 0.65 * y / x * vec2(dm.x * m.y, m.x * dm.y);
+	// Both components of v carry the same warp.
+	d = dv + 0.9 * (dv.x + dv.y) * nd;
+	return c;
 }
 
 const int OCTAVES = 6;
@@ -128,14 +163,16 @@ const float OCT_AMP = 0.44;
 // Height of the wave field at world xz `p`. `fp` is the world size of a pixel
 // here; octaves under ~4 px are dropped. `wind` is the unit wind direction,
 // `gust` 0..1. Outputs the longest octave's crest value (0..2) and the slope the
-// dropped octaves would have added.
-float waves(vec2 p, vec2 wind, float t, float fp, float gust, out float crest, out float lost) {
+// dropped octaves would have added, and the height's gradient over world xz.
+float waves(vec2 p, vec2 wind, float t, float fp, float gust, out float crest, out float lost, out vec2 slope) {
 	// Wind frame: x downwind, y across.
 	vec2 q0 = vec2(dot(p, wind), dot(p, vec2(-wind.y, wind.x)));
 	float len = wave_length;
 	float amp = wave_amp;
 	float choppy = choppiness;
 	float h = 0.0;
+	// Gradient in the wind frame (q0).
+	vec2 gq = vec2(0.0);
 	crest = 0.0;
 	lost = 0.0;
 	for (int i = 0; i < OCTAVES; i++) {
@@ -156,9 +193,14 @@ float waves(vec2 p, vec2 wind, float t, float fp, float gust, out float crest, o
 			vec2 uv = q * k + vec2(float(i) * 3.7, float(i) * -5.3);
 			// Two trains at slightly different speeds and headings, so the pattern
 			// keeps re-forming instead of scrolling.
-			float d = chop(uv - vec2(travel, 0.0), choppy);
-			d += chop(mat2(vec2(0.96, 0.28), vec2(-0.28, 0.96)) * uv + vec2(-0.8 * travel, 0.3 * travel) + 11.0, choppy);
+			vec2 d1, d2;
+			const mat2 TRAIN2 = mat2(vec2(0.96, 0.28), vec2(-0.28, 0.96));
+			float d = chop_d(uv - vec2(travel, 0.0), choppy, d1);
+			d += chop_d(TRAIN2 * uv + vec2(-0.8 * travel, 0.3 * travel) + 11.0, choppy, d2);
 			h += d * a * lod;
+			// Back through the second train's turn, the stretch and the octave's heading.
+			vec2 gu = (d1 + d2 * TRAIN2) * vec2(k, k * 0.72) * a * lod;
+			gq += vec2(cs.x * gu.x - cs.y * gu.y, cs.y * gu.x + cs.x * gu.y);
 			if (i == 0) {
 				crest = d * lod;
 			}
@@ -167,6 +209,7 @@ float waves(vec2 p, vec2 wind, float t, float fp, float gust, out float crest, o
 		amp *= OCT_AMP;
 		choppy = mix(choppy, 1.0, 0.25);
 	}
+	slope = vec2(wind.x * gq.x - wind.y * gq.y, wind.y * gq.x + wind.x * gq.y);
 	return h;
 }
 
@@ -627,12 +670,10 @@ void fragment() {
 			+ gnoise(p / (gust_size * 0.37) - wind.yx * t * 0.015 + 5.0) * 0.25;
 	gust = clamp(0.5 + gust * 0.8, 0.0, 1.0);
 
-	float crest, lost, c_, l_;
-	float h0 = waves(p, wind, t, fp, gust, crest, lost);
-	float eps = max(fp * 0.35, 0.004);
-	float hx = waves(p + vec2(eps, 0.0), wind, t, fp, gust, c_, l_);
-	float hz = waves(p + vec2(0.0, eps), wind, t, fp, gust, c_, l_);
-	vec2 grad = vec2(hx - h0, hz - h0) / eps * normal_strength;
+	float crest, lost;
+	vec2 grad;
+	waves(p, wind, t, fp, gust, crest, lost, grad);
+	grad *= normal_strength;
 	float wake_foam, aer;
 	vec2 wake_grad = vec2(0.0);
 	wakes(p, fp, t, grad, wake_grad, wake_foam, aer);

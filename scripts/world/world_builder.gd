@@ -20,6 +20,8 @@ const LIFT_LAMP := 1.6
 # Scale of the 360° lanterns on top of the lift and on the dolphins.
 const LIFT_LANTERN := 1.3
 const DOLPHIN_LANTERN := 1.3
+# Side (m) of the tiles that trees, rocks and houses are batched in for culling.
+const MULTIMESH_TILE := 64.0
 
 var map: MapData
 var terrain: Terrain
@@ -68,22 +70,37 @@ func _add_mesh(mesh: Mesh, node_name: String, shadows := true) -> MeshInstance3D
 	return mi
 
 
+## Instances are split into MULTIMESH_TILE-sized tiles, one MultiMesh each, so the
+## camera and every shadow cascade can cull the ones out of view (a single MultiMesh
+## covering the map is drawn whole, everywhere).
 func _multimesh(mesh: Mesh, xforms: Array[Transform3D], colors: Array[Color], node_name: String) -> void:
 	if xforms.is_empty():
 		return
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = not colors.is_empty()
-	mm.mesh = mesh
-	mm.instance_count = xforms.size()
+	var tiles := {}
 	for i in xforms.size():
-		mm.set_instance_transform(i, xforms[i])
-		if mm.use_colors:
-			mm.set_instance_color(i, colors[i])
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	mmi.name = node_name
-	root.add_child(mmi)
+		var o := xforms[i].origin
+		var key := Vector2i(floori(o.x / MULTIMESH_TILE), floori(o.z / MULTIMESH_TILE))
+		if not tiles.has(key):
+			tiles[key] = []
+		tiles[key].append(i)
+	var group := Node3D.new()
+	group.name = node_name
+	root.add_child(group)
+	for key: Vector2i in tiles:
+		var idx: Array = tiles[key]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = not colors.is_empty()
+		mm.mesh = mesh
+		mm.instance_count = idx.size()
+		for j in idx.size():
+			mm.set_instance_transform(j, xforms[idx[j]])
+			if mm.use_colors:
+				mm.set_instance_color(j, colors[idx[j]])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.name = "%s_%d_%d" % [node_name, key.x, key.y]
+		group.add_child(mmi)
 
 
 # --- Blocking grid so props don't overlap roads, lots and houses -------------------
