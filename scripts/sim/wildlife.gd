@@ -50,6 +50,8 @@ const BOW_SPEED := 5.0
 const BOW_RANGE := 90.0
 const BOW_RIDE := Vector2(3.0, 7.0)
 const BOW_REST := Vector2(10.0, 25.0)
+# Game minutes before a resident seal or sea lion group leaves that the next sets off.
+const RESIDENT_HANDOVER := 180.0
 
 
 ## What a species is like and how it behaves. Only `enabled` species visit.
@@ -71,6 +73,7 @@ class Species:
 	var roam := 60.0                    # FORAGE: how far it wanders about there
 	var bow_rides := false
 	var haul := Vector3(1.0, 1.0, 0.0)  # HAUL_OUT: liking for beach, rock, dock
+	var resident := 0                   # HAUL_OUT: groups always lying up somewhere on the map
 
 	func _init(i: String, n: String, p: String, d: float, g: Vector2i, h: float, c: float,
 			b: Behavior, s: float, on := false) -> void:
@@ -170,11 +173,13 @@ func setup(s: Simulation) -> void:
 	_season = sim.season()
 	for isl in sim.map.islands:
 		_rep[isl.id] = Reputation.new()
+	_keep_residents(true)
 
 
 ## Tourism draw, best first. Seals, sea lions and porpoises come in big groups, so
-## each sighting is worth little. Seals and sea lions come in at any hour to lie
-## up for most of a day (and the night).
+## each sighting is worth little; seals and sea lions are about all the time, so
+## hardly anything. They come in at any hour to lie up for most of a day (and the
+## night), and there are always a few groups of them hauled out somewhere.
 static func table() -> Array[Species]:
 	var out: Array[Species] = [
 		Species.new("orca", "Orca", "Orcas", 3.0, Vector2i(2, 8), 3.0, 1.0, Behavior.CIRCLE_ISLAND, 4.5, true).with(
@@ -183,14 +188,14 @@ static func table() -> Array[Species]:
 			{"keep": 50.0, "patch": Vector2(90.0, 220.0), "roam": 80.0}),
 		Species.new("gray", "Gray whale", "Gray whales", 1.8, Vector2i(1, 2), 5.0, 0.4, Behavior.FORAGE, 2.5, true).with(
 			{"keep": 40.0, "depth": -2.0, "patch": Vector2(22.0, 50.0), "roam": 45.0}),
-		Species.new("sea_lion", "Sea lion", "Sea lions", 0.3, Vector2i(3, 12), 10.0, 0.7, Behavior.HAUL_OUT, 3.5, true).with(
-			{"window": Vector2(0.0, 24.0), "haul": Vector3(0.3, 1.0, 1.6)}),
+		Species.new("sea_lion", "Sea lion", "Sea lions", 0.08, Vector2i(3, 12), 10.0, 0.7, Behavior.HAUL_OUT, 3.5, true).with(
+			{"window": Vector2(0.0, 24.0), "haul": Vector3(0.3, 1.0, 1.6), "resident": 2}),
 		Species.new("dalls_porpoise", "Dall's porpoise", "Dall's porpoises", 0.15, Vector2i(3, 9), 1.5, 0.8, Behavior.FORAGE, 7.0, true).with(
 			{"patch": Vector2(120.0, 260.0), "roam": 90.0, "bow_rides": true}),
 		Species.new("harbor_porpoise", "Harbor porpoise", "Harbor porpoises", 0.15, Vector2i(2, 6), 2.0, 0.9, Behavior.FORAGE, 4.0, true).with(
 			{"patch": Vector2(40.0, 120.0), "roam": 50.0}),
-		Species.new("harbor_seal", "Harbor seal", "Harbor seals", 0.08, Vector2i(5, 18), 10.0, 0.9, Behavior.HAUL_OUT, 2.5, true).with(
-			{"window": Vector2(0.0, 24.0), "haul": Vector3(1.0, 1.4, 0.08)}),
+		Species.new("harbor_seal", "Harbor seal", "Harbor seals", 0.03, Vector2i(5, 18), 10.0, 0.9, Behavior.HAUL_OUT, 2.5, true).with(
+			{"window": Vector2(0.0, 24.0), "haul": Vector3(1.0, 1.4, 0.08), "resident": 3}),
 	]
 	return out
 
@@ -253,10 +258,31 @@ func _process(delta: float) -> void:
 		if sim.minutes >= _planned[i][1]:
 			start_visit(_planned[i][0])
 			_planned.remove_at(i)
+	_keep_residents(false)
 	for v in visits:
 		if v.active():
 			_tick(v, delta)
 			_look(v)
+
+
+## Tops up each haul-out species to its `resident` groups: a few hours before
+## one is due to leave, another sets off to take over (swimming in from offshore
+## takes a while). At the start of the game they're already lying up
+## (`settled`), part way through their visits.
+func _keep_residents(settled: bool) -> void:
+	for sp in species:
+		if not sp.enabled or sp.resident <= 0:
+			continue
+		var n := 0
+		for v in visits:
+			if v.species == sp and v.active() and v.length - v.age > RESIDENT_HANDOVER:
+				n += 1
+		for i in sp.resident - n:
+			var v := start_visit(sp, null, settled)
+			if v == null or v.site == null:
+				if v:
+					_end(v)
+				break
 
 
 func _plan_day() -> void:
@@ -273,8 +299,8 @@ func _plan_day() -> void:
 
 ## Starts a visit now, around `target` or an island picked by appeal (seals and
 ## sea lions: at a free haul-out, picked by its liking and the appeal of the
-## island it's off).
-func start_visit(sp: Species, target: MapData.Island = null) -> Visit:
+## island it's off; `settled`: already there, some way into the visit).
+func start_visit(sp: Species, target: MapData.Island = null, settled := false) -> Visit:
 	var site: MapData.HaulOut = null
 	if sp.behavior == Behavior.HAUL_OUT:
 		site = _pick_site(sp, target)
@@ -312,6 +338,10 @@ func start_visit(sp: Species, target: MapData.Island = null) -> Visit:
 		aim = v.patch
 	v.heading = atan2(aim.x - v.pos.x, aim.z - v.pos.z)
 	v.speed = sp.speed
+	if settled and site:
+		v.phase = Phase.HAULED
+		v.pos = site.water
+		v.age = rng.randf_range(0.0, 0.7) * v.length
 	v.escort_t = rng.randf_range(0.0, BOW_REST.x)
 	v.marker = Node3D.new()
 	v.marker.name = "%s visit" % sp.name
@@ -548,6 +578,8 @@ func _tick(v: Visit, dt: float) -> void:
 		want = _clear_heading(v.pos, want, v.species.depth)
 	v.heading = rotate_toward(v.heading, want, TURN_RATE * dt * (4.0 if v.escort else 1.0))
 	var step := minf(v.speed * dt, v.pos.distance_to(aim)) if free else v.speed * dt
+	if not free and step > 0.0:
+		step = _hold_off(v, step)
 	v.pos += Vector3(sin(v.heading), 0.0, cos(v.heading)) * step
 	v.marker.position = v.pos
 	if v.age >= v.length:
@@ -637,6 +669,27 @@ func _orbit_aim(v: Visit, dt: float) -> Vector3:
 	else:
 		v.orbit_r = move_toward(v.orbit_r, v.base_r, 2.0 * dt)
 	return aim
+
+
+## Never into water shallower than the species swims in (looking ahead only
+## steers, and islands aren't round): if this step would take the group into the
+## shallows, it slides off along the nearest heading that doesn't, or holds where
+## it is (turning on) if there's none. Returns the step to take.
+func _hold_off(v: Visit, step: float) -> float:
+	var depth := v.species.depth
+	var here := sim.terrain.height_at(v.pos.x, v.pos.z)
+	for i in 7:
+		for s: float in [1.0, -1.0]:
+			var h := v.heading + s * i * 0.25
+			var q := v.pos + Vector3(sin(h), 0.0, cos(h)) * step
+			var g := sim.terrain.height_at(q.x, q.z)
+			# Out of the shallows if it's ended up in them somehow.
+			if g <= depth or g < here:
+				v.heading = h
+				return step
+			if i == 0:
+				break
+	return 0.0
 
 
 ## The heading nearest `want` with open water ahead.

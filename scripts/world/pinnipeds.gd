@@ -21,6 +21,10 @@ enum Pose { SLEEP, LOOK, SIT, SCRATCH }
 
 const MAX_PER_KIND := 64
 const MAX_SPLASHES := 24
+# Must match seal_body[] in water.gdshader: animals in the water nearest the
+# camera (within FOAM_RANGE) that the water draws no contact foam round.
+const MAX_FOAM_CLEAR := 32
+const FOAM_RANGE := 250.0
 # How long after its head went under an animal can still be clicked (real ms).
 const CLICK_GRACE := 1500
 
@@ -85,7 +89,7 @@ class Pod:
 	var kind: Kind
 	var animals: Array[Animal] = []
 	var taken: Array = []       # spot index -> the Animal there (or heading there)
-	var disturbed := 0.0        # how close the nearest boat under way is
+	var disturbed := INF        # how close the nearest boat under way is
 	var gone := 0.0
 
 
@@ -97,18 +101,21 @@ class Splash:
 
 var wildlife: Wildlife
 var terrain: Terrain
+var water_mat: ShaderMaterial
 var rng := RandomNumberGenerator.new()
 var kinds := {}
 var _pods: Array[Pod] = []
 var _splashes: Array[Splash] = []
 var _splash_mm: MultiMesh
 var _splash_buf := PackedFloat32Array()
+var _foam_clear := PackedVector4Array()
 
 
-func setup(w: Wildlife, t: Terrain) -> void:
+func setup(w: Wildlife, t: Terrain, water: ShaderMaterial = null) -> void:
 	name = "Pinnipeds"
 	wildlife = w
 	terrain = t
+	water_mat = water
 	rng.seed = w.sim.map.map_seed * 43 + 17
 	for k: Kind in [
 		Kind.new("harbor_seal", Models.harbor_seal(), {"neck_z": 0.33, "hip_z": -0.22,
@@ -143,6 +150,7 @@ func setup(w: Wildlife, t: Terrain) -> void:
 	_splash_mm.instance_count = MAX_SPLASHES
 	_splash_mm.visible_instance_count = 0
 	_splash_buf.resize(MAX_SPLASHES * 16)
+	_foam_clear.resize(MAX_FOAM_CLEAR)
 	var smi := MultiMeshInstance3D.new()
 	smi.multimesh = _splash_mm
 	smi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -184,6 +192,19 @@ func _on_visit(v: Wildlife.Visit) -> void:
 		o.y = _swim_y(o)
 		o.phase = rng.randf() * TAU
 		p.animals.append(o)
+	# Already lying up when we first see them (Wildlife's residents at the start):
+	# most of them out on the haul-out, the rest milling about off it.
+	if v.phase == Wildlife.Phase.HAULED:
+		for o in p.animals:
+			if rng.randf() < 0.8 and (o.mother == null or o.mother.state == State.REST) and _take_spot(o, p):
+				var sp := v.site.spots[o.spot]
+				o.pos = sp.at
+				o.yaw = sp.yaw
+				o.state = State.REST
+				_next_pose(o)
+				o.timer *= rng.randf()
+				_rest(o, p, 0.0)
+				o.roll = o.sleep_roll if o.pose == Pose.SLEEP else 0.0
 	_pods.append(p)
 
 
@@ -672,3 +693,39 @@ func _render() -> void:
 	_splash_mm.visible_instance_count = k
 	if k > 0:
 		_splash_mm.buffer = _splash_buf
+	if water_mat:
+		_clear_foam()
+
+
+## Tells the water which animals are in it, so it leaves off the lip of foam it
+## draws where anything meets the surface: on a back just awash it reads as white
+## fur rather than water.
+func _clear_foam() -> void:
+	var cam := get_viewport().get_camera_3d()
+	var bodies: Array = []
+	if cam:
+		var c := Vector2(cam.global_position.x, cam.global_position.z)
+		for p in _pods:
+			for o in p.animals:
+				if o.y > 0.05 and o.state == State.REST:
+					continue
+				var d := Vector2(o.pos.x, o.pos.z).distance_squared_to(c)
+				if d < FOAM_RANGE * FOAM_RANGE:
+					bodies.append([d, o])
+	if bodies.size() > MAX_FOAM_CLEAR:
+		bodies.sort_custom(func(a: Array, b: Array): return a[0] < b[0])
+		bodies.resize(MAX_FOAM_CLEAR)
+	var lo := Vector2(INF, INF)
+	var hi := -lo
+	for i in bodies.size():
+		var o: Animal = bodies[i][1]
+		var f := Vector2(sin(o.yaw), cos(o.yaw)) * o.length * 0.5 * cos(o.pitch)
+		var at := Vector2(o.pos.x, o.pos.z)
+		_foam_clear[i] = Vector4(at.x, at.y, f.x, f.y)
+		var r := f.length() * 1.3 + 1.0
+		lo = lo.min(at - Vector2(r, r))
+		hi = hi.max(at + Vector2(r, r))
+	water_mat.set_shader_parameter("seal_count", bodies.size())
+	if not bodies.is_empty():
+		water_mat.set_shader_parameter("seal_body", _foam_clear)
+		water_mat.set_shader_parameter("seal_bounds", Vector4(lo.x, lo.y, hi.x, hi.y))

@@ -49,6 +49,13 @@ group_uniforms foam;
 uniform vec4 foam_color : source_color = vec4(0.93, 0.97, 0.98, 1.0);
 uniform float foam_width = 0.35;
 
+// Seals and sea lions in the water (Pinnipeds hands them over): no lip of foam
+// round them, which would whiten a back just under the surface. Each is the
+// body's middle (xy) and half its length forward (zw); `seal_bounds` holds them all.
+uniform int seal_count = 0;
+uniform vec4 seal_body[32];
+uniform vec4 seal_bounds = vec4(0.0);
+
 group_uniforms swell;
 uniform float swell_height = 0.2;
 // Half-size of the subdivided plane; swell flattens out before its edge so it
@@ -712,6 +719,17 @@ void fragment() {
 	float cover = max(lip * lip, band) * 1.1 + fn * 0.8 + (crest - 1.0) * 0.12;
 	float aa = max(fwidth(cover), 0.02);
 	float foam = smoothstep(0.55 - aa, 0.55 + aa, cover) * (1.0 - ortho);
+	if (seal_count > 0 && all(greaterThan(p, seal_bounds.xy)) && all(lessThan(p, seal_bounds.zw))) {
+		float clear = 0.0;
+		for (int i = 0; i < seal_count; i++) {
+			vec4 b = seal_body[i];
+			vec2 rel = p - b.xy;
+			float h = clamp(dot(rel, b.zw) / max(dot(b.zw, b.zw), 1e-4), -1.0, 1.0);
+			float r = 0.3 * length(b.zw) + 0.12;
+			clear = max(clear, 1.0 - smoothstep(r, r + 0.4, length(rel - b.zw * h)));
+		}
+		foam *= 1.0 - clear;
+	}
 	foam = max(foam, wake_foam);
 
 	float cloud = cloud_shadow(world_pos, TIME);

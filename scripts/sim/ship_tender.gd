@@ -34,6 +34,7 @@ var _goal_timer := 0.0
 var _gap := 0.0                # how far off the ship's side its station is now
 var _locked := false           # holding its station
 var _along := 0.0              # how far its station has dropped back along the ship (sheering off)
+var _holding := false          # lying stopped at its standby or waiting spot
 var _nav_lights: MeshInstance3D
 
 
@@ -233,20 +234,38 @@ func _navigate(delta: float) -> void:
 	helm.update(delta)
 	var want_yaw := helm.want_yaw
 	var target := helm.want_speed
+	# Easing off as it comes up to its spot, so it can stop there rather than
+	# running round and round it (its turning circle is wider than the spot);
+	# once stopped it lies there until something moves it well off.
+	var left := helm.distance_left()
+	target = minf(target, _approach_speed(left))
+	if state in [State.WAITING, State.STANDING_BY]:
+		if helm.give_way_to != null or left > HOLD_R * 3.0:
+			_holding = false
+		elif left < HOLD_R:
+			_holding = true
+	else:
+		_holding = false
 	match state:
 		State.WAITING:
 			target = minf(target, 1.2)
-			if helm.distance_left() < HOLD_R and helm.give_way_to == null:
+			if _holding:
 				want_yaw = _yaw
 				target = 0.0
 		State.STANDING_BY:
 			# Lies stopped off the track, heading the way the ship is going.
-			if helm.distance_left() < HOLD_R and helm.give_way_to == null:
+			if _holding:
 				var h := ship.heading2()
 				want_yaw = atan2(h.x, h.y)
 				target = 0.0
 	_make_way(delta, want_yaw, target, spec.turn)
 	_pose(delta)
+
+
+## The most it makes coming up to a spot `left` metres off, so that it can
+## stop inside HOLD_R of it.
+func _approach_speed(left: float) -> float:
+	return 0.6 + sqrt(2.0 * spec.decel * maxf(left - HOLD_R * 0.5, 0.0)) * 0.8
 
 
 ## Near enough its station, with open water straight there, and on the working

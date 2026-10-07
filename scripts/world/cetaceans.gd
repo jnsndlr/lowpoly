@@ -289,6 +289,12 @@ func _tick_animal(o: Animal, p: Pod, dt: float, ending: bool) -> void:
 	var fwd := Vector3(sin(v.heading), 0.0, cos(v.heading))
 	var slot := (o.mother.pos + Basis(Vector3.UP, o.mother.yaw) * o.offset) if o.mother \
 		else v.pos + Basis(Vector3.UP, v.heading) * o.offset
+	# Close up toward the middle of the group (which keeps to water deep enough)
+	# where the slot is in the shallows.
+	for i in 5:
+		if terrain.height_at(slot.x, slot.z) <= v.species.depth:
+			break
+		slot = slot.lerp(v.pos, 0.4)
 	var want := fwd * v.speed + (slot - o.pos) * 0.35
 	want.y = 0.0
 	if want.length_squared() > 0.01:
@@ -300,6 +306,16 @@ func _tick_animal(o: Animal, p: Pod, dt: float, ending: bool) -> void:
 	if o.state == State.SPYHOP:
 		want = Vector3.ZERO
 	o.vel = o.vel.move_toward(want.limit_length(v.speed * 1.7 + 1.0), 2.5 * dt)
+	if _shoaling(o, o.vel, dt):
+		# Never on into the shallows: slide off along the shore, turning back
+		# toward open water if need be, or (boxed in) stop.
+		var vel := o.vel
+		o.vel = Vector3.ZERO
+		for i in range(1, 13):
+			var turned := Basis(Vector3.UP, (1.0 if i % 2 == 0 else -1.0) * ceili(i / 2.0) * 0.45) * vel
+			if not _shoaling(o, turned, dt):
+				o.vel = turned * (1.0 - i * 0.05)
+				break
 	o.pos += o.vel * dt
 	var spd := Vector2(o.vel.x, o.vel.z).length()
 	if spd > 0.3:
@@ -372,6 +388,22 @@ func _tick_animal(o: Animal, p: Pod, dt: float, ending: bool) -> void:
 	# Anything showing above the surface (fin, back or more)?
 	if o.y + (0.09 + o.fin) * L > 0.0 or o.state != State.UNDER:
 		o.shown_ms = Time.get_ticks_msec()
+
+
+## Whether moving at `vel` takes the animal (its middle or its nose) into water
+## shallower than its kind swims in, and shallower than where it is now.
+func _shoaling(o: Animal, vel: Vector3, dt: float) -> bool:
+	if vel.length_squared() < 0.0001:
+		return false
+	var depth := o.visit.species.depth
+	var ahead := vel.normalized() * o.length * 0.5
+	var q := o.pos + vel * dt
+	var g := terrain.height_at(q.x, q.z)
+	if g > depth and g > terrain.height_at(o.pos.x, o.pos.z):
+		return true
+	# The nose may go a little shallower than the body.
+	var n := terrain.height_at(q.x + ahead.x, q.z + ahead.z)
+	return n > depth + 1.5 and n > terrain.height_at(o.pos.x + ahead.x, o.pos.z + ahead.z)
 
 
 func _advance(o: Animal, dt: float) -> float:

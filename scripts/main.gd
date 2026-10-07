@@ -94,7 +94,7 @@ func _ready() -> void:
 	cetaceans.setup(sim.wildlife, terrain)
 	pinnipeds = Pinnipeds.new()
 	add_child(pinnipeds)
-	pinnipeds.setup(sim.wildlife, terrain)
+	pinnipeds.setup(sim.wildlife, terrain, water_mat)
 	day_cycle.apply(sim.hour())
 	hud = Hud.new()
 	add_child(hud)

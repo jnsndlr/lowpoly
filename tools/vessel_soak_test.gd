@@ -36,6 +36,7 @@ var yacht_brake := 0.0
 var ferry_held_in := 0.0      # ferries ready to leave, holding in at the dock
 var ferry_stopped := 0.0      # ferries stopped under way
 var ferry_stop_why := {}
+var tender_loiter := 0.0     # pilot boats / tugs under way while standing by or waiting
 
 
 func _initialize() -> void:
@@ -123,6 +124,8 @@ func _process(delta: float) -> bool:
 				var st: String = a.status_text().split(" ·")[0]
 				stop_why[st] = stop_why.get(st, 0) + 1
 			_was_stopped[a] = stopped
+		if a is ShipTender and a.state in [ShipTender.State.STANDING_BY, ShipTender.State.WAITING] and a.speed > 1.5:
+			tender_loiter += delta
 		# (A trawler hauling its net, say, lies stopped on purpose.)
 		if a.wants_to_move() and a.speed < 0.05 and not a.resting():
 			stall[a] = stall.get(a, 0.0) + delta
@@ -197,8 +200,8 @@ func _process(delta: float) -> bool:
 	print("     motor yachts: %d, trips %d, anchorings %d, hull-check braking %.0f s, closest pass %.2f m" % [
 		sim.marine.motor_yachts.size(), ytrips, anchorings, yacht_brake, yacht_closest])
 	_extra_summary(sim)
-	print("     wildlife: visits %s, most hauled out at once %d, flushed by boats %d, bow rides %d" % [
-		wild_visits, wild_hauled, wild_flushed, wild_bow_rides])
+	print("     wildlife: visits %s, hauled out at once %d..%d (groups %d..%d), flushed by boats %d, bow rides %d" % [
+		wild_visits, wild_hauled_min, wild_hauled, wild_groups_min, wild_groups_max, wild_flushed, wild_bow_rides])
 	for k in stop_why:
 		print("       stopped while: %s (%d)" % [k, stop_why[k]])
 	return true
@@ -211,6 +214,7 @@ func _extra_summary(sim: Simulation) -> void:
 		return
 	print("     pilotage: %d pilot boats, %d tugs, boarded %d, landed %d, escorts %d, missed %d" % [
 		p.pilot_boats.size(), p.tugs.size(), p.boarded, p.landed, p.escorts, p.missed])
+	print("     tenders under way standing by / waiting: %.0f s" % tender_loiter)
 
 
 ## Logs each motor yacht's, pilot boat's and tug's changes of state.
@@ -237,6 +241,9 @@ func _log_state(sim: Simulation, v: Vessel) -> void:
 
 var wild_visits := {}        # species id -> visits
 var wild_hauled := 0
+var wild_hauled_min := 1000000
+var wild_groups_min := 1000000
+var wild_groups_max := 0
 var wild_flushed := 0
 var wild_bow_rides := 0
 var _wild_seen := {}
@@ -254,12 +261,19 @@ func _watch_wildlife(sim: Simulation) -> void:
 			wild_bow_rides += 1
 		_wild_riding[v] = v.escort != null
 	var resting := 0
+	var groups := 0
 	for p in main.pinnipeds._pods:
+		var out := false
 		for o in p.animals:
 			if o.state == Pinnipeds.State.REST:
 				resting += 1
+				out = true
 			var h: bool = o.state == Pinnipeds.State.LEAVE and o.hurry
 			if h and not _wild_hurry.get(o, false):
 				wild_flushed += 1
 			_wild_hurry[o] = h
+		groups += 1 if out else 0
 	wild_hauled = maxi(wild_hauled, resting)
+	wild_hauled_min = mini(wild_hauled_min, resting)
+	wild_groups_min = mini(wild_groups_min, groups)
+	wild_groups_max = maxi(wild_groups_max, groups)
