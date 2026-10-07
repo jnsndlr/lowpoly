@@ -38,12 +38,11 @@ const REPLAN_EVERY := 8.0
 const OFFSETS := [0.0, 0.14, -0.14, 0.28, -0.28, 0.45, -0.45, 0.65, -0.65, 0.9, -0.9]
 const SLOWER := [0.55, 0.2, 0.0]
 const ESCAPES := 12
-# Clear water kept: from small boats, from ships (more ahead of their bows), and
-# from wildlife.
+# Clear water kept: from small boats and from ships (more ahead of their bows).
+# Wildlife sets its own (Wildlife.Visit.keep).
 const KEEP_SMALL := 6.0
 const KEEP_SHIP := 14.0
 const KEEP_AHEAD_OF_SHIP := 16.0
-const KEEP_WILDLIFE := 45.0
 const KEEP_MOORED := 4.0       # from boats lying at a berth or at anchor
 const WILDLIFE_RADIUS := 15.0
 # A stand-on vessel only acts once a pass is this close and this soon.
@@ -282,13 +281,14 @@ func _threats(p: Vector2) -> Array[Threat]:
 		out.append(t)
 	if traffic.sim.wildlife:
 		for w: Wildlife.Visit in traffic.sim.wildlife.active_visits():
+			var keep := w.keep()
 			var q := Vector2(w.pos.x, w.pos.z)
-			if q.distance_to(p) > SCAN + KEEP_WILDLIFE:
+			if keep <= 0.0 or q.distance_to(p) > SCAN + keep:
 				continue
 			var t := Threat.new()
 			t.what = w
 			t.why = v.helm_role(w)
-			t.keep = KEEP_WILDLIFE
+			t.keep = keep
 			t.radius = WILDLIFE_RADIUS
 			var f := Vector2(sin(w.heading), cos(w.heading))
 			for k in range(0, int(HORIZON / STEP_T) + 1):

@@ -42,6 +42,7 @@ func generate(map_seed: int) -> MapData:
 	_name_islands()
 	_layout_towns()
 	_roll_wildlife_appeal(map_seed)
+	_place_haul_outs(map_seed)
 	return map
 
 
@@ -769,6 +770,211 @@ func _roll_wildlife_appeal(map_seed: int) -> void:
 			isl.wildlife_appeal = r.randf_range(0.7, 1.4)
 		else:
 			isl.wildlife_appeal = r.randf_range(0.2, 0.5)
+
+
+## Where seals and sea lions haul out: a few pocket beaches cut into quiet
+## shores, a few low rock ledges off rocky ones (islets first), and the marinas'
+## floats. All well away from the ferries' docks and lanes, the wharves and each
+## other. Its own RNG, so the rest of the map stays the same for a given seed.
+func _place_haul_outs(map_seed: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = map_seed * 37 + 13
+	var beaches: Array = []
+	var rocks: Array = []
+	for isl in map.islands:
+		if isl.is_mainland:
+			continue
+		var c := Vector3(isl.center.x, 0.0, isl.center.y)
+		var start := r.randf() * TAU
+		for k in 40:
+			var ang := start + TAU * k / 40.0
+			var n3 := Vector3(cos(ang), 0.0, sin(ang))
+			var rr := 0.0
+			var shore := -1.0
+			while rr < isl.radius * 1.8:
+				if _h(c + n3 * rr) < 0.0:
+					shore = rr
+					break
+				rr += 0.5
+			if shore < 3.0:
+				continue
+			var s3 := c + n3 * shore
+			var g := Vector3(_h(s3 + Vector3.RIGHT) - _h(s3 - Vector3.RIGHT), 0.0,
+				_h(s3 + Vector3.BACK) - _h(s3 - Vector3.BACK))
+			var out := -g.normalized() if g.length_squared() > 1e-4 else n3
+			if out.dot(n3) < 0.5 or not _haul_clear(s3, 70.0):
+				continue
+			var lat := Vector3.UP.cross(out)
+			# Deep water off it to swim in from, and no other shore just across.
+			var open := true
+			for u: float in [8.0, 14.0, 22.0]:
+				for v: float in [-6.0, 0.0, 6.0]:
+					if _h(s3 + out * u + lat * v) > -2.0:
+						open = false
+			if not open:
+				continue
+			var islet := not isl.inhabited
+			if not islet and _h(s3 - out * 10.0) > 1.0:
+				# A beach wants a bit of a bay: land running on out either side.
+				var bay := 0.0
+				for side: float in [-1.0, 1.0]:
+					var q := s3 + lat * side * 16.0
+					var rq := -6.0
+					while rq < 10.0 and _h(q + out * rq) > 0.0:
+						rq += 1.0
+					bay += rq
+				beaches.append([bay + r.randf() * 6.0, isl, s3, out])
+			if _h(s3 - out * 3.0) > 1.2:
+				rocks.append([(30.0 if islet else 0.0) + r.randf() * 10.0, isl, s3, out])
+	beaches.sort_custom(func(a, b): return a[0] > b[0])
+	rocks.sort_custom(func(a, b): return a[0] > b[0])
+	var want_beaches := r.randi_range(2, 4)
+	for b: Array in beaches:
+		if want_beaches <= 0:
+			break
+		if _haul_clear(b[2], 70.0) and _beach_site(b[1], b[2], b[3], r):
+			want_beaches -= 1
+	var want_rocks := r.randi_range(3, 5)
+	for b: Array in rocks:
+		if want_rocks <= 0:
+			break
+		if _haul_clear(b[2], 70.0):
+			_rock_site(b[1], b[2], b[3], r)
+			want_rocks -= 1
+	for m in map.marinas:
+		_dock_site(m)
+
+
+## Clear of the ferries, their lanes, the wharves, marinas and other haul-outs.
+func _haul_clear(p: Vector3, gap: float) -> bool:
+	var bound := map.half_size - 30.0
+	if absf(p.x) > bound or absf(p.z) > bound:
+		return false
+	for o in map.islands:
+		if o.has_terminal and p.distance_to(o.shore) < 90.0:
+			return false
+	for m in map.marinas:
+		if p.distance_to(m.shore) < 45.0 or p.distance_to(m.at(Layout.MARINA_APPROACH_U, 0.0)) < 40.0:
+			return false
+	for q in map.wharves():
+		if p.distance_to(q.shore) < 60.0 or p.distance_to(q.at(Layout.QUAY_LANE_U, 0.0)) < 70.0:
+			return false
+	for h in map.haul_outs:
+		if p.distance_to(h.water) < gap + 20.0:
+			return false
+	for i in range(0, _route_samples.size(), 4):
+		var rp := _route_samples[i]
+		if Vector2(rp.x - p.x, rp.z - p.z).length_squared() < 40.0 * 40.0:
+			return false
+	return true
+
+
+func _new_haul_out(kind: MapData.HaulOut.Kind, isl: MapData.Island, at: Vector3, out: Vector3) -> MapData.HaulOut:
+	var h := MapData.HaulOut.new()
+	h.id = map.haul_outs.size()
+	h.kind = kind
+	h.island = isl.id
+	h.out = out
+	h.water = Vector3(at.x, 0.0, at.z) + out * 16.0
+	var best := INF
+	for o in _main_islands():
+		var d := Vector2(at.x, at.z).distance_to(o.center) - o.radius
+		if d < best:
+			best = d
+			h.near = o.id
+	return h
+
+
+## Cuts a pocket beach at `s3` and lays out spots up it in rows; false if the
+## slope didn't come out gentle enough to lie on.
+func _beach_site(isl: MapData.Island, s3: Vector3, out: Vector3, r: RandomNumberGenerator) -> bool:
+	var half_w := r.randf_range(9.0, 13.0)
+	terrain.carve_beach(s3, out, half_w, r.randf_range(7.0, 9.0), r.randf_range(9.0, 11.0))
+	var h := _new_haul_out(MapData.HaulOut.Kind.BEACH, isl, s3, out)
+	var lat := Vector3.UP.cross(out)
+	var v := -half_w * 0.5
+	while v <= half_w * 0.5:
+		# Where the water's edge is along this line, now.
+		var line := s3 + lat * v
+		var e := -10.0
+		while e < 12.0 and _h(line + out * e) > 0.0:
+			e += 0.25
+		var edge := line + out * e
+		for row in 3:
+			# Rows staggered, so those going further up pass between the ones below.
+			var at := edge - out * (1.6 + row * 2.1) + lat * ((row % 2) * 1.15 + r.randf_range(-0.3, 0.3))
+			var y := _h(at)
+			if y < 0.1 or y > 1.3:
+				continue
+			var sp := MapData.HaulSpot.new()
+			sp.at = Vector3(at.x, y, at.z)
+			sp.edge = Vector3(edge.x, 0.0, edge.z)
+			sp.entry = sp.edge + out * 5.0
+			sp.yaw = atan2(out.x, out.z) + r.randf_range(-0.5, 0.5)
+			h.spots.append(sp)
+		v += 2.3
+	if h.spots.size() < 5:
+		return false
+	map.haul_outs.append(h)
+	return true
+
+
+## A low flat slab of rock on the waterline off a rocky shore, its back into the bank.
+func _rock_site(isl: MapData.Island, s3: Vector3, out: Vector3, r: RandomNumberGenerator) -> void:
+	var lat := Vector3.UP.cross(out)
+	var size := Vector3(r.randf_range(6.5, 9.5), 2.6, r.randf_range(4.0, 5.0))
+	var h := _new_haul_out(MapData.HaulOut.Kind.ROCK, isl, s3, out)
+	h.top = r.randf_range(0.35, 0.55)
+	var c := s3 + out * (size.z * 0.5 - 1.2)
+	h.ledge = Transform3D(Basis(lat, Vector3.UP, out), Vector3(c.x, h.top, c.z))
+	h.ledge_size = size
+	var x := -size.x * 0.5 + 1.1
+	while x <= size.x * 0.5 - 1.0:
+		for z: float in [size.z * 0.5 - 1.3, size.z * 0.5 - 3.0]:
+			var at := c + lat * (x + (0.0 if z > size.z * 0.5 - 2.0 else 0.95) + r.randf_range(-0.2, 0.2)) + out * z
+			if _h(at) > h.top - 0.1:
+				continue
+			var sp := MapData.HaulSpot.new()
+			sp.at = Vector3(at.x, h.top, at.z)
+			sp.edge = Vector3(at.x, h.top, at.z) + out * (size.z * 0.5 - 0.3 - z)
+			sp.entry = Vector3(sp.edge.x, 0.0, sp.edge.z) + out * 3.0
+			sp.yaw = atan2(out.x, out.z) + r.randf_range(-0.7, 0.7)
+			sp.big = z > size.z * 0.5 - 2.0
+			h.spots.append(sp)
+		x += 1.9
+	map.haul_outs.append(h)
+
+
+## The ends of a marina's T-head float: sea lions climb out over the end, past
+## the berths, and lie along it.
+func _dock_site(m: MapData.Marina) -> void:
+	var hu := Layout.MARINA_HEAD_U
+	var hh := Layout.MARINA_HEAD_HALF
+	var isl := map.islands[m.island]
+	var h := _new_haul_out(MapData.HaulOut.Kind.DOCK, isl, m.at(hu, 0.0), m.dir)
+	h.marina = m.id
+	h.top = 0.65
+	h.water = m.at(hu - 1.0, 0.0)
+	h.water.y = 0.0
+	for side: float in [-1.0, 1.0]:
+		var entry := m.at(hu, side * (hh + 2.5))
+		if _h(entry) > -1.2:
+			continue
+		h.water = m.at(hu + 1.0, side * (hh + 6.0))
+		h.water.y = 0.0
+		# Innermost first, so those coming after needn't climb over the ones lying there.
+		for uv: Vector2 in [Vector2(-0.45, hh - 4.3), Vector2(0.45, hh - 2.9), Vector2(-0.45, hh - 1.5)]:
+			var sp := MapData.HaulSpot.new()
+			sp.at = m.at(hu + uv.x, side * uv.y)
+			sp.at.y = h.top
+			var edge := m.at(hu + uv.x, side * (hh - 0.4))
+			sp.edge = Vector3(edge.x, h.top, edge.z)
+			sp.entry = Vector3(entry.x, 0.0, entry.z)
+			var along := m.lateral() * side
+			sp.yaw = atan2(along.x, along.z)
+			h.spots.append(sp)
+	if not h.spots.is_empty():
+		map.haul_outs.append(h)
 
 
 func _h(p: Vector3) -> float:

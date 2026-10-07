@@ -488,9 +488,9 @@ static func seagull() -> ArrayMesh:
 		return mb.commit())
 
 
-## An orca one unit long (+Z forward, nose at z = 0.5), drawn per animal by Orcas'
+## An orca one unit long (+Z forward, nose at z = 0.5), drawn per animal by Cetaceans'
 ## multimesh and scaled to its length. The dorsal fin's vertices carry alpha < 1:
-## orca.gdshader raises them to each animal's fin height and sweeps them back (a
+## cetacean.gdshader raises them to each animal's fin height and sweeps them back (a
 ## bull's fin stands tall and straight, a cow's is shorter and curved). It also beats
 ## the tail. Belly, chin, eye patch and flank are white, the saddle grey.
 static func orca() -> ArrayMesh:
@@ -568,7 +568,305 @@ static func orca() -> ArrayMesh:
 		return mesh)
 
 
-## A blow or a splash: a white plume one unit tall, drawn per puff by Orcas.
+## A whale or porpoise one unit long (+Z forward, nose at z = 0.5), built like
+## the orca for cetacean.gdshader (Cetaceans scales each to its length): rings
+## of 8 facets through the stations in `st` ([z, half-width, half-height, centre
+## height] nose to tail), each facet coloured by `paint`(station, band, facet)
+## where band 0 is the back and 3 the belly.
+static func _cetacean_body(mb: MeshBuilder, st: Array, paint: Callable) -> void:
+	var rings: Array[PackedVector3Array] = []
+	for s: Array in st:
+		var ring := PackedVector3Array()
+		for k in 8:
+			var a := TAU * k / 8.0
+			ring.append(Vector3(s[1] * sin(a), s[3] + s[2] * cos(a), s[0]))
+		rings.append(ring)
+	for i in st.size() - 1:
+		var axis := Vector3(0, (st[i][3] + st[i + 1][3]) * 0.5, (st[i][0] + st[i + 1][0]) * 0.5)
+		for k in 8:
+			var a := rings[i][k]
+			var b := rings[i][(k + 1) % 8]
+			var c := rings[i + 1][(k + 1) % 8]
+			var d := rings[i + 1][k]
+			mb.quad(a, b, c, d, paint.call(i, mini(k, 7 - k), k), (a + b + c + d) * 0.25 - axis)
+
+
+## A dorsal fin for cetacean.gdshader: its base (alpha 1) stays where it's
+## modelled, along the back from `front` to `back` at height `y`; the waist and
+## tip (alpha < 1) are raised to the animal's fin height and swept back.
+static func _cetacean_fin(mb: MeshBuilder, front: float, back: float, y: float, base: Color, tip: Color) -> void:
+	var bf := Vector3(0, y, front)
+	var bb := Vector3(0, y, back)
+	var mf := Vector3(0, y, lerpf(front, back, 0.3))
+	var mback := Vector3(0, y, lerpf(front, back, 0.82))
+	var t := Vector3(0, y, lerpf(front, back, 0.62))
+	var c0 := Color(base, 1.0)
+	var c1 := Color(base.lerp(tip, 0.5), 0.75)
+	var c2 := Color(tip, 0.5)
+	var w0 := (front - back) * 0.09
+	for side: float in [-1.0, 1.0]:
+		var w := Vector3(w0 * side, 0, 0)
+		var wm := w * 0.5
+		var out := Vector3(side, 0, 0)
+		mb.tri3(bf + w, bb + w, mback + wm, c0, c0, c1, out)
+		mb.tri3(bf + w, mback + wm, mf + wm, c0, c1, c1, out)
+		mb.tri3(mf + wm, mback + wm, t, c1, c1, c2, out)
+		mb.tri3(bf, bf + w, mf + wm, c0, c0, c1, Vector3(side, 0, 1))
+		mb.tri3(bf, mf + wm, mf, c0, c1, c1, Vector3(side, 0, 1))
+		mb.tri3(mf, mf + wm, t, c1, c1, c2, Vector3(side, 0, 1))
+		mb.tri3(bb, bb + w, mback + wm, c0, c0, c1, Vector3(side, 0, -1))
+		mb.tri3(bb, mback + wm, mback, c0, c1, c1, Vector3(side, 0, -1))
+		mb.tri3(mback, mback + wm, t, c1, c1, c2, Vector3(side, 0, -1))
+
+
+## Flukes off the tail stock (root at z `root`), `span` either side, the tips
+## back at `tip_z`, notched in the middle. Their undersides are a second skin
+## just below, so they can be another colour (a humpback's are mostly white).
+static func _flukes(mb: MeshBuilder, root: float, span: float, tip_z: float, top: Color, under: Color) -> void:
+	var y := 0.01
+	for side: float in [-1.0, 1.0]:
+		var r := Vector3(0, y, root)
+		var notch := Vector3(0, y, tip_z + 0.025)
+		var tip := Vector3(span * side, y - 0.005, tip_z)
+		var trail := Vector3(span * 0.33 * side, y, tip_z + 0.01)
+		var lead := Vector3(span * 0.45 * side, y, root - (root - tip_z) * 0.45)
+		for skin: Array in [[top, 0.0, Vector3.UP], [under, -0.006, Vector3.DOWN]]:
+			var o := Vector3(0, skin[1], 0)
+			mb.tri(r + o, lead + o, trail + o, skin[0], skin[2])
+			mb.tri(lead + o, tip + o, trail + o, skin[0], skin[2])
+			mb.tri(r + o, trail + o, notch + o, skin[0], skin[2])
+
+
+## A flipper from `root` out to `tip`, `chord` long at the root, two-faced like
+## the flukes (`top` above, `under` below).
+static func _flipper(mb: MeshBuilder, root: Vector3, tip: Vector3, chord: float, top: Color, under: Color) -> void:
+	for side: float in [-1.0, 1.0]:
+		var s := Vector3(side, 1, 1)
+		var a := root * s + Vector3(0, 0, chord * 0.5)
+		var b := root * s - Vector3(0, 0, chord * 0.5)
+		var t := tip * s
+		var m := (root * s).lerp(t, 0.55) + Vector3(0, 0, chord * 0.25)
+		for skin: Array in [[top, 0.0, Vector3.UP], [under, -0.004, Vector3.DOWN]]:
+			var o := Vector3(0, skin[1], 0)
+			mb.tri(a + o, m + o, b + o, skin[0], skin[2])
+			mb.tri(m + o, t + o, b + o, skin[0], skin[2])
+
+
+static func _spots(i: int, k: int, salt: float) -> float:
+	return fposmod(sin(i * 12.9898 + k * 78.233 + salt) * 43758.5453, 1.0)
+
+
+## A humpback: long, knobbly-headed, with a small dorsal fin on a hump, very long
+## pale flippers and broad flukes whose undersides are mostly white.
+static func humpback() -> ArrayMesh:
+	return _cached("humpback", func():
+		var mb := MeshBuilder.new()
+		var dark := Color(0.09, 0.095, 0.11)
+		var grey := Color(0.24, 0.25, 0.27)
+		var pale := Color(0.82, 0.82, 0.8)
+		var st := [[0.5, 0.0, 0.0, -0.025], [0.46, 0.045, 0.025, -0.012], [0.37, 0.085, 0.055, 0.0],
+			[0.22, 0.108, 0.085, 0.0], [0.05, 0.112, 0.093, 0.0], [-0.12, 0.085, 0.08, 0.005],
+			[-0.27, 0.048, 0.055, 0.01], [-0.38, 0.02, 0.034, 0.012], [-0.42, 0.0, 0.0, 0.012]]
+		_cetacean_body(mb, st, func(i: int, band: int, k: int) -> Color:
+			if band == 3 and i >= 1 and i <= 3:
+				return pale.darkened(_spots(i, k, 1.0) * 0.25)
+			if band == 2 and i <= 3:
+				return grey.lerp(pale, 0.35 * _spots(i, k, 2.0))
+			if band == 0 and i <= 1:
+				# The knobs on its head.
+				return dark.lightened(0.12 * _spots(i, k, 3.0))
+			return dark if band < 2 else grey)
+		_cetacean_fin(mb, -0.06, -0.17, 0.083, dark, dark)
+		_flipper(mb, Vector3(0.09, -0.045, 0.24), Vector3(0.36, -0.14, -0.06), 0.12, grey.lerp(pale, 0.5), pale)
+		_flukes(mb, -0.38, 0.19, -0.5, dark, pale)
+		var mesh := mb.commit()
+		mesh.shadow_mesh = null
+		return mesh)
+
+
+## A gray whale: slimmer, mottled grey with pale patches of barnacles, no dorsal
+## fin but a low hump and a row of knuckles down its tail stock.
+static func gray_whale() -> ArrayMesh:
+	return _cached("gray_whale", func():
+		var mb := MeshBuilder.new()
+		var base := Color(0.4, 0.42, 0.43)
+		var light := Color(0.62, 0.63, 0.61)
+		var barnacle := Color(0.8, 0.78, 0.72)
+		var st := [[0.5, 0.0, 0.0, -0.03], [0.44, 0.035, 0.035, -0.02], [0.34, 0.065, 0.065, 0.0],
+			[0.18, 0.09, 0.085, 0.0], [0.0, 0.095, 0.09, 0.0], [-0.16, 0.075, 0.075, 0.0],
+			[-0.3, 0.042, 0.052, 0.006], [-0.4, 0.018, 0.035, 0.01], [-0.44, 0.0, 0.0, 0.01]]
+		_cetacean_body(mb, st, func(i: int, band: int, k: int) -> Color:
+			var r := _spots(i, k, 7.0)
+			if r > 0.86 and band < 3:
+				return barnacle
+			return base.lerp(light, r * 0.7).darkened(0.08 * band))
+		# A low hump, then knuckles along the ridge of the tail stock.
+		_cetacean_fin(mb, -0.08, -0.16, 0.08, base, base)
+		var z := -0.19
+		while z > -0.38:
+			var t := (z + 0.16) / -0.24
+			var y := lerpf(0.074, 0.044, t)
+			mb.tri(Vector3(-0.01, y - 0.004, z + 0.012), Vector3(0.01, y - 0.004, z + 0.012), Vector3(0, y + 0.012, z), base, Vector3(0, 1, 1))
+			mb.tri(Vector3(-0.01, y - 0.004, z - 0.012), Vector3(0.01, y - 0.004, z - 0.012), Vector3(0, y + 0.012, z), base, Vector3(0, 1, -1))
+			z -= 0.035
+		_flipper(mb, Vector3(0.07, -0.05, 0.25), Vector3(0.19, -0.11, 0.12), 0.06, base, light)
+		_flukes(mb, -0.39, 0.15, -0.51, base, light)
+		var mesh := mb.commit()
+		mesh.shadow_mesh = null
+		return mesh)
+
+
+## A Dall's porpoise: stocky and black with a big white patch on each flank,
+## a triangular fin frosted at the tip.
+static func dalls_porpoise() -> ArrayMesh:
+	return _cached("dalls_porpoise", func():
+		var mb := MeshBuilder.new()
+		var black := Color(0.04, 0.045, 0.05)
+		var white := Color(0.92, 0.93, 0.92)
+		var st := [[0.5, 0.0, 0.0, -0.01], [0.45, 0.04, 0.04, 0.0], [0.36, 0.085, 0.085, 0.0],
+			[0.18, 0.115, 0.108, 0.0], [0.0, 0.115, 0.11, 0.0], [-0.15, 0.085, 0.09, 0.005],
+			[-0.3, 0.035, 0.065, 0.01], [-0.4, 0.015, 0.035, 0.01], [-0.44, 0.0, 0.0, 0.01]]
+		_cetacean_body(mb, st, func(i: int, band: int, _k: int) -> Color:
+			if band >= 2 and i >= 3 and i <= 4:
+				return white
+			return black)
+		_cetacean_fin(mb, 0.04, -0.12, 0.105, black, Color(0.75, 0.77, 0.78))
+		_flipper(mb, Vector3(0.08, -0.06, 0.25), Vector3(0.17, -0.12, 0.15), 0.06, black, black)
+		_flukes(mb, -0.38, 0.13, -0.49, black, black)
+		var mesh := mb.commit()
+		mesh.shadow_mesh = null
+		return mesh)
+
+
+## A harbor porpoise: small and round-headed, dark grey above, paler below, with
+## a little triangular fin.
+static func harbor_porpoise() -> ArrayMesh:
+	return _cached("harbor_porpoise", func():
+		var mb := MeshBuilder.new()
+		var dark := Color(0.17, 0.18, 0.2)
+		var side := Color(0.42, 0.43, 0.44)
+		var belly := Color(0.85, 0.85, 0.83)
+		var st := [[0.5, 0.0, 0.0, -0.01], [0.45, 0.045, 0.045, 0.0], [0.35, 0.08, 0.08, 0.0],
+			[0.18, 0.1, 0.1, 0.0], [0.0, 0.1, 0.1, 0.0], [-0.16, 0.075, 0.08, 0.0],
+			[-0.3, 0.035, 0.05, 0.005], [-0.4, 0.015, 0.03, 0.01], [-0.44, 0.0, 0.0, 0.01]]
+		_cetacean_body(mb, st, func(_i: int, band: int, _k: int) -> Color:
+			return [dark, dark, side, belly][band])
+		_cetacean_fin(mb, 0.02, -0.11, 0.095, dark, dark)
+		_flipper(mb, Vector3(0.07, -0.06, 0.25), Vector3(0.16, -0.11, 0.16), 0.05, dark, dark)
+		_flukes(mb, -0.38, 0.12, -0.48, dark, dark)
+		var mesh := mb.commit()
+		mesh.shadow_mesh = null
+		return mesh)
+
+
+## A seal or sea lion one unit long (+Z forward, nose at z = 0.5) lying on its
+## belly, the bottom of its belly at y = 0; drawn per animal by Pinnipeds and
+## posed by pinniped.gdshader (head up, hind flippers up, swimming sway or the
+## arch of a seal humping along on land). Rings of 8 facets through the stations
+## `st` ([z, half-width, half-height, centre height]), coloured by
+## `paint`(station, band, facet), band 0 the back and 3 the belly.
+static func _pinniped_body(mb: MeshBuilder, st: Array, paint: Callable) -> void:
+	_cetacean_body(mb, st, paint)
+	# Close off the tail end (the flippers fan out from it).
+	var last: Array = st[st.size() - 1]
+	if last[1] > 0.0:
+		var c := Vector3(0, last[3], last[0] - 0.01)
+		for k in 8:
+			var a0 := TAU * k / 8.0
+			var a1 := TAU * (k + 1) / 8.0
+			mb.tri(Vector3(last[1] * sin(a0), last[3] + last[2] * cos(a0), last[0]),
+				Vector3(last[1] * sin(a1), last[3] + last[2] * cos(a1), last[0]), c, paint.call(st.size() - 2, mini(k, 7 - k), k), Vector3.FORWARD)
+
+
+## Hind flippers: two webbed fans off the tail, toes spread.
+static func _hind_flippers(mb: MeshBuilder, root_z: float, y: float, tip_z: float, spread: float, col: Color) -> void:
+	for side: float in [-1.0, 1.0]:
+		var r := Vector3(0.012 * side, y, root_z)
+		var outer := Vector3(spread * side, y - 0.004, tip_z)
+		var inner := Vector3(spread * 0.25 * side, y - 0.004, tip_z + 0.02)
+		var mid := Vector3(spread * 0.6 * side, y - 0.002, tip_z + 0.035)
+		mb.tri(r, outer, mid, col, Vector3.UP)
+		mb.tri(r, mid, inner, col, Vector3.UP)
+
+
+## An eye on each side of the head, and the nose.
+static func _face(mb: MeshBuilder, eye: Vector3, r: float, nose: Vector3) -> void:
+	var black := Color(0.03, 0.03, 0.035)
+	for side: float in [-1.0, 1.0]:
+		var c := Vector3(eye.x * side, eye.y, eye.z)
+		var o := Vector3(side * 0.004, 0, 0)
+		mb.quad(c + o + Vector3(0, -r, r), c + o + Vector3(0, -r, -r), c + o + Vector3(0, r, -r), c + o + Vector3(0, r, r),
+			black, Vector3(side, 0.2, 0.3))
+	mb.tri(nose + Vector3(-0.012, 0.004, 0), nose + Vector3(0.012, 0.004, 0), nose + Vector3(0, -0.012, 0.004), black, Vector3(0, 0.3, 1))
+
+
+## A harbor seal: rotund, no neck to speak of, short flippers, a dog-like face
+## with big dark eyes. Pale grey and heavily spotted (the instance colour tints
+## it silver, tawny or dark).
+static func harbor_seal() -> ArrayMesh:
+	return _cached("harbor_seal", func():
+		var mb := MeshBuilder.new()
+		var coat := Color(0.86, 0.85, 0.82)
+		var spot := Color(0.42, 0.41, 0.4)
+		var belly := Color(0.95, 0.94, 0.9)
+		var st := [[0.5, 0.0, 0.0, 0.07], [0.47, 0.033, 0.028, 0.07], [0.43, 0.052, 0.046, 0.076],
+			[0.37, 0.066, 0.058, 0.08], [0.3, 0.08, 0.07, 0.08], [0.18, 0.11, 0.098, 0.098],
+			[0.03, 0.124, 0.108, 0.108], [-0.14, 0.1, 0.088, 0.088], [-0.28, 0.058, 0.056, 0.06],
+			[-0.37, 0.028, 0.03, 0.046]]
+		_pinniped_body(mb, st, func(i: int, band: int, k: int) -> Color:
+			if band == 3 and i >= 4:
+				return belly
+			# Dappled: every facet a little darker or lighter.
+			return coat.lerp(spot, _spots(i, k, 11.0) * 0.45) if i >= 2 else coat)
+		_face(mb, Vector3(0.042, 0.095, 0.43), 0.011, Vector3(0, 0.072, 0.498))
+		_hind_flippers(mb, -0.36, 0.045, -0.52, 0.075, spot)
+		# Short fore flippers, tucked along the chest.
+		for side: float in [-1.0, 1.0]:
+			mb.tri(Vector3(0.1 * side, 0.035, 0.22), Vector3(0.105 * side, 0.03, 0.14),
+				Vector3(0.15 * side, 0.004, 0.13), spot, Vector3(side, 1, 0))
+		var mesh := mb.commit()
+		mesh.shadow_mesh = null
+		return mesh)
+
+
+## A California sea lion: sleeker, a real neck, a narrow pointed snout with
+## little ear flaps, and long fore flippers it props itself up on. Brown, darker
+## along the back (the instance colour tints bulls dark, females golden).
+static func sea_lion() -> ArrayMesh:
+	return _cached("sea_lion", func():
+		var mb := MeshBuilder.new()
+		var coat := Color(0.86, 0.84, 0.8)
+		var back := Color(0.72, 0.7, 0.67)
+		var muzzle := Color(0.95, 0.93, 0.88)
+		var flipper := Color(0.45, 0.43, 0.42)
+		var st := [[0.5, 0.0, 0.0, 0.125], [0.465, 0.022, 0.022, 0.125], [0.41, 0.043, 0.043, 0.132],
+			[0.34, 0.05, 0.05, 0.128], [0.26, 0.066, 0.068, 0.11], [0.13, 0.108, 0.1, 0.1],
+			[-0.02, 0.112, 0.098, 0.098], [-0.17, 0.082, 0.078, 0.078], [-0.29, 0.044, 0.048, 0.05],
+			[-0.35, 0.024, 0.028, 0.034]]
+		_pinniped_body(mb, st, func(i: int, band: int, _k: int) -> Color:
+			if i <= 1:
+				return muzzle
+			return back if band == 0 else coat)
+		_face(mb, Vector3(0.038, 0.148, 0.415), 0.009, Vector3(0, 0.128, 0.497))
+		# Ear flaps.
+		for side: float in [-1.0, 1.0]:
+			mb.tri(Vector3(0.045 * side, 0.16, 0.36), Vector3(0.05 * side, 0.165, 0.345),
+				Vector3(0.055 * side, 0.15, 0.335), flipper, Vector3(side, 0, -1))
+		_hind_flippers(mb, -0.34, 0.03, -0.5, 0.07, flipper)
+		# Long fore flippers, out to the side and down to the ground.
+		for side: float in [-1.0, 1.0]:
+			var r0 := Vector3(0.095 * side, 0.05, 0.17)
+			var r1 := Vector3(0.1 * side, 0.045, 0.07)
+			var tip := Vector3(0.25 * side, 0.0, -0.02)
+			var mid := Vector3(0.18 * side, 0.015, 0.1)
+			mb.tri(r0, mid, r1, flipper, Vector3.UP)
+			mb.tri(mid, tip, r1, flipper, Vector3.UP)
+		var mesh := mb.commit()
+		mesh.shadow_mesh = null
+		return mesh)
+
+
+## A blow or a splash: a white plume one unit tall, drawn per puff by Cetaceans.
 static func spout() -> ArrayMesh:
 	return _cached("spout", func():
 		var mb := MeshBuilder.new()

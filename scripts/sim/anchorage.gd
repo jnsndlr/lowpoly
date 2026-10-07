@@ -20,6 +20,7 @@ const SPREAD := 34.0           # spots lie within this of the cove's centre
 const KEEP_FROM_COVES := 120.0
 const KEEP_FROM_ROUTES := 60.0
 const KEEP_FROM_HARBOURS := 90.0
+const KEEP_FROM_HAUL_OUTS := 45.0   # seals' beaches and rocks: don't anchor off them
 const KEEP_FROM_SHIPS := 18.0  # from water the ships can use (their hulls, and a boat swinging at anchor)
 
 class Spot:
@@ -63,6 +64,11 @@ static func find_all(t: MarineTraffic) -> Array[Anchorage]:
 			avoid.append(Vector2(a.x, a.z))
 	for g in t.grounds:
 		avoid.append(g.center)
+	var seals: Array[Vector2] = []
+	for h in map.haul_outs:
+		if h.kind != MapData.HaulOut.Kind.DOCK:
+			for sp in h.spots:
+				seals.append(Vector2(sp.edge.x, sp.edge.z))
 	var route_pts := PackedVector2Array()
 	for rt in map.routes:
 		var pts := rt.curve.get_baked_points()
@@ -85,7 +91,8 @@ static func find_all(t: MarineTraffic) -> Array[Anchorage]:
 			var sh := _shelter(land, n, i, j)
 			if sh < SHELTER:
 				continue
-			if _near_any(p, avoid, KEEP_FROM_HARBOURS) or _near_points(p, route_pts, KEEP_FROM_ROUTES):
+			if _near_any(p, avoid, KEEP_FROM_HARBOURS) or _near_points(p, route_pts, KEEP_FROM_ROUTES) \
+					or _near_any(p, seals, KEEP_FROM_HAUL_OUTS):
 				continue
 			if _near_ship_water(nav, p):
 				continue

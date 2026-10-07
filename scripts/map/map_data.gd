@@ -154,6 +154,37 @@ class PilotStation extends Wharf:
 		return map.islands[island].name + " pilot station"
 
 
+## Where seals and sea lions come out of the water to rest: a stretch of gentle
+## beach, a low rock ledge just off a rocky shore, or a marina's float.
+class HaulOut:
+	enum Kind { BEACH, ROCK, DOCK }
+	var id := 0
+	var kind := Kind.BEACH
+	var island := 0                 # island id it's on (may be an islet)
+	var near := 0                   # nearest inhabited island: its appeal, its name
+	var marina := -1                # a DOCK's marina id
+	var water := Vector3.ZERO       # where the group waits offshore, y = 0
+	var out := Vector3.FORWARD      # horizontal unit vector out to sea
+	var top := 0.0                  # a ROCK's or DOCK's flat top (beaches follow the ground)
+	var ledge := Transform3D()      # a ROCK's slab (+Z out to sea), drawn by WorldBuilder
+	var ledge_size := Vector3.ONE
+	var spots: Array[HaulSpot] = []
+
+	func kind_name() -> String:
+		return ["beach", "rocks", "dock"][kind]
+
+
+## One animal's place at a haul-out. It swims to `entry`, comes out at `edge`
+## (the waterline, or the edge of the rock or float) and lies at `at`, head to
+## the water so it can be off quickly.
+class HaulSpot:
+	var at := Vector3.ZERO
+	var edge := Vector3.ZERO
+	var entry := Vector3.ZERO
+	var yaw := 0.0
+	var big := true                 # room for a sea lion, not just a seal
+
+
 class Route:
 	var id := 0
 	var a := 0      # island id
@@ -169,6 +200,7 @@ var routes: Array[Route] = []
 var marinas: Array[Marina] = []
 var quays: Array[FishQuay] = []
 var stations: Array[PilotStation] = []
+var haul_outs: Array[HaulOut] = []
 
 
 ## Every wharf on the map: fish quays and pilot stations.

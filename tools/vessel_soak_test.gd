@@ -55,6 +55,7 @@ func _process(delta: float) -> bool:
 	if frames < 5:
 		return false
 	var sim: Simulation = main.sim
+	_watch_wildlife(sim)
 	var vs: Array[Vessel] = sim.marine.vessels
 	for i in vs.size():
 		var a := vs[i]
@@ -196,6 +197,8 @@ func _process(delta: float) -> bool:
 	print("     motor yachts: %d, trips %d, anchorings %d, hull-check braking %.0f s, closest pass %.2f m" % [
 		sim.marine.motor_yachts.size(), ytrips, anchorings, yacht_brake, yacht_closest])
 	_extra_summary(sim)
+	print("     wildlife: visits %s, most hauled out at once %d, flushed by boats %d, bow rides %d" % [
+		wild_visits, wild_hauled, wild_flushed, wild_bow_rides])
 	for k in stop_why:
 		print("       stopped while: %s (%d)" % [k, stop_why[k]])
 	return true
@@ -230,3 +233,33 @@ func _log_state(sim: Simulation, v: Vessel) -> void:
 	if _state.get(v, "") != st:
 		_state[v] = st
 		print("%s %s %s %s · %s" % [tag, sim.clock_text(), v.vessel_name, st, v.status_text()])
+
+
+var wild_visits := {}        # species id -> visits
+var wild_hauled := 0
+var wild_flushed := 0
+var wild_bow_rides := 0
+var _wild_seen := {}
+var _wild_riding := {}
+var _wild_hurry := {}
+
+## Counts the wildlife visits, how many seals and sea lions lie up at once, how
+## often a boat flushes them and how often porpoises ride a bow.
+func _watch_wildlife(sim: Simulation) -> void:
+	for v in sim.wildlife.visits:
+		if not _wild_seen.has(v):
+			_wild_seen[v] = true
+			wild_visits[v.species.id] = int(wild_visits.get(v.species.id, 0)) + 1
+		if v.escort and not _wild_riding.get(v, false):
+			wild_bow_rides += 1
+		_wild_riding[v] = v.escort != null
+	var resting := 0
+	for p in main.pinnipeds._pods:
+		for o in p.animals:
+			if o.state == Pinnipeds.State.REST:
+				resting += 1
+			var h: bool = o.state == Pinnipeds.State.LEAVE and o.hurry
+			if h and not _wild_hurry.get(o, false):
+				wild_flushed += 1
+			_wild_hurry[o] = h
+	wild_hauled = maxi(wild_hauled, resting)

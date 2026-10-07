@@ -53,6 +53,7 @@ func build() -> Node3D:
 	_build_roads()
 	_build_towns()
 	_build_lighthouses()
+	_build_haul_outs()
 	_build_vegetation()
 	_build_route_overlay()
 	night_lights = _add_mesh(glows.commit(), "NightLights", false)
@@ -555,6 +556,47 @@ func _build_lighthouses() -> void:
 		glows.beam(lamp, beacon, 2.2, 75.0, 0.5, 0.3, _hash(p.x, p.z) * TAU)
 		_block(p, 6.0)
 	_add_mesh(mb.commit(), "Lighthouses")
+
+
+# --- Haul-outs -----------------------------------------------------------------------
+
+## The seals' rock ledges: a low flat slab off the shore, dark and wet along the
+## waterline, its top whitened by the birds, with a boulder or two about. Beaches
+## and ledges are kept clear of trees and scattered rocks so there's room to lie.
+func _build_haul_outs() -> void:
+	var mb := MeshBuilder.new()
+	var r := RandomNumberGenerator.new()
+	for h in map.haul_outs:
+		match h.kind:
+			MapData.HaulOut.Kind.ROCK:
+				r.seed = map.map_seed * 41 + h.id
+				mb.xform = h.ledge
+				var hx := h.ledge_size.x * 0.5
+				var hz := h.ledge_size.z * 0.5
+				var outline := PackedVector2Array()
+				for k in 12:
+					var a := TAU * k / 12.0
+					var j := r.randf_range(0.8, 1.0)
+					outline.append(Vector2(cos(a) * hx * j, sin(a) * hz * j))
+				var wet := PackedVector2Array()
+				for p in outline:
+					wet.append(p * 1.02 + p.normalized() * 0.04)
+				var grey := Color(0.44, 0.41, 0.4).lerp(Color(0.52, 0.47, 0.45), r.randf())
+				mb.extrude(outline, -4.6 - h.top, 0.0, grey, grey.lerp(Color(0.8, 0.79, 0.74), 0.18), 1.3)
+				mb.extrude(wet, -4.6 - h.top, -h.top + 0.22, Color(0.2, 0.2, 0.19), Color(0, 0, 0, 0), 1.3)
+				for k in r.randi_range(1, 3):
+					var at := Vector3(r.randf_range(-hx, hx) * 1.1, 0.0, r.randf_range(-hz, -hz * 0.3))
+					var s := r.randf_range(0.6, 1.1)
+					mb.cylinder(at + Vector3(0, -0.4, 0), s * 1.0, s * 0.35, s * 0.55 + 0.4, 5, grey.darkened(0.1),
+						grey.lerp(Color(0.8, 0.79, 0.74), 0.15), r.randf() * TAU)
+				_block(h.ledge.origin, maxf(hx, hz) + 1.5)
+			MapData.HaulOut.Kind.BEACH:
+				for sp in h.spots:
+					_block(sp.at, 2.0)
+					_block(sp.edge, 1.0)
+	mb.xform = Transform3D.IDENTITY
+	if not mb.is_empty():
+		_add_mesh(mb.commit(), "HaulOutRocks")
 
 
 # --- Vegetation ---------------------------------------------------------------------

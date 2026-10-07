@@ -127,6 +127,31 @@ func apply_flats() -> void:
 				h_grid[k] = lerpf(h_grid[k], target, 1.0 - smoothstep(0.0, blend, dd))
 
 
+## Cuts a pocket beach into the shore at `origin` (on the waterline), facing out
+## along `dir`: a gentle slope from `back` inland, curving deeper in at the middle,
+## down to `front` out to sea, `half_w` either side, blending into the banks.
+func carve_beach(origin: Vector3, dir: Vector3, half_w: float, back: float, front: float) -> void:
+	var td := Vector3.UP.cross(dir)
+	var reach := half_w + back + front + 4.0
+	for j in range(_index_of(origin.z - reach), _index_of(origin.z + reach) + 1):
+		for i in range(_index_of(origin.x - reach), _index_of(origin.x + reach) + 1):
+			var p := Vector3(-half_size + i * CELL, 0.0, -half_size + j * CELL) - origin
+			var u := p.dot(dir)
+			var v := p.dot(td)
+			var across := absf(v) / half_w
+			if across >= 1.0:
+				continue
+			var u_back := -back * (1.0 - 0.45 * across * across)
+			var w := (1.0 - smoothstep(0.55, 1.0, across)) * smoothstep(u_back - 4.0, u_back, u) \
+				* (1.0 - smoothstep(front - 3.0, front + 3.0, u))
+			if w <= 0.0:
+				continue
+			var s := clampf((u - u_back) / (front - u_back), 0.0, 1.0)
+			var k := j * (n + 1) + i
+			# Only ever cut down: no spits built out into deep water off a point.
+			h_grid[k] = minf(h_grid[k], lerpf(h_grid[k], lerpf(1.5, -2.6, pow(s, 0.85)), w))
+
+
 func h_index(i: int, j: int) -> float:
 	return h_grid[j * (n + 1) + i]
 

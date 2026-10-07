@@ -1,9 +1,10 @@
 shader_type spatial;
 render_mode cull_disabled;
 
-// Orcas (Models.orca, drawn per animal by Orcas' multimesh, one unit long, +Z forward).
-// Dorsal fin vertices (vertex alpha < 0.95) rise from the back to the animal's fin
-// height, the tip swept back by its curve; the tail stock and flukes beat up and down.
+// Whales, orcas and porpoises (Models.orca, Models.humpback, ..., drawn per animal by
+// Cetaceans' multimeshes, one unit long, +Z forward). Dorsal fin vertices (vertex
+// alpha < 0.95) rise from the back to the animal's fin height, the tip swept back
+// by its curve; the tail stock and flukes beat up and down.
 // INSTANCE_CUSTOM: x fin height (body lengths), y fin sweep 0..1, z tail phase (rad),
 // w tail amplitude (body lengths).
 

@@ -38,6 +38,13 @@ func _initialize() -> void:
 		"house": [Models.house(Color(0.25, 0.4, 0.75), Color(0.8, 0.25, 0.2), 1), Vector3(0, 2.5, 0), 9.0],
 		"house2": [Models.house(Color(0.25, 0.4, 0.75), Color(0.8, 0.25, 0.2), 2), Vector3(0, 3.0, 0), 11.0],
 		"trawler": [Models.trawler(0), Vector3(0, 3, -4), 26.0],
+		# Unit-length animals (fins and poses need their own shaders, so they show flat).
+		"humpback": [Models.humpback(), Vector3.ZERO, 1.4],
+		"gray_whale": [Models.gray_whale(), Vector3.ZERO, 1.4],
+		"dalls_porpoise": [Models.dalls_porpoise(), Vector3.ZERO, 1.4],
+		"harbor_porpoise": [Models.harbor_porpoise(), Vector3.ZERO, 1.4],
+		"harbor_seal": [Models.harbor_seal(), Vector3(0, 0.08, 0), 1.2],
+		"sea_lion": [Models.sea_lion(), Vector3(0, 0.08, 0), 1.2],
 	}
 	for name: String in models:
 		if only != "" and not name in only.split(","):

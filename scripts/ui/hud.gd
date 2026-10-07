@@ -318,7 +318,7 @@ func _update_labels() -> void:
 
 func _on_ground_clicked(screen_pos: Vector2) -> void:
 	var cam := rig.camera
-	var visit: Wildlife.Visit = main.orcas.pick(screen_pos, cam)
+	var visit: Wildlife.Visit = main.pick_wildlife(screen_pos, cam)
 	if visit:
 		if not wildlife.photograph(visit):
 			show_toast(visit.species.plural.to_upper(), "Already photographed this %s." % _group_word(visit), 3.0)
@@ -757,7 +757,7 @@ func follow_visit(v: Wildlife.Visit) -> void:
 
 
 func _group_word(v: Wildlife.Visit) -> String:
-	return "pod" if v.species.id == "orca" else "group"
+	return "group" if v.species.behavior == Wildlife.Behavior.HAUL_OUT else "pod"
 
 
 func _draw_text(isl: MapData.Island) -> String:
@@ -776,9 +776,14 @@ func _appeal_text(a: float) -> String:
 
 
 func _on_visit_started(v: Wildlife.Visit) -> void:
+	var what := "A %s of %d is heading for %s." % [_group_word(v), v.members.size(), v.target.name]
+	if v.members.size() == 1:
+		what = "One is heading for %s." % v.target.name
+	if v.site:
+		var where := "the marina" if v.site.kind == MapData.HaulOut.Kind.DOCK else "the " + v.site.kind_name()
+		what = "A %s of %d is coming in to haul out on %s at %s." % [_group_word(v), v.members.size(), where, v.target.name]
 	show_toast("%s REPORTED" % v.species.plural.to_upper(),
-		"A %s of %d is heading for %s. Seen from a dock or a ferry in daylight, it draws tourists. Click one for a photo bonus." % [
-			_group_word(v), v.members.size(), v.target.name], 8.0)
+		what + " Seen from a dock or a ferry in daylight, it draws tourists. Click one for a photo bonus.", 8.0)
 	if _wild_panel.visible:
 		_rebuild_wildlife()
 

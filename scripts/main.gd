@@ -5,7 +5,8 @@ extends Node3D
 ##   --seed=N  --speed=0..3  --cam=x,z,dist,yaw_deg,pitch_deg  --select=K (Kth terminal island)
 ##   --follow=K (Kth ferry)  --time=H (pin time of day, e.g. 19.5)  --shot=path.png  --shot-delay=seconds
 ##   --bench=seconds (print frame/GPU time and render stats, then quit)
-##   --orcas (start an orca visit now and follow it)
+##   --orcas (start an orca visit now and follow it)  --wildlife=ID (the same for any species:
+##     humpback, gray, sea_lion, dalls_porpoise, harbor_porpoise, harbor_seal)
 ##   --vessel=cargo|sail|yacht|pilot|tug (follow a cargo ship, a sailboat under way, a
 ##     motor yacht, a pilot boat or a tug)
 ##   --aa=msaa|smaa|none (anti-aliasing, to compare)  --dof=0 (no depth-of-field blur)
@@ -23,7 +24,8 @@ var sky_mat: ProceduralSkyMaterial
 var day_cycle: DayCycle
 var water_mat: ShaderMaterial
 var route_overlay: MeshInstance3D
-var orcas: Orcas
+var cetaceans: Cetaceans
+var pinnipeds: Pinnipeds
 var cam_attr: CameraAttributesPractical
 var _args := {}
 
@@ -87,14 +89,23 @@ func _ready() -> void:
 	var gulls := Seagulls.new()
 	add_child(gulls)
 	gulls.setup(sim, day_cycle, builder.gull_perches)
-	orcas = Orcas.new()
-	add_child(orcas)
-	orcas.setup(sim.wildlife, terrain)
+	cetaceans = Cetaceans.new()
+	add_child(cetaceans)
+	cetaceans.setup(sim.wildlife, terrain)
+	pinnipeds = Pinnipeds.new()
+	add_child(pinnipeds)
+	pinnipeds.setup(sim.wildlife, terrain)
 	day_cycle.apply(sim.hour())
 	hud = Hud.new()
 	add_child(hud)
 	hud.setup(self)
 	_apply_debug_args()
+
+
+## The wildlife group whose animal is nearest `screen` (and showing), if any.
+func pick_wildlife(screen: Vector2, cam: Camera3D) -> Wildlife.Visit:
+	var v := cetaceans.pick(screen, cam)
+	return v if v else pinnipeds.pick(screen, cam)
 
 
 func regenerate() -> void:
@@ -231,8 +242,9 @@ func _apply_debug_args() -> void:
 		var k := int(_args["follow"])
 		if k < sim.ferries.size():
 			hud.select_ferry(sim.ferries[k])
-	if _args.has("orcas"):
-		var v := sim.wildlife.start_visit(sim.wildlife.find_species("orca"))
+	if _args.has("orcas") or _args.has("wildlife"):
+		var sp := sim.wildlife.find_species(str(_args.get("wildlife", "orca")))
+		var v := sim.wildlife.start_visit(sp) if sp else null
 		if v:
 			hud.follow_visit(v)
 			rig.target_dist = 70.0
