@@ -7,7 +7,10 @@ extends RefCounted
 ## wheelhouse up on one side; size 2 (after the M/V Hiyu) runs its cars through a
 ## portal: passenger cabins over the two outer lanes, a bridge over the tall centre
 ## lane, and one double-ended pilothouse on top; 3 to 5 carry their passenger
-## decks over the cars. +Z and -Z ends are identical.
+## decks over the cars. Size 4 is the WSF Evergreen State class, from the mid-poly
+## model (art/ferry_mid.py, real scale, shown at MID_SCALE to match the game's cars):
+## a two-lane tunnel between the stair casings and a lane in each wing, the wing
+## lanes turning in to the apron's opening at the ends. +Z and -Z ends are identical.
 
 const LANE_SPACING := 1.5
 const ROW_SPACING := 2.5
@@ -17,6 +20,15 @@ const BULWARK_TOP := 1.9
 # Full ferries' deck heights (as the size-4 boat was first built).
 const MAST_TOP := 9.2
 const SIDELIGHT_Y := 6.98
+
+# The mid-poly Evergreen State (size 4): modelled in metres, shown at MID_SCALE (the
+# game's cars are about that of real ones), dropped MID_DROP so her car deck (2.85 m
+# up in the model) lies at Layout.DECK_Y. `--classic-ferry` or a missing model keeps
+# the code-built size 4.
+const MID_GLB := "res://assets/models/ferry_mid.glb"
+const MID_SCALE := 0.42
+const MID_DROP := 2.85 * MID_SCALE - 1.05
+static var mid := not "--classic-ferry" in OS.get_cmdline_user_args() and ResourceLoader.exists(MID_GLB)
 
 # size: [lanes, rows, half length, half beam, cruise, label]
 const TABLE := {
@@ -39,6 +51,11 @@ var half_beam := 4.2
 var cruise := 9.0
 var open_deck := false
 var portal := false
+var evergreen := false             # the mid-poly Evergreen State (size 4, `mid`)
+# Lanes outboard of throat_x can't run straight out over the end: they turn in to it
+# (at the end, end_z) from turn_z, beyond their last row.
+var throat_x := INF
+var turn_z := 0.0
 var tall := PackedInt32Array()     # lanes with the headroom for trucks (none listed: all)
 var cols := PackedFloat32Array()   # lane centres (x), port to starboard
 var row_z := PackedFloat32Array()  # row centres (z), +Z end first
@@ -132,6 +149,14 @@ func _init(s: int) -> void:
 	capacity = lanes * rows
 	open_deck = s == 1
 	portal = s == 2
+	evergreen = s == 4 and mid
+	if evergreen:
+		lanes = 4
+		rows = 11
+		half_length = 47.25 * MID_SCALE
+		half_beam = 11.15 * MID_SCALE
+		label = "Evergreen State class"
+		capacity = lanes * rows
 	end_z = half_length - 1.0
 	for i in rows:
 		row_z.append(((rows - 1) * 0.5 - i) * ROW_SPACING)
@@ -149,6 +174,10 @@ func _init(s: int) -> void:
 		lantern_scale = 0.9
 		lamp_scale = 0.7
 		_lay_out_portal()
+	elif evergreen:
+		chamfer = 7.0
+		end_in = 2.4
+		_lay_out_evergreen()
 	else:
 		for i in lanes:
 			cols.append((i - (lanes - 1) * 0.5) * LANE_SPACING)
@@ -225,6 +254,59 @@ func _lay_out_full() -> void:
 			perches.append([Vector3(x * (b - 0.7), 6.75, z - 0.9), Vector3(x * (b - 0.7), 6.75, z + 0.9), 0.0])
 	for fz in funnels:
 		perches.append([Vector3(0, 9.05, fz - 1.1), Vector3(0, 9.05, fz + 1.1), 0.0])
+
+
+## A point in the mid-poly model (metres, waterline at 0) in the hull's frame.
+static func _mid(x: float, y: float, z: float) -> Vector3:
+	return Vector3(x, y, z) * MID_SCALE - Vector3(0, MID_DROP, 0)
+
+
+## The model's half beam at the deck at |z| (metres): its ends one smooth oval
+## (art/ferry_mid.py deck_x).
+static func _mid_beam(z: float) -> float:
+	var t := clampf((absf(z) - 20.0) / 26.4, 0.0, 1.0)
+	return 10.8 * pow(maxf(0.0, 1.0 - pow(t, 2.3)), 1.0 / 2.3)
+
+
+func _lay_out_evergreen() -> void:
+	# Wing, tunnel, tunnel, wing; trucks keep to the tunnel.
+	cols = PackedFloat32Array([-8.45 * MID_SCALE, -1.9 * MID_SCALE, 1.9 * MID_SCALE, 8.45 * MID_SCALE])
+	tall = PackedInt32Array([1, 2])
+	throat_x = 3.8 * MID_SCALE
+	turn_z = row_z[0] + 1.0
+	var k := MID_SCALE
+	for e: float in [-1.0, 1.0]:
+		# Masthead lanterns on the masts over the pilothouse roofs, sidelights on the
+		# pilothouses' sides toward the ends.
+		lanterns.append(_mid(0, 21.95, e * 22.5))
+		for x: float in [-1.0, 1.0]:
+			sidelights.append([_mid(x * 4.52, 12.1, e * 25.2), x, e])
+			# Deck lamps on the walkway's fascia over the tunnel and on the forks' tips.
+			lamps.append([_mid(x * 2.6, 6.62, e * 30.64), Vector3(0, 0, e)])
+			lamps.append([_mid(x * 5.85, 6.55, e * 41.62), Vector3(0, 0, e)])
+	# Lit windows: every other one down the cabin's sides, and across its end faces.
+	for x: float in [-1.0, 1.0]:
+		var z := -26.6
+		while z <= 26.61:
+			windows.append([_mid(x * 10.35, 9.03, z), 0.3, 2.2, Vector3(x, 0, 0)])
+			z += 4.26
+	for e: float in [-1.0, 1.0]:
+		var x := -7.5
+		while x <= 7.51:
+			windows.append([_mid(x, 9.03, e * 28.6), 0.3, 2.2, Vector3(0, 0, e)])
+			x += 3.0
+	# Perches: the pilothouse roofs, the crew houses' roofs, the sun deck's and the
+	# forks' rails, the walkways' rails, the funnel tops.
+	for e: float in [-1.0, 1.0]:
+		perches.append([_mid(-4.4, 14.02, e * 24.0), _mid(4.4, 14.02, e * 24.0), 0.8])
+		perches.append([_mid(0, 13.06, e * 6.6), _mid(0, 13.06, e * 20.6), 4.4 * k])
+		perches.append([_mid(-4.6, 8.32, e * 30.65), _mid(4.6, 8.32, e * 30.65), 0.0])
+		for x: float in [-1.0, 1.0]:
+			perches.append([_mid(x * (_mid_beam(31.0) + 0.05), 8.32, e * 31.0),
+				_mid(x * (_mid_beam(39.5) + 0.05), 8.32, e * 39.5), 0.0])
+	for x: float in [-1.0, 1.0]:
+		perches.append([_mid(x * 10.35, 11.8, -27.5), _mid(x * 10.35, 11.8, 27.5), 0.0])
+		perches.append([_mid(x * 4.2, 14.82, -0.6), _mid(x * 4.2, 14.82, 0.6), 0.0])
 
 
 func _lay_out_open() -> void:

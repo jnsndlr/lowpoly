@@ -3,23 +3,28 @@
 # vertex colours, flat shaded).
 # Real scale, in metres. Game frame: double ended, the two ends at +Z and -Z alike, +Y
 # up, waterline at y = 0 (Blender: +Z end to -Y, Z up). 94.5 m over the guards and
-# 22.3 m in the beam, measured off the user's outboard profile; the plan outline is
-# the Jumbo Mk II's (the user's fire-plan vectors), scaled to her length and beam.
+# 22.3 m in the beam, measured off the user's outboard profile; the plan, with its
+# full ends and broad rounded aprons, after the user's photos of her and the Tillikum.
 # One vehicle deck at CAR_DECK: a full-height centre tunnel of two lanes between the
 # casings (the walls that carry the stairs up to the passenger cabin), and a wing of
 # one lane outboard of each casing, under the passenger deck, behind the hull sides
-# with their row of square openings. The car deck is open at both ends, under the
-# passenger deck's overhang, onto the apron at the guards. Above: the passenger cabin
-# with its band of windows, open end decks with panel bulwarks, the sun deck on its
-# roof with two shelters, the funnel amidships, a pilothouse and a mast at each end.
+# with their row of square ports. At each end the passenger deck runs out over the
+# wings as the two "pickle forks", open to the sky between them over the tunnel, a
+# narrow walkway across the cabin's end joining them; the forks' ends and the cabin's
+# end faces are raked back 15 degrees. Above: the passenger cabin, the sun deck on its
+# roof with a crew house toward each end, the two funnels side by side amidships with
+# the fan room between them, a pilothouse at each end set back from the cabin's ends,
+# its mast on its roof.
 # Glass is split out for the vertex alpha the game's shader reads: `glass` (the
 # pilothouses, lit at night) and `window` (the cabin, some lit); the rest is `fixed`.
 #
 # Numbers the game wants (game frame, metres):
 #   CAR_DECK 2.85; lanes at x = -8.45, -1.9, 1.9, 8.45 (wing, tunnel, tunnel, wing);
 #   tunnel |x| < 4.0, casings 4.0..6.4 over |z| < CASING_Z, wings 6.4..10.5 inside the
-#   hull side; clear headroom to the deckhead 4.15. The hull sides close in toward the
-#   ends (half beam 7.9 at |z| 36, 5.5 at 41), so wing cars park inside |z| ~ 30.
+#   hull side; clear headroom to the deckhead 4.15 (13 ft 6 in, as signed on her; 3.83
+#   under the shallow beams and lights, so the game's trucks clear them at its scale). The
+#   hull sides round in toward the ends (half beam 9.5 at |z| 35, 7.0 at the forks'
+#   ends at 41.6), so wing cars park inside |z| ~ 36 and turn in to leave.
 #   Masthead lanterns MAST_TOP at z = +-MAST_Z; sidelights on the pilothouse sides.
 import bpy, bmesh, math, os
 from mathutils import Vector
@@ -31,7 +36,8 @@ PAL = {
     "glass": (0.16, 0.22, 0.27), "window": (0.16, 0.22, 0.27), "pane": (0.62, 0.74, 0.8),
     "dark": (0.1, 0.1, 0.11), "black": (0.07, 0.07, 0.07), "steel": (0.6, 0.62, 0.64),
     "orange": (0.95, 0.42, 0.1), "red": (0.75, 0.12, 0.1), "lamp": (0.96, 0.95, 0.86),
-    "stripe": (0.9, 0.9, 0.86), "bronze": (0.55, 0.42, 0.22),
+    "yellow": (0.88, 0.7, 0.12), "bronze": (0.55, 0.42, 0.22), "apron": (0.4, 0.34, 0.29),
+    "mesh": (0.72, 0.76, 0.75), "dkwall": (0.2, 0.21, 0.22), "gold": (0.78, 0.6, 0.2),
 }
 ROLES = ("glass", "window")
 UP = Vector((0, 1, 0))
@@ -134,6 +140,14 @@ def box(c, size, key):
     loft([rect(c.x, c.y - hy, c.z, hx, hz), rect(c.x, c.y + hy, c.z, hx, hz)], key)
 
 
+def box_between(a, b, w, key):
+    """A square-section member from a to b, its sides square to the x axis."""
+    ax = (b - a).normalized()
+    e1 = V(1, 0, 0); e2 = ax.cross(e1).normalized()
+    ring = lambda c: [c + (e1 * sx + e2 * sy) * (w / 2) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    loft([ring(a), ring(b)], key)
+
+
 def frame(ax):
     e1 = ax.cross(V(0.3, 0, 1) if abs(ax.z) < 0.9 else V(1, 0, 0)).normalized()
     return e1, ax.cross(e1).normalized()
@@ -197,35 +211,26 @@ def horiz_normals(pts, closed):
 
 
 # --- Plan outline -------------------------------------------------------------------
-# The Jumbo Mk II's deck outline from the user's fire-plan SVG (one quarter: parallel
-# body, then three cubic Béziers to the end), normalised: u along the half length
-# (0 amidships, 1 at the end), v the half beam (1 at the parallel body).
+# Normalised: u along the half length (0 amidships, 1 at the end), v the half beam (1
+# at the parallel body). At the deck her ends are one smooth oval, a superellipse from
+# the parallel body round to the apron, that the hull sides, the forks and the green
+# bulwarks all follow; under water her lines are much finer, so the hull's sides flare
+# out toward the ends. `full` blends from the fine lines (0) to the deck's (1).
 
-_SVG = [((2695.77, 1.0), (2695.77, 1.0), (3042.34, 1.0), (3298.95, 79.7)),
-        ((3298.95, 79.7), (3489.7, 138.2), (3722.88, 247.58), (3761.13, 306.19)),
-        ((3761.13, 306.19), (3787.46, 346.55), (3787.46, 396.03), (3761.13, 436.39))]
-_X0, _HL, _YC, _HB = 1890.94, 1889.94, 371.28, 370.28
-
-
-def _bez(p, t):
-    s = 1 - t
-    return tuple(s ** 3 * p[0][i] + 3 * s * s * t * p[1][i] + 3 * s * t * t * p[2][i] + t ** 3 * p[3][i] for i in (0, 1))
+OVAL_Z, OVAL_P = 20.0, 2.3     # where the ends begin to round in, and how full they are
 
 
-PLAN = [(0.0, 1.0)]
-for _k, _seg in enumerate(_SVG):
-    for _i in range(41 if _k < 2 else 21):
-        _x, _y = _bez(_seg, _i / 40 if _k < 2 else 0.5 * _i / 20)
-        PLAN.append(((_x - _X0) / _HL, (_YC - _y) / _HB))
-PLAN.sort()
+def deck_x(z):
+    """Half beam of the hull at the deck at |z| (metres; the deck's end at HZ)."""
+    t = min(max((abs(z) - OVAL_Z) / (HZ - OVAL_Z), 0.0), 1.0)
+    return HB * max(0.0, 1.0 - t ** OVAL_P) ** (1.0 / OVAL_P)
 
 
-def plan_v(u):
+def plan_v(u, full=1.0):
     u = min(abs(u), 1.0)
-    for (u0, v0), (u1, v1) in zip(PLAN, PLAN[1:]):
-        if u0 <= u <= u1:
-            return v0 if u1 - u0 < 1e-9 else lerp(v0, v1, (u - u0) / (u1 - u0))
-    return 0.0
+    t = max(0.0, (u - 0.3) / 0.7)
+    fine = math.sqrt(max(0.0, 1.0 - t ** 2.2))
+    return lerp(fine, deck_x(u * HZ) / HB, full)
 
 
 # --- Dimensions (metres, game frame) ------------------------------------------------
@@ -237,15 +242,19 @@ CAR_DECK = 2.85
 GREEN_TOP = 3.92   # the green band up the hull side
 PAX_DECK = 7.0     # underside of the passenger deck (the car deck's deckhead)
 PAX_TOP = 7.3
-PAX_Z = 41.0       # the passenger deck's ends
-GREEN_Z = 44.0     # the green bulwark's ends (beyond it, the open apron)
-CABIN_Z = 27.6     # the cabin's ends
+RAKE = math.tan(math.radians(15.0))   # the forks' ends and the cabin's end faces lean back
+FORK_Z = 41.6      # the forks' ends, where the hull sides round in to the car deck's opening
+FORK_X = 4.7       # the forks' inner edges (over the casings)
+GREEN_Z = 42.75    # the green bulwark's ends, at the apron's edge
+CABIN_Z = 29.0     # the cabin's ends at the deck (raked back 15 degrees above)
+WALK_Z = 30.6      # the walkway across the cabin's end, between the forks
 SILL, HEAD, ROOF = 8.3, 9.75, 10.55
 SUN = 10.75        # the sun deck (the cabin roof's top)
-CASING_X0, CASING_X1, CASING_Z = 4.0, 6.4, 24.0
-PH_Z0, PH_Z1, PH_HW = 22.9, 27.6, 4.5     # pilothouse (each end)
+CASING_X0, CASING_X1, CASING_Z = 4.0, 6.4, 28.0
+PH_Z0, PH_Z1, PH_HW = 21.6, 26.0, 4.5     # pilothouse (each end)
 PH_SILL, PH_HEAD, PH_TOP = 12.4, 13.4, 13.7
-MAST_Z, MAST_TOP = 22.4, 21.6
+MAST_Z, MAST_TOP = 22.5, 21.6     # on the pilothouse roofs, toward their inboard ends
+STAIR_RUN = 5.6    # the open stair up inside each casing's end
 FUNNEL_TOP = 14.8
 
 
@@ -267,13 +276,19 @@ STATIONS = [0.0, 0.1, 0.2, 0.3, 0.38, 0.426, 0.47, 0.52, 0.57, 0.62, 0.67, 0.71,
 US = [-u for u in reversed(STATIONS[1:])] + STATIONS
 
 
-def ring_at(y, sx, zt, d):
-    """The hull's waterline at height y: x scaled by sx, its ends at +-zt, `d` out."""
-    stb = [V(HB * plan_v(u) * sx + d, y, u * zt) for u in US]
+def cabin_hd(y):
+    """Half length of the cabin at height y, its end faces raked back."""
+    return CABIN_Z - (y - PAX_TOP) * RAKE
+
+
+def ring_at(y, sx, zt, d, full=1.0):
+    """The hull's waterline at height y: x scaled by sx, its ends at +-zt, `d` out,
+    `full` how full its ends are (see plan_v)."""
+    stb = [V(HB * plan_v(u, full) * sx + d, y, u * zt) for u in US]
     return stb + [V(-p.x, y, p.z) for p in reversed(stb[1:-1])]
 
 
-def zs_between(z0, z1, step=1.5):
+def zs_between(z0, z1, step=1.2):
     n = max(1, int(math.ceil((z1 - z0) / step)))
     return [lerp(z0, z1, i / n) for i in range(n + 1)]
 
@@ -281,8 +296,8 @@ def zs_between(z0, z1, step=1.5):
 # --- Hull ---------------------------------------------------------------------------
 
 def hull():
-    lines = [(-3.9, 0.8, 29.0, 0.0), (-3.4, 0.92, 34.5, 0.0), (-2.4, 0.975, 39.5, 0.0), (-1.0, 0.995, 43.2, 0.0),
-             (0.0, 1.0, 44.6, 0.0), (1.0, 1.0, 45.5, 0.0), (2.15, 1.0, HZ, 0.0),
+    lines = [(-3.9, 0.8, 29.0, 0.0, 0.0), (-3.4, 0.92, 34.5, 0.0, 0.1), (-2.4, 0.975, 39.5, 0.0, 0.25),
+             (-1.0, 0.995, 43.2, 0.0, 0.45), (0.0, 1.0, 44.6, 0.0, 0.6), (1.0, 1.0, 45.5, 0.0, 0.8), (2.15, 1.0, HZ, 0.0),
              (2.2, 1.0, 47.25, GUARD), (2.78, 1.0, 47.25, GUARD), (CAR_DECK, 1.0, 47.15, GUARD - 0.06)]
     rings = [ring_at(*l) for l in lines]
 
@@ -293,6 +308,12 @@ def hull():
     loft(rings, col, caps=False)
     hface(rings[0], "antifoul", up=False)
     hface(rings[-1], "deck")
+    # The aprons, worn bare steel, beyond the forks.
+    for e in (1, -1):
+        z0 = GREEN_Z - 0.3
+        us = [u for u in STATIONS if u * 47.15 > z0]
+        stb = [V(HB * plan_v(u) + GUARD - 0.08, CAR_DECK + 0.006, e * u * 47.15) for u in [z0 / 47.15] + us]
+        hface(stb + [V(-p.x, p.y, p.z) for p in reversed(stb)], "apron")
     # Under water at each end: a skeg, the propeller and the rudder abaft it.
     for e in (1, -1):
         box(V(0, -3.6, e * 33.0), (0.5, 0.9, 7.0), "antifoul")
@@ -315,8 +336,8 @@ OPEN_Z = [-35.96 + k * 4.23 for k in range(18)]  # their centres, 18 down each s
 
 def bulwarks():
     """The hull sides above the car deck: the green band to GREEN_Z, white to the
-    passenger deck over |z| < PAX_Z, pierced by the row of square openings onto the
-    wings, each with its corners filleted and a cross of round steel bars in it."""
+    passenger deck to the forks' raked ends, pierced by the row of square ports onto
+    the wings, each with its corners filleted and a cross of round steel bars in it."""
     def band(s, y0, y1, z0, z1, key, top_key=None, in_key=None):
         prof = [(0.0, y0), (0.0, y1), (-0.3, y1), (-0.3, y0)]
         rings = []
@@ -325,11 +346,16 @@ def bulwarks():
             rings.append([p + n * u + UP * v for u, v in prof])
         loft(rings, lambda i, j, c: (top_key if j == 1 and top_key else in_key if j == 2 and in_key else key), cap_key=key)
 
-    edges = [-PAX_Z] + [z + d for z in OPEN_Z for d in (-OPEN_HW, OPEN_HW)] + [PAX_Z]
+    edges = [-FORK_Z] + [z + d for z in OPEN_Z for d in (-OPEN_HW, OPEN_HW)] + [FORK_Z]
     for s in (1, -1):
-        band(s, CAR_DECK - 0.02, GREEN_TOP, -GREEN_Z, GREEN_Z, "green", "white", "white")
-        band(s, GREEN_TOP, OPEN_Y0, -PAX_Z, PAX_Z, "white")
-        band(s, OPEN_Y1, PAX_DECK + 0.02, -PAX_Z, PAX_Z, "white")
+        band(s, CAR_DECK - 0.02, GREEN_TOP, -GREEN_Z, GREEN_Z, "green", "white", "dkwall")
+        band(s, GREEN_TOP, OPEN_Y0, -FORK_Z, FORK_Z, "white")
+        band(s, OPEN_Y1, PAX_DECK + 0.02, -FORK_Z, FORK_Z, "white")
+        # The raked ends: a wedge from the deckhead out to the foot.
+        for e in (1, -1):
+            zb = FORK_Z + (PAX_DECK + 0.02 - GREEN_TOP) * RAKE
+            pts = [side_pt(s, e * z, y) for z, y in ((FORK_Z, GREEN_TOP), (zb, GREEN_TOP), (FORK_Z, PAX_DECK + 0.02))]
+            loft([[p for p, n in pts], [p - n * 0.3 for p, n in pts]], "white")
         for z0, z1 in zip(edges[::2], edges[1::2]):
             band(s, OPEN_Y0, OPEN_Y1, z0, z1, "white")
         for z in OPEN_Z:
@@ -350,15 +376,21 @@ def bulwarks():
             # The cross of round bars.
             cyl(mid + UP * -0.76, mid + UP * 0.76, 0.06, 0.06, 6, "steel")
             cyl(mid - t * (OPEN_HW + 0.02), mid + t * (OPEN_HW + 0.02), 0.06, 0.06, 6, "steel")
-
-
-def apron():
-    """Bitts on the guards at each end, a white rubbing strip along the guard's top."""
-    for e in (1, -1):
-        for s in (1, -1):
-            for zz in (44.8, 45.6):
-                x = s * (half_beam(e * zz) - 0.4)
-                cyl(V(x, CAR_DECK, e * zz), V(x, CAR_DECK + 0.5, e * zz), 0.16, 0.16, 6, "black")
+        # Inside: the side's frames, about every metre and a half a port's pitch apart in
+        # step with them, from the dark lower band up to the deckhead; a yellow kerb.
+        pitch = 4.23 / 4
+        z = OPEN_Z[0] - pitch / 2
+        while z - pitch > -FORK_Z + 0.4: z -= pitch
+        while z < FORK_Z - 0.4:
+            p, n = side_pt(s, z, (GREEN_TOP + PAX_DECK) / 2, -0.3)
+            panel(p, -n, 0.12, PAX_DECK - GREEN_TOP, 0.22, "white")
+            z += pitch
+        rings = []
+        for z in zs_between(-FORK_Z, FORK_Z):
+            p, n = side_pt(s, z, 0.0, -0.3)
+            rings.append([p + n * u + UP * v for u, v in ((0.02, CAR_DECK), (0.02, CAR_DECK + 0.18),
+                                                          (-0.2, CAR_DECK + 0.18), (-0.2, CAR_DECK))])
+        loft(rings, "yellow")
 
 
 # --- Car deck -----------------------------------------------------------------------
@@ -367,8 +399,11 @@ def car_deck():
     # The casings either side of the tunnel, carrying the stairs up to the cabin.
     cx, cw = (CASING_X0 + CASING_X1) / 2, CASING_X1 - CASING_X0
     hh = PAX_DECK - CAR_DECK
+    cz = CASING_Z - STAIR_RUN       # where the solid casing ends and the stair bay begins
     for s in (1, -1):
-        loft([rect(s * cx, CAR_DECK, 0, cw / 2, CASING_Z, 0.4), rect(s * cx, PAX_DECK, 0, cw / 2, CASING_Z, 0.4)], "white")
+        loft([rect(s * cx, CAR_DECK, 0, cw / 2, cz, 0.0), rect(s * cx, PAX_DECK, 0, cw / 2, cz, 0.0)], "white")
+        for e in (1, -1):
+            stair(s, e, cz)
         # Doors and fire stations on both faces, a yellow-edged kerb along the foot.
         for face_x in (CASING_X0, CASING_X1):
             n = V(s if face_x == CASING_X1 else -s, 0, 0)
@@ -376,24 +411,71 @@ def car_deck():
                 panel(V(s * face_x, CAR_DECK + 1.05, z), n, 0.9, 2.1, 0.04, "dark")
             for z in (-14.0, 0.0, 14.0):
                 panel(V(s * face_x, CAR_DECK + 1.3, z), n, 0.7, 0.8, 0.12, "red")
-        box(V(s * cx, CAR_DECK + 0.08, 0), (cw + 0.3, 0.16, 2 * CASING_Z + 0.3), "panel")
+        box(V(s * cx, CAR_DECK + 0.08, 0), (cw + 0.3, 0.16, 2 * cz + 0.3), "panel")
+        # Yellow struts raked out from the casings' ends to the deckhead.
+        for e in (1, -1):
+            for x in (CASING_X0 + 0.25, CASING_X1 - 0.25):
+                box_between(V(s * x, CAR_DECK, e * (CASING_Z - 0.15)), V(s * x, PAX_DECK - 0.05, e * (CASING_Z + 1.9)),
+                            0.32, "yellow")
     # Lane lines: down the tunnel's middle, and the tunnel's edges past the casings.
-    for x, z0, z1 in ((0.0, -40.0, 40.0), (CASING_X0 - 0.3, CASING_Z + 0.5, 39.0), (-(CASING_X0 - 0.3), CASING_Z + 0.5, 39.0),
-                      (CASING_X0 - 0.3, -39.0, -CASING_Z - 0.5), (-(CASING_X0 - 0.3), -39.0, -CASING_Z - 0.5)):
+    for x, z0, z1 in ((0.0, -42.0, 42.0), (CASING_X0 - 0.3, CASING_Z + 0.5, 41.0), (-(CASING_X0 - 0.3), CASING_Z + 0.5, 41.0),
+                      (CASING_X0 - 0.3, -41.0, -CASING_Z - 0.5), (-(CASING_X0 - 0.3), -41.0, -CASING_Z - 0.5)):
         z = z0
         while z < z1:
-            box(V(x, CAR_DECK + 0.005, z + 1.0), (0.15, 0.01, 2.0), "stripe")
+            box(V(x, CAR_DECK + 0.005, z + 1.0), (0.15, 0.01, 2.0), "yellow")
             z += 3.5
-    # Deck beams across the deckhead, lights between them over each lane.
-    z = -38.0
-    while z <= 38.01:
+    # Deck beams across the deckhead (only under the forks past the walkway), curved
+    # knees where they meet the hull sides, lights between them over each lane; a big
+    # knee at each fork's end, arching the wing's entrance.
+    z = -40.0
+    while z <= 40.01:
         hw = half_beam(z) - 0.3
-        box(V(0, PAX_DECK - 0.22, z), (2 * hw, 0.44, 0.35), "ceiling")
-        if abs(z) < 37.0:
-            for x in (-8.45, -1.9, 1.9, 8.45):
-                if abs(x) < hw - 1.0:
-                    box(V(x, PAX_DECK - 0.47, z + 2.0), (0.3, 0.06, 1.2), "lamp")
+        if abs(z) < WALK_Z:
+            box(V(0, PAX_DECK - 0.13, z), (2 * hw, 0.26, 0.35), "ceiling")
+        else:
+            for s in (1, -1):
+                box(V(s * (hw + FORK_X) / 2, PAX_DECK - 0.13, z), (hw - FORK_X, 0.26, 0.35), "ceiling")
+        for s in (1, -1):
+            knee(s, z, 0.9, 0.3)
+        for x in (-8.45, -1.9, 1.9, 8.45):
+            if abs(x) < hw - 1.0 and abs(z) < 41.0 and (abs(z + 2.0) < WALK_Z - 0.6 or abs(x) > FORK_X + 0.6):
+                box(V(x, PAX_DECK - 0.29, z + 2.0), (0.3, 0.06, 1.2), "lamp")
         z += 4.0
+    for e in (1, -1):
+        for s in (1, -1):
+            knee(s, e * (FORK_Z - 0.2), 1.9, 0.4)
+
+
+def stair(s, e, cz):
+    """The open stair in casing s's end at end e: a flight climbing inboard from the car
+    deck at the casing's end to the deckhead at cz, a wall on its wing side, open with
+    a handrail to the tunnel."""
+    x0, x1 = CASING_X0 + 0.15, CASING_X1 - 0.2
+    xc, w = s * (x0 + x1) / 2, x1 - x0
+    box(V(s * (CASING_X1 - 0.1), (CAR_DECK + PAX_DECK) / 2, e * (cz + CASING_Z) / 2), (0.2, PAX_DECK - CAR_DECK, CASING_Z - cz), "white")
+    n = 18
+    rise, going = (PAX_DECK - CAR_DECK) / n, STAIR_RUN / n
+    for i in range(n):
+        z = e * (CASING_Z - (i + 0.5) * going)
+        box(V(xc, CAR_DECK + (i + 1) * rise - 0.03, z), (w, 0.06, going + 0.02), "steel")
+        box(V(xc, CAR_DECK + (i + 0.5) * rise, e * (CASING_Z - (i + 1) * going + 0.02)), (w, rise, 0.03), "dkwall")
+    a, b = V(xc, CAR_DECK, e * CASING_Z), V(xc, PAX_DECK, e * cz)
+    for x in (x0 + 0.04, x1 - 0.04):
+        box_between(V(s * x, CAR_DECK - 0.1, e * CASING_Z), V(s * x, PAX_DECK - 0.1, e * cz), 0.08, "dkwall")
+    hx = s * (x0 + 0.05)
+    tube([V(hx, CAR_DECK + 0.95, e * (CASING_Z - 0.2)), V(hx, PAX_DECK - 0.15, e * (cz + 1.0))], 0.03, 4, "yellow")
+    for t in (0.1, 0.5, 0.9):
+        p = lerp(V(hx, CAR_DECK, e * CASING_Z), V(hx, PAX_DECK, e * cz), t)
+        cyl(p, p + UP * 0.95, 0.025, 0.025, 4, "yellow")
+
+
+def knee(s, z, r, depth):
+    """A curved knee in the corner between the hull side's inside and the deckhead."""
+    xi = half_beam(z) - 0.3
+    arc = [V(s * (xi - r + r * math.cos(a)), PAX_DECK - r + r * math.sin(a), z)
+           for a in [math.pi / 2 * k / 6 for k in range(7)]]
+    poly = [V(s * xi, PAX_DECK, z)] + arc
+    loft([[p + V(0, 0, -depth / 2) for p in poly], [p + V(0, 0, depth / 2) for p in poly]], "ceiling")
 
 
 # --- Passenger deck and cabin ---------------------------------------------------------
@@ -404,13 +486,35 @@ def deck_outline(y, zmax, out=0.0):
     return stb + [V(-p.x, y, p.z) for p in reversed(stb)]
 
 
-def pax_deck():
-    lo, hi = deck_outline(PAX_DECK, PAX_Z, 0.12), deck_outline(PAX_TOP, PAX_Z, 0.12)
-    loft([lo, hi], "white", caps=False)
+def slab(poly_at, side="white"):
+    """A deck plate between PAX_DECK and PAX_TOP over the outline poly_at(y)."""
+    lo, hi = poly_at(PAX_DECK), poly_at(PAX_TOP)
+    loft([lo, hi], side, caps=False)
     hface(lo, "ceiling", up=False)
     hface(hi, "deckp")
+
+
+def pax_deck():
+    """The passenger deck: full width to the walkway across the cabin's ends, then the
+    two forks out over the wings, nothing over the tunnel between them."""
+    slab(lambda y: deck_outline(y, WALK_Z, 0.12))
+    for e in (1, -1):
+        for s in (1, -1):
+            zs = zs_between(WALK_Z, FORK_Z, 1.5)
+            slab(lambda y, e=e, s=s, zs=zs: [V(s * (half_beam(z) + 0.12), y, e * z) for z in zs] +
+                 [V(s * FORK_X, y, e * FORK_Z), V(s * FORK_X, y, e * WALK_Z)])
     # A grey rubbing strip along the deck edge.
-    loft([deck_outline(PAX_TOP - 0.14, PAX_Z - 0.05, 0.14), deck_outline(PAX_TOP - 0.02, PAX_Z - 0.05, 0.14)], "panel", caps=False)
+    for s in (1, -1):
+        rings = []
+        for z in zs_between(-FORK_Z, FORK_Z):
+            p, n = side_pt(s, z, PAX_TOP, 0.12)
+            rings.append([p + n * u + UP * v for u, v in ((0.0, -0.14), (0.04, -0.14), (0.04, -0.02), (0.0, -0.02))])
+        loft(rings, "panel")
+    # The walkway's fascia over the tunnel: the end's number and the clearance board.
+    for e in (1, -1):
+        zf = e * (WALK_Z + 0.02)
+        box(V(0.9, PAX_DECK - 0.2, zf), (1.3, 0.38, 0.04), "yellow")
+        box(V(-0.9, PAX_DECK - 0.2, zf), (1.0, 0.3, 0.04), "white")
 
 
 def cabin_dims():
@@ -421,12 +525,10 @@ def cabin_dims():
 
 def cabin():
     hw, ch = cabin_dims()
-    base = rect(0, PAX_TOP, 0, hw, CABIN_Z, ch)
-    sill = rect(0, SILL, 0, hw, CABIN_Z, ch)
-    head = rect(0, HEAD, 0, hw, CABIN_Z, ch)
-    top = rect(0, ROOF, 0, hw, CABIN_Z, ch)
+    base, sill, head, top = (rect(0, y, 0, hw, cabin_hd(y), ch) for y in (PAX_TOP, SILL, HEAD, ROOF))
     loft([base, sill, head, top], lambda i, j, c: "window" if i == 1 else "white", caps=False)
-    # Mullions round the window band, about 2.1 m apart.
+    # Piers between the windows, about 2.1 m apart (following the raked ends).
+    pw = 0.5
     for k in range(8):
         a0, a1 = sill[k], sill[(k + 1) % 8]
         b0, b1 = head[k], head[(k + 1) % 8]
@@ -434,11 +536,13 @@ def cabin():
         n = max(1, round(L / 2.13))
         out = V(a1.z - a0.z, 0, -(a1.x - a0.x)).normalized()
         if out.dot(V(a0.x + a1.x, 0, a0.z + a1.z)) < 0: out = -out
-        for i in range(n):
-            t = i / n
-            cyl(lerp(a0, a1, t) + out * 0.03, lerp(b0, b1, t) + out * 0.03, 0.07, 0.07, 4, "white")
+        for i in range(n + 1):
+            t0, t1 = max(0.0, i / n - pw / 2 / L), min(1.0, i / n + pw / 2 / L)
+            q = [lerp(a0, a1, t0), lerp(a0, a1, t1), lerp(b0, b1, t1), lerp(b0, b1, t0)]
+            q = [p + out * 0.02 for p in q]
+            face(q if normal(q).dot(out) > 0 else q[::-1], "white")
     # Its roof: the sun deck, overhanging a little.
-    loft([rect(0, ROOF, 0, hw + 0.15, CABIN_Z + 0.15, ch), rect(0, SUN, 0, hw + 0.15, CABIN_Z + 0.15, ch)],
+    loft([rect(0, ROOF, 0, hw + 0.15, cabin_hd(ROOF) + 0.15, ch), rect(0, SUN, 0, hw + 0.15, cabin_hd(ROOF) + 0.15, ch)],
          "white", cap_key="deckp")
 
 
@@ -458,23 +562,33 @@ def rail_loop(pts, h, key, step=2.4, closed=True, posts=True):
 
 
 def end_decks():
-    """The passenger deck's open ends: panel bulwarks round them, the rescue boat and
-    its davit on one end."""
+    """The forks and the walkway: railed all round in green with mesh panels; the
+    rescue boat and its davit out on one fork, vents and life rings."""
+    prof = [(0.0, 0.0), (0.0, 0.95), (-0.06, 0.95), (-0.06, 0.0)]
     for e in (1, -1):
-        zs = zs_between(CABIN_Z - 0.4, PAX_Z - 0.05, 1.6)
-        path = [V(half_beam(z) + 0.02, PAX_TOP, e * z) for z in zs]
-        path = path + [V(-p.x, p.y, p.z) for p in reversed(path)]
+        def pt(x, z): return V(x, PAX_TOP, e * z)
+        outer = zs_between(CABIN_Z - 0.3, FORK_Z - 0.1, 1.0)
+        path = [pt(-(half_beam(z) + 0.05), z) for z in outer]
+        xt = half_beam(FORK_Z - 0.1)
+        path += [pt(-x, FORK_Z - 0.1) for x in (lerp(xt, FORK_X, 0.5), FORK_X + 0.05)]
+        path += [pt(-(FORK_X + 0.05), z) for z in zs_between(WALK_Z + 0.05, FORK_Z - 1.2, 1.6)[::-1]]
+        path += [pt(x, WALK_Z + 0.05) for x in (-(FORK_X + 0.05), -2.4, 0.0, 2.4, FORK_X + 0.05)]
+        path += [pt(FORK_X + 0.05, z) for z in zs_between(WALK_Z + 0.05, FORK_Z - 1.2, 1.6)[1:]]
+        path += [pt(x, FORK_Z - 0.1) for x in (FORK_X + 0.05, lerp(xt, FORK_X, 0.5))]
+        path += [pt(half_beam(z) + 0.05, z) for z in outer[::-1]]
         ns = horiz_normals(path, False)
-        prof = [(0.0, 0.0), (0.0, 0.95), (-0.08, 0.95), (-0.08, 0.0)]
-        loft([[p + n * u + UP * v for u, v in prof] for p, n in zip(path, ns)], "panel", cap_key="panel")
-        tube([p + n * -0.04 + UP * 1.0 for p, n in zip(path, ns)], 0.06, 4, "white")
-        for p, n in zip(path[::2], ns[::2]):
-            cyl(p + n * -0.04, p + n * -0.04 + UP * 1.0, 0.05, 0.05, 4, "white")
-        # A jackstaff raked out over the end.
-        cyl(V(0, 9.0, e * (CABIN_Z + 1.2)), V(0, 12.75, e * 36.0), 0.06, 0.035, 4, "white")
-        cyl(V(0, PAX_TOP, e * (CABIN_Z + 1.2)), V(0, 9.0, e * (CABIN_Z + 1.2)), 0.08, 0.08, 4, "white")
+        loft([[p + n * u + UP * v for u, v in prof] for p, n in zip(path, ns)], "mesh", cap_key="green")
+        tube([p + n * -0.03 + UP * 1.0 for p, n in zip(path, ns)], 0.06, 4, "green")
+        tube([p + n * -0.03 + UP * 0.08 for p, n in zip(path, ns)], 0.05, 4, "green")
+        for p, n in zip(path, ns):
+            cyl(p + n * -0.03, p + n * -0.03 + UP * 1.0, 0.05, 0.05, 4, "green")
+        # A staff on the walkway, raked out a little, and life rings on the fork rails.
+        cyl(V(0, PAX_TOP + 0.95, e * (WALK_Z - 0.1)), V(0, 12.4, e * (WALK_Z + 0.9)), 0.06, 0.035, 4, "white")
+        for s in (1, -1):
+            torus(V(s * (FORK_X - 0.05), PAX_TOP + 0.6, e * (WALK_Z + 1.2)), V(1, 0, 0), 0.38, 0.09, 10, 4, "orange")
+            torus(V(s * (half_beam(36.0) + 0.12), PAX_TOP + 0.6, e * 36.0), V(1, 0, 0), 0.38, 0.09, 10, 4, "orange")
     # The rescue boat in its cradle on the -Z end, and its davit.
-    bz, bx = -31.8, half_beam(-31.8) - 2.0
+    bz, bx = -34.6, half_beam(-34.6) - 2.3
     rings = []
     for t, w, hgt in ((-2.5, 0.35, 0.5), (-2.1, 0.8, 0.75), (-1.0, 1.0, 0.8), (1.2, 1.0, 0.8), (2.2, 0.85, 0.8), (2.5, 0.6, 0.75)):
         c = V(bx, PAX_TOP + 1.15, bz + t)
@@ -488,66 +602,91 @@ def end_decks():
          [V(bx + 1.0, PAX_TOP + 1.5, bz - 2.0)], 0.2, 6, "dark")
     for t in (-1.5, 1.5):
         box(V(bx, PAX_TOP + 0.45, bz + t), (1.6, 0.9, 0.25), "steel")
-    dv = V(bx + 1.6, PAX_TOP, bz + 3.4)
+    dv = V(bx + 1.5, PAX_TOP, bz + 3.0)
     cyl(dv, dv + UP * 2.6, 0.22, 0.18, 8, "dark")
     cyl(dv + UP * 2.4, V(bx, PAX_TOP + 3.3, bz), 0.15, 0.1, 6, "dark")
     cyl(V(bx, PAX_TOP + 3.3, bz), V(bx, PAX_TOP + 1.9, bz), 0.02, 0.02, 3, "black")
-    # Benches along the cabin's end walls, a pair of mushroom vents out on each end.
-    hw, ch = cabin_dims()
-    for e in (1, -1):
-        for s in (1, -1):
-            box(V(s * (hw - ch) * 0.5, PAX_TOP + 0.22, e * (CABIN_Z + 0.6)), (hw - ch - 1.5, 0.44, 0.55), "steel")
-            v = V(s * 2.6, PAX_TOP, e * 36.5)
-            cyl(v, v + UP * 0.9, 0.22, 0.22, 8, "white")
-            cyl(v + UP * 0.9, v + UP * 1.15, 0.45, 0.3, 8, "white")
 
 
 # --- Sun deck -----------------------------------------------------------------------
 
 def sun_deck():
     hw, ch = cabin_dims()
-    rail_loop(rect(0, SUN, 0, hw + 0.05, CABIN_Z + 0.05, ch), 1.05, "white")
-    # Two shelters, roofs on posts with glass windbreaks under the eaves.
+    rail_loop(rect(0, SUN, 0, hw + 0.05, cabin_hd(ROOF) + 0.05, ch), 1.05, "green")
+    # The crew houses: one toward each end, enclosed, running inboard from the pilothouse
+    # nearly to the funnels; small square windows and doors down their sides, a name
+    # board, and on the roof vents, an air-conditioning unit and a ladder up at the
+    # inboard end.
     for e in (1, -1):
-        z0, z1 = 7.7, 22.3
-        cz, hd, sw = e * (z0 + z1) / 2, (z1 - z0) / 2, 6.0
-        loft([rect(0, 12.25, cz, sw + 0.2, hd + 0.2, 0), rect(0, 12.5, cz, sw + 0.2, hd + 0.2, 0)], "white")
+        z0, z1 = 5.6, PH_Z0
+        cz, hd, hw, top = e * (z0 + z1) / 2, (z1 - z0) / 2, 5.0, 12.9
+        loft([rect(0, SUN, cz, hw, hd, 0.3), rect(0, top, cz, hw, hd, 0.3)], "white", cap_key="white")
+        loft([rect(0, top, cz, hw + 0.12, hd + 0.12, 0.35), rect(0, top + 0.15, cz, hw + 0.12, hd + 0.12, 0.35)],
+             "white", cap_key="deckp")
         for s in (1, -1):
-            zs = zs_between(z0, z1, 2.9)
-            for z in zs:
-                cyl(V(s * sw, SUN, e * z), V(s * sw, 12.25, e * z), 0.08, 0.08, 4, "white")
-            for za, zb in zip(zs, zs[1:]):
-                m = (za + zb) / 2
-                box(V(s * sw, 11.75, e * m), (0.04, 0.9, zb - za - 0.2), "pane")
-        for s in (1, -1):
-            box(V(s * sw / 2, 11.75, e * z0), (sw - 0.2, 0.9, 0.04), "pane")
-        # Benches down the middle.
-        for s in (1, -1):
-            box(V(s * 2.0, SUN + 0.25, cz), (0.6, 0.5, 2 * hd - 2.0), "steel")
+            n = V(s, 0, 0)
+            for k, z in enumerate(zs_between(z0 + 1.2, z1 - 1.0, 2.4)):
+                if k == 2:
+                    panel(V(s * hw, SUN + 1.0, e * z), n, 0.85, 2.0, 0.04, "steel")
+                else:
+                    panel(V(s * hw, 11.95, e * z), n, 0.8, 0.8, 0.03, "window")
+            box(V(s * (hw + 0.02), 12.62, e * (z0 + z1) / 2), (0.04, 0.3, 1.6), "orange")
+        # The inboard end: a door, and the ladder up to the roof beside it.
+        panel(V(1.2, SUN + 1.0, e * z0), V(0, 0, -e), 0.85, 2.0, 0.04, "steel")
+        for x in (-2.0, -1.4):
+            cyl(V(x, SUN, e * (z0 - 0.25)), V(x, top + 1.0, e * (z0 - 0.25)), 0.03, 0.03, 4, "steel")
+        for k in range(8):
+            y = SUN + 0.3 + k * 0.3
+            cyl(V(-2.0, y, e * (z0 - 0.25)), V(-1.4, y, e * (z0 - 0.25)), 0.02, 0.02, 3, "steel")
+        # Roof gear.
+        box(V(2.4, top + 0.55, e * (z0 + 2.2)), (1.6, 0.8, 1.2), "steel")
+        for x, z in ((-2.5, z0 + 5.0), (2.0, z0 + 8.5), (-1.0, z0 + 11.5)):
+            cyl(V(x, top + 0.15, e * z), V(x, top + 0.75, e * z), 0.2, 0.2, 8, "white")
+            cyl(V(x, top + 0.75, e * z), V(x, top + 0.95, e * z), 0.38, 0.3, 8, "white")
+        rail_loop([V(-hw + 0.3, top + 0.15, e * (z0 + 0.3)), V(-hw + 0.3, top + 0.15, e * (z0 + 4.0)),
+                   V(-0.6, top + 0.15, e * (z0 + 4.0))], 1.0, "green", step=1.8, closed=False)
     # Liferaft canisters on racks outboard of each pilothouse, life rings on the rail.
     for e in (1, -1):
         for s in (1, -1):
-            for zr in (23.8, 25.9):
+            for zr in (22.4, 24.5):
                 box(V(s * 7.6, SUN + 0.2, e * zr), (3.2, 0.4, 1.6), "steel")
                 for dz in (-0.42, 0.42):
                     a = V(s * 6.2, SUN + 0.75, e * (zr + dz))
                     cyl(a, a + V(s * 2.8, 0, 0), 0.36, 0.36, 8, "white")
-            torus(V(s * (hw - 1.0), SUN + 0.75, e * (CABIN_Z + 0.12)), V(0, 0, 1), 0.38, 0.09, 10, 4, "orange")
+            torus(V(s * (hw - 1.4), SUN + 0.75, e * (cabin_hd(ROOF) + 0.12)), V(0, 0, 1), 0.38, 0.09, 10, 4, "orange")
+
+
+FUNNEL_X = 4.2      # the two funnels, side by side either side of the centreline
 
 
 def funnel():
-    rings = [rect(0, SUN, 0, 1.85, 3.9, 0.6), rect(0, 13.7, 0, 1.68, 2.42, 0.5), rect(0, FUNNEL_TOP, 0, 1.6, 1.95, 0.45)]
-    loft(rings, lambda i, j, c: "black" if i == 1 else "white", cap_key="black")
-    for dz in (-0.7, 0.7):
-        cyl(V(0, FUNNEL_TOP - 0.1, dz), V(0, FUNNEL_TOP + 0.5, dz), 0.38, 0.38, 8, "black")
-    # The WSF disc on both sides, doors at both ends of its foot.
+    """Two funnels side by side amidships, white with a gold band under the black top,
+    the WSF disc on their outboard faces; the fan room between them."""
     for s in (1, -1):
-        x = s * 1.79
-        cyl(V(x, 12.55, 0), V(x + s * 0.06, 12.55, 0), 0.62, 0.62, 12, "green")
-        box(V(x + s * 0.07, 12.6, 0), (0.02, 0.12, 0.8), "white")
-        box(V(x + s * 0.07, 12.4, 0.15), (0.02, 0.12, 0.55), "white")
+        x = s * FUNNEL_X
+        rings = [rect(x, SUN, 0, 1.3, 3.0, 1.0), rect(x, 13.62, 0, 1.24, 2.05, 0.95), rect(x, 13.84, 0, 1.235, 2.0, 0.95),
+                 rect(x, FUNNEL_TOP, 0, 1.2, 1.75, 0.9)]
+        loft(rings, lambda i, j, c: ("white", "gold", "black")[i], cap_key="black")
+        cyl(V(x, FUNNEL_TOP - 0.1, 0.3), V(x, FUNNEL_TOP + 0.9, 0.3), 0.32, 0.32, 8, "black")
+        cyl(V(x, FUNNEL_TOP - 0.1, -0.7), V(x, FUNNEL_TOP + 0.5, -0.7), 0.2, 0.2, 6, "black")
+        xo = x + s * 1.27
+        cyl(V(xo, 12.4, 0), V(xo + s * 0.06, 12.4, 0), 0.6, 0.6, 12, "green")
+        box(V(xo + s * 0.07, 12.45, 0), (0.02, 0.12, 0.78), "white")
+        box(V(xo + s * 0.07, 12.25, 0.15), (0.02, 0.12, 0.52), "white")
+        panel(V(x, SUN + 1.0, 2.6), V(0, 0, 1), 0.8, 2.0, 0.04, "steel")
+    # The fan room: louvred sides, doors at both ends.
+    hw = FUNNEL_X - 1.3
+    loft([rect(0, SUN, 0, hw, 3.4, 0.2), rect(0, 12.7, 0, hw, 3.4, 0.2)], "white", cap_key="white")
+    box(V(0, 12.78, 0), (2 * hw + 0.2, 0.16, 7.0), "white")
     for e in (1, -1):
-        panel(V(0, SUN + 1.0, e * 3.88), V(0, 0, e), 0.9, 2.0, 0.04, "steel")
+        panel(V(0, SUN + 1.0, e * 3.4), V(0, 0, e), 0.9, 2.0, 0.04, "steel")
+        for x in (-1.6, 1.6):
+            panel(V(x, SUN + 1.25, e * 3.4), V(0, 0, e), 0.8, 1.0, 0.04, "dkwall")
+            for k in range(5):
+                panel(V(x, SUN + 0.85 + k * 0.2, e * 3.4), V(0, 0, e), 0.8, 0.04, 0.07, "white")
+    for x in (-0.8, 0.8):
+        cyl(V(x, 12.86, 1.8), V(x, 13.3, 1.8), 0.3, 0.3, 8, "steel")
+        cyl(V(x, 13.3, 1.8), V(x, 13.45, 1.8), 0.45, 0.45, 8, "steel")
 
 
 def pilothouses():
@@ -571,32 +710,35 @@ def pilothouses():
               rect(0, PH_TOP + 0.3, cz + e * 0.45, PH_HW + 0.45, hd + 0.75, ch + 0.2, chb)], "green")
         for s in (1, -1):
             panel(V(s * PH_HW, SUN + 1.0, e * (PH_Z0 + 0.8)), V(s, 0, 0), 0.8, 2.0, 0.04, "steel")
-        # Radar mast on the roof.
-        rz = e * 25.6
-        cyl(V(0, PH_TOP + 0.3, rz), V(0, 16.2, rz), 0.1, 0.08, 6, "white")
-        box(V(0, 16.25, rz), (1.9, 0.12, 0.25), "white")
-        box(V(0, 16.45, rz), (2.4, 0.12, 0.2), "dark")
-        cyl(V(0, 16.3, rz), V(0, 16.4, rz), 0.12, 0.12, 6, "dark")
 
 
 def masts():
+    """A mast on each pilothouse roof: yards for the lights, the radar on a railed
+    platform facing the end, the gaff raked toward amidships."""
     for e in (1, -1):
         z = e * MAST_Z
-        cyl(V(0, SUN, z), V(0, MAST_TOP, z), 0.2, 0.11, 8, "white")
-        # Yards for the lights, a platform toward the end, the gaff raked toward amidships.
+        base = PH_TOP + 0.3
+        cyl(V(0, base, z), V(0, MAST_TOP, z), 0.18, 0.1, 8, "white")
+        for a in (-1, 1):
+            cyl(V(a * 1.2, base, z), V(0, 16.6, z), 0.06, 0.05, 4, "white")
         for y, w in ((18.5, 3.2), (17.4, 2.4)):
             box(V(0, y, z), (w, 0.12, 0.12), "white")
-        box(V(0, 17.4, z + e * 0.9), (0.9, 0.1, 1.6), "white")
-        rail_loop([V(0.45, 17.45, z + e * 0.15), V(0.45, 17.45, z + e * 1.7), V(-0.45, 17.45, z + e * 1.7),
-                   V(-0.45, 17.45, z + e * 0.15)], 0.6, "white", step=1.0, closed=False)
+        box(V(0, 16.6, z + e * 0.9), (1.2, 0.1, 1.8), "white")
+        rail_loop([V(0.6, 16.65, z + e * 0.15), V(0.6, 16.65, z + e * 1.8), V(-0.6, 16.65, z + e * 1.8),
+                   V(-0.6, 16.65, z + e * 0.15)], 0.6, "white", step=1.0, closed=False)
+        cyl(V(0, 16.7, z + e * 1.2), V(0, 16.9, z + e * 1.2), 0.12, 0.12, 6, "dark")
+        box(V(0, 16.98, z + e * 1.2), (2.6, 0.12, 0.22), "dark")
         cyl(V(0, 19.6, z), V(0, 21.5, z - e * 3.2), 0.07, 0.05, 4, "white")
         cyl(V(0, MAST_TOP, z), V(0, MAST_TOP + 0.35, z), 0.06, 0.06, 4, "dark")
+        # Whip aerials at the roof's corners.
+        for a in (-1, 1):
+            cyl(V(a * 3.8, base, e * (PH_Z0 + 0.4)), V(a * 3.9, base + 3.2, e * (PH_Z0 + 0.3)), 0.03, 0.015, 3, "dark")
 
 
 def build():
     for bm in BMS.values(): bm.free()
     BMS.clear()
-    hull(); bulwarks(); apron()
+    hull(); bulwarks()
     car_deck()
     pax_deck(); cabin(); end_decks()
     sun_deck(); funnel(); pilothouses(); masts()

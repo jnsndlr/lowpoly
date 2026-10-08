@@ -19,7 +19,7 @@ const SLOT := 2.6               # spacing between queued cars
 # coming and going straight in and out, never come near each other.
 const SLIP_SPACING := 20.0
 const FERRY_HALF := 15.0
-const DOCK_U := PIER_END + FERRY_HALF + 0.4  # a size-4 ferry's centre when docked
+const DOCK_U := PIER_END + FERRY_HALF + 0.4  # centre of a 30 m hull docked (route ends)
 # Each slip's wing walls (u, v of the starboard one's ends, mirrored to port): one
 # straight wall either side, splayed WING_ANGLE off the centreline, that takes
 # any size of hull's end.

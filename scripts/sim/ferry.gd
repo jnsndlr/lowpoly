@@ -49,7 +49,7 @@ var _tracking := false
 var _waiting_for: Ferry = null   # holding off a corridor this ferry has reserved
 var _giving_way := false         # (holding in at the dock for _waiting_for to come in)
 var _runs := {}                   # at_a -> _corridor_runs() for that direction
-# Route curves run between where a size-4 ferry's centre lies docked
+# Route curves run between where a 30 m hull's centre lies docked
 # (Layout.DOCK_U); a shorter one docks this much further in at both ends, a
 # longer one further out (negative).
 var _inset := 0.0
@@ -203,9 +203,14 @@ func _tick_unloading(delta: float) -> void:
 
 func _drive_off(car: Vehicle) -> void:
 	var exit_z := -fc.end_z if at_a else fc.end_z
-	var start := to_global(Vector3(car.position.x, Layout.DECK_Y, exit_z))
+	var path := PackedVector3Array()
+	var x := car.position.x
+	if absf(x) > fc.throat_x:
+		# Out of a wing lane: turn in to the apron's opening past the fork's end.
+		path.append(to_global(Vector3(x, Layout.DECK_Y, signf(exit_z) * fc.turn_z)))
+		x = clampf(x, -fc.throat_x, fc.throat_x)
+	path.append(to_global(Vector3(x, Layout.DECK_Y, exit_z)))
 	car.reparent(sim.traffic)
-	var path := PackedVector3Array([start])
 	path.append_array(here().exit_path(route.id))
 	car.drive(path, func(c: Vehicle): c.queue_free())
 
@@ -243,7 +248,11 @@ func _drive_on(car: Vehicle, term: Terminal) -> void:
 	var local := _slot_local(slot)
 	var entry_z := -fc.end_z if at_a else fc.end_z
 	var path := term.boarding_path(car, route.id)
-	path.append(to_global(Vector3(local.x, Layout.DECK_Y, entry_z)))
+	var mouth := clampf(local.x, -fc.throat_x, fc.throat_x)
+	path.append(to_global(Vector3(mouth, Layout.DECK_Y, entry_z)))
+	if mouth != local.x:
+		# Into a wing lane: in through the apron's opening, then out round the fork's end.
+		path.append(to_global(Vector3(local.x, Layout.DECK_Y, signf(entry_z) * fc.turn_z)))
 	path.append(to_global(local))
 	car.drive(path, _on_boarded.bind(slot))
 	sim.collect_fare(car)

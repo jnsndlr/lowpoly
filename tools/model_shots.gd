@@ -69,6 +69,8 @@ func _initialize() -> void:
 		models["ferry_deck"] = [ferry, Vector3(0, 4, 30), 16.0]
 		models["ferry_ports"] = [ferry, Vector3(10.8, 5, -2), 10.0]
 		models["ferry_wing"] = [ferry, Vector3(8.4, 4.6, 6), 4.5]
+		models["ferry_fork"] = [ferry, Vector3(7, 6, 37), 15.0]
+		models["ferry_stair"] = [ferry, Vector3(4.5, 4.5, 25.5), 8.0]
 	for n: String in Models.PINE_VARIANTS + Models.BROAD_VARIANTS:
 		models[n] = [Models._tree_part(n), Vector3(0, 4.6, 0), 13.0]
 		models[n + "_lod"] = [Models._tree_part(n + "_lod"), Vector3(0, 3.6, 0), 13.0]

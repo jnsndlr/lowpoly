@@ -256,6 +256,8 @@ static func truck(color_index: int) -> ArrayMesh:
 ## Double-ended car ferry of class `fc` (see FerryClass). +Z and -Z ends are
 ## identical; car deck top at DECK_Y.
 static func ferry(fc: FerryClass) -> ArrayMesh:
+	if fc.evergreen:
+		return _cached("ferry_%d" % fc.size, func(): return _mid_ferry(fc).commit())
 	return _cached("ferry_%d" % fc.size, func():
 		var mb := MeshBuilder.new()
 		var b := fc.half_beam
@@ -284,6 +286,32 @@ static func ferry(fc: FerryClass) -> ArrayMesh:
 		for lp: Array in fc.lamps:
 			add_bulkhead_lamp(mb, lp[0], lp[1], GlowBuilder.WARM, fc.lamp_scale)
 		return mb.commit())
+
+
+## The mid-poly Evergreen State (FerryClass.MID_GLB, source art/ferry_mid.py), scaled
+## and dropped into the hull's frame; its pilothouse glass lit, its cabin windows
+## lit room by room. Then the class's lanterns, sidelights and deck lamps.
+static func _mid_ferry(fc: FerryClass) -> MeshBuilder:
+	var mb := MeshBuilder.new()
+	var k := FerryClass.MID_SCALE
+	var drop := Vector3(0, FerryClass.MID_DROP, 0)
+	for part: String in ["fixed", "glass", "window"]:
+		var p := _gltf_parts(FerryClass.MID_GLB, [part])
+		for i in p.verts.size():
+			mb.verts.append(p.verts[i] * k - drop)
+			mb.normals.append(p.normals[i])
+		if part == "fixed":
+			mb.colors.append_array(p.colors)
+		else:
+			for i in p.verts.size():
+				mb.colors.append(WINDOW_LIT if part == "glass" else WINDOW)
+	for p in fc.lanterns:
+		add_lantern(mb, p, GlowBuilder.LED, fc.lantern_scale)
+	for sl: Array in fc.sidelights:
+		add_sidelight(mb, sl[0], sl[1], sl[2], fc.sidelight_scale)
+	for lp: Array in fc.lamps:
+		add_bulkhead_lamp(mb, lp[0], lp[1], GlowBuilder.WARM, fc.lamp_scale)
+	return mb
 
 
 ## Sizes 3-5: an enclosed car deck with open galleries above, a passenger deck over
