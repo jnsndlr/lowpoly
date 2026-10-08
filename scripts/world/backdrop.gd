@@ -247,29 +247,36 @@ func _treeline(p: Vector3) -> float:
 
 ## Tiled like WorldBuilder's forests so the camera culls what it can't see.
 func _build_trees() -> void:
+	# Tiles per pine variant (Models.tree_variants), each level of detail at its
+	# distances (Models.tree_lod_levels).
+	var variants := Models.tree_variants(false)
 	var tiles := {}
 	for i in _trees.size():
 		var o := _trees[i].origin
-		var key := Vector2i(floori(o.x / TREE_TILE), floori(o.z / TREE_TILE))
+		var key := Vector3i(floori(o.x / TREE_TILE), floori(o.z / TREE_TILE), Models.tree_variant(o, variants.size()))
 		if not tiles.has(key):
 			tiles[key] = []
 		tiles[key].append(i)
-	for key: Vector2i in tiles:
+	for key: Vector3i in tiles:
 		var idx: Array = tiles[key]
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_colors = true
-		mm.mesh = Models.pine_tree()
-		mm.instance_count = idx.size()
-		for j in idx.size():
-			mm.set_instance_transform(j, _trees[idx[j]])
-			mm.set_instance_color(j, _tree_cols[idx[j]])
-		var mmi := MultiMeshInstance3D.new()
-		mmi.multimesh = mm
-		# Dense forest hides its own floor; their shadows aren't worth the cascades.
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mmi.name = "MainlandPines_%d_%d" % [key.x, key.y]
-		add_child(mmi)
+		var levels := Models.tree_lod_levels(variants[key.z])
+		for l in levels.size():
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.use_colors = true
+			mm.mesh = levels[l][0]
+			mm.instance_count = idx.size()
+			for j in idx.size():
+				mm.set_instance_transform(j, _trees[idx[j]])
+				mm.set_instance_color(j, _tree_cols[idx[j]])
+			var mmi := MultiMeshInstance3D.new()
+			mmi.multimesh = mm
+			# Dense forest hides its own floor; their shadows aren't worth the cascades.
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mmi.visibility_range_begin = levels[l][1]
+			mmi.visibility_range_end = levels[l][2]
+			mmi.name = "MainlandPines_%d_%d_%d%s" % [key.x, key.y, key.z, "_lod%d" % l if l > 0 else ""]
+			add_child(mmi)
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
 	quad.center_offset = Vector3(0.0, 0.5, 0.0)

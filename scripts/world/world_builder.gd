@@ -74,7 +74,25 @@ func _add_mesh(mesh: Mesh, node_name: String, shadows := true) -> MeshInstance3D
 ## Instances are split into MULTIMESH_TILE-sized tiles, one MultiMesh each, so the
 ## camera and every shadow cascade can cull the ones out of view (a single MultiMesh
 ## covering the map is drawn whole, everywhere).
-func _multimesh(mesh: Mesh, xforms: Array[Transform3D], colors: Array[Color], node_name: String) -> void:
+## Trees shared out among Models.tree_variants by where they stand, one set of tiles
+## per variant.
+func _forest(variants: Array, xforms: Array[Transform3D], colors: Array[Color], node_name: String) -> void:
+	var xs: Array = []
+	var cs: Array = []
+	for v in variants:
+		xs.append([] as Array[Transform3D])
+		cs.append([] as Array[Color])
+	for i in xforms.size():
+		var v := Models.tree_variant(xforms[i].origin, variants.size())
+		xs[v].append(xforms[i])
+		cs[v].append(colors[i])
+	for v in variants.size():
+		_multimesh(variants[v][0], xs[v], cs[v], "%s%d" % [node_name, v], variants[v])
+
+
+## Instances batched in tiles for culling. With a tree `variant` (Models.tree_variants),
+## each tile draws its levels of detail at their distances (Models.tree_lod_levels).
+func _multimesh(mesh: Mesh, xforms: Array[Transform3D], colors: Array[Color], node_name: String, variant: Array = []) -> void:
 	if xforms.is_empty():
 		return
 	var tiles := {}
@@ -87,6 +105,7 @@ func _multimesh(mesh: Mesh, xforms: Array[Transform3D], colors: Array[Color], no
 	var group := Node3D.new()
 	group.name = node_name
 	root.add_child(group)
+	var levels: Array = Models.tree_lod_levels(variant) if not variant.is_empty() else [[mesh, 0.0, 0.0]]
 	for key: Vector2i in tiles:
 		var idx: Array = tiles[key]
 		var mm := MultiMesh.new()
@@ -98,10 +117,31 @@ func _multimesh(mesh: Mesh, xforms: Array[Transform3D], colors: Array[Color], no
 			mm.set_instance_transform(j, xforms[idx[j]])
 			if mm.use_colors:
 				mm.set_instance_color(j, colors[idx[j]])
-		var mmi := MultiMeshInstance3D.new()
-		mmi.multimesh = mm
-		mmi.name = "%s_%d_%d" % [node_name, key.x, key.y]
-		group.add_child(mmi)
+		var base := "%s_%d_%d" % [node_name, key.x, key.y]
+		for l in levels.size():
+			var lv: Array = levels[l]
+			var mmi := MultiMeshInstance3D.new()
+			if l == 0:
+				mmi.multimesh = mm
+			else:
+				mmi.multimesh = mm.duplicate() as MultiMesh
+				mmi.multimesh.mesh = lv[0]
+			mmi.visibility_range_begin = lv[1]
+			mmi.visibility_range_end = lv[2]
+			mmi.name = base if l == 0 else "%s_lod%d" % [base, l]
+			group.add_child(mmi)
+			if levels.size() > 1 and l < levels.size() - 1:
+				# Nearer levels' shadows are cast by the farthest one (a shadow-only copy):
+				# nobody can tell them apart in a shadow, and they cost a fraction.
+				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if levels.size() > 1:
+			var shade := MultiMeshInstance3D.new()
+			shade.multimesh = mm.duplicate() as MultiMesh
+			shade.multimesh.mesh = levels[-1][0]
+			shade.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+			shade.visibility_range_end = levels[-1][1]
+			shade.name = base + "_shadow"
+			group.add_child(shade)
 
 
 # --- Blocking grid so props don't overlap roads, lots and houses -------------------
@@ -657,8 +697,8 @@ func _build_vegetation() -> void:
 				var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s * rng.randf_range(0.8, 1.4), s, s))
 				rocks.append(Transform3D(basis, Vector3(px, h, pz)))
 		z += step
-	_multimesh(Models.pine_tree(), pines, pine_cols, "Pines")
-	_multimesh(Models.round_tree(), rounds, round_cols, "RoundTrees")
+	_forest(Models.tree_variants(false), pines, pine_cols, "Pines")
+	_forest(Models.tree_variants(true), rounds, round_cols, "RoundTrees")
 	var no_colors: Array[Color] = []
 	_multimesh(Models.rock(), rocks, no_colors, "Rocks")
 

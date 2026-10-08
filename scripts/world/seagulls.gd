@@ -145,6 +145,7 @@ class Gull:
 	var perch: Perch = null     # where it sits, or is headed
 	var seat := Vector3.ZERO    # its spot on the perch (in the perch's frame)
 	var size := 1.0
+	var age := 0.0              # plumage: 0 adult, 0.5 second/third-year, 1 first-year
 	var leader: Gull = null     # flying with (or, while perched, about to follow)
 	var offset := Vector3.ZERO  # formation slot in the leader's frame / escort offset
 	var alt := 20.0             # cruising height for this leg
@@ -201,6 +202,7 @@ func setup(s: Simulation, d: DayCycle, perches: Array[Perch]) -> void:
 func _build_pool() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/seagull.gdshader")
+	mat.set_shader_parameter("baked_fold", Models.mid_seagull)
 	_mm = MultiMesh.new()
 	_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_mm.use_custom_data = true
@@ -225,6 +227,9 @@ func _build_pool() -> void:
 		var g := Gull.new()
 		g.facing = _pick_facing()
 		g.size = rng.randf_range(0.88, 1.08)
+		# Gulls take four years to reach adult plumage; the young ones are brown.
+		var r := rng.randf()
+		g.age = 1.0 if r < 0.12 else (0.5 if r < 0.25 else 0.0)
 		g.flap_phase = rng.randf() * TAU
 		_gulls.append(g)
 		var home: Vector3 = homes[i % homes.size()]
@@ -817,7 +822,7 @@ func _render() -> void:
 		_buf[o + 12] = g.flap_phase
 		_buf[o + 13] = g.flap_amp
 		_buf[o + 14] = g.fold
-		_buf[o + 15] = 0.0
+		_buf[o + 15] = g.age
 		k += 1
 	_mm.buffer = _buf
 

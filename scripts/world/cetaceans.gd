@@ -82,6 +82,7 @@ class Animal:
 	var blown := false
 	var tail := 0.0
 	var tail_amp := 0.035
+	var markings := 0.0         # 0..1: picks this animal's own markings (cetacean.gdshader)
 	var spray_t := 0.0
 	var shown_ms := -100000     # last time any of it was above water
 
@@ -106,6 +107,7 @@ class Puff:
 var wildlife: Wildlife
 var terrain: Terrain
 var rng := RandomNumberGenerator.new()
+var _marks := RandomNumberGenerator.new()   # its own stream, so the pods' moves don't change
 var kinds := {}                 # species id -> Kind
 var _pods: Array[Pod] = []
 var _puffs: Array[Puff] = []
@@ -118,6 +120,7 @@ func setup(w: Wildlife, t: Terrain) -> void:
 	wildlife = w
 	terrain = t
 	rng.seed = w.sim.map.map_seed * 29 + 3
+	_marks.seed = w.sim.map.map_seed * 31 + 7
 	# Bigger than life (orcas and porpoises) so they read next to the ferries.
 	for k: Kind in [
 		Kind.new("orca", Models.orca(), {"scale": 1.3}),
@@ -149,6 +152,7 @@ func setup(w: Wildlife, t: Terrain) -> void:
 		k.mm.instance_count = MAX_PER_KIND
 		k.mm.visible_instance_count = 0
 		k.buf.resize(MAX_PER_KIND * 16)
+		mat.set_shader_parameter("orca_markings", k.id == "orca" and Models.mid_orca)
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = k.id
 		mmi.multimesh = k.mm
@@ -190,6 +194,8 @@ func _on_visit(v: Wildlife.Visit) -> void:
 		o.sweep = k.sweep
 		o.tail_amp = k.tail
 		if k.id == "orca":
+			# Every orca's own saddle, eye patch and flank; calves' white is still peachy.
+			o.markings = _marks.randf() * 0.499 + (0.5 if m.role == Wildlife.Role.CALF else 0.0)
 			match m.role:
 				Wildlife.Role.BULL:
 					o.fin = 0.21
@@ -513,7 +519,8 @@ func _render() -> void:
 			buf[i + 10] = b.z.z
 			buf[i + 11] = o.pos.z
 			buf[i + 12] = o.fin
-			buf[i + 13] = o.sweep
+			# Sweep in hundredths, the markings in the fraction (unpacked by the shader).
+			buf[i + 13] = roundf(o.sweep * 100.0) + o.markings
 			buf[i + 14] = o.tail
 			buf[i + 15] = o.tail_amp
 			n += 1

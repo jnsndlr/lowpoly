@@ -38,6 +38,11 @@ func _initialize() -> void:
 		"house": [Models.house(Color(0.25, 0.4, 0.75), Color(0.8, 0.25, 0.2), 1), Vector3(0, 2.5, 0), 9.0],
 		"house2": [Models.house(Color(0.25, 0.4, 0.75), Color(0.8, 0.25, 0.2), 2), Vector3(0, 3.0, 0), 11.0],
 		"trawler": [Models.trawler(0), Vector3(0, 3, -4), 26.0],
+		"tug": [Models.tug(0), Vector3(0, 3, 0), 24.0],
+		"tug1": [Models.tug(1), Vector3(0, 3, 0), 24.0],
+		"tug2": [Models.tug(2), Vector3(0, 3, 0), 24.0],
+		"sailboat": [Models.sailboat(), Vector3(0, 1.8, 0), 11.0],
+		"sailboat_furled": [Models.sailboat_furled(), Vector3(0, 1.5, 0), 9.0],
 		# Unit-length animals (fins and poses need their own shaders, so they show flat).
 		"humpback": [Models.humpback(), Vector3.ZERO, 1.4],
 		"gray_whale": [Models.gray_whale(), Vector3.ZERO, 1.4],
@@ -46,6 +51,9 @@ func _initialize() -> void:
 		"harbor_seal": [Models.harbor_seal(), Vector3(0, 0.08, 0), 1.2],
 		"sea_lion": [Models.sea_lion(), Vector3(0, 0.08, 0), 1.2],
 	}
+	for n: String in Models.PINE_VARIANTS + Models.BROAD_VARIANTS:
+		models[n] = [Models._tree_part(n), Vector3(0, 4.6, 0), 13.0]
+		models[n + "_lod"] = [Models._tree_part(n + "_lod"), Vector3(0, 3.6, 0), 13.0]
 	for name: String in models:
 		if only != "" and not name in only.split(","):
 			continue

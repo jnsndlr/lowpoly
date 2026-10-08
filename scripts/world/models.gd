@@ -95,6 +95,55 @@ static func round_tree() -> ArrayMesh:
 		return mb.commit())
 
 
+## Trees use the faceted ones modelled in Blender (TREES_GLB, built by art/trees.py into
+## art/trees.blend): several pines and broadleaves, each with a cheap stand-in
+## ("<name>_lod") for far off. The two above are the fallback: with `--classic-trees`,
+## or if the model is missing.
+const TREES_GLB := "res://assets/models/trees.glb"
+static var mid_trees := not "--classic-trees" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(TREES_GLB)
+const PINE_VARIANTS := ["spruce", "spruce_open", "spruce_lean", "spruce_broad", "spruce_tall", "spruce_young"]
+const BROAD_VARIANTS := ["oak", "poplar", "spreading", "leaning", "round", "birches"]
+# Past this distance (m, to a tile's centre) a forest tile draws the stand-ins.
+const TREE_LOD_DIST := 180.0
+# Spruces (the heaviest trees) also have a middle version, drawn from TREE_NEAR_DIST to
+# TREE_MID_DIST, and their stand-ins (which keep their stepped tiers) take over sooner.
+const TREE_NEAR_DIST := 30.0
+const TREE_MID_DIST := 90.0
+
+
+## The pine (or broadleaf) variants as [near mesh, far mesh or null, middle mesh or null].
+static func tree_variants(broadleaf: bool) -> Array:
+	if not mid_trees:
+		return [[round_tree() if broadleaf else pine_tree(), null, null]]
+	var out := []
+	for n: String in BROAD_VARIANTS if broadleaf else PINE_VARIANTS:
+		out.append([_tree_part(n), _tree_part(n + "_lod"), _tree_part(n + "_mid") if n.begins_with("spruce") else null])
+	return out
+
+
+## The levels a variant is drawn at, as [mesh, from (m), to (m, 0 = no limit)].
+static func tree_lod_levels(variant: Array) -> Array:
+	var near: Mesh = variant[0]
+	var far: Mesh = variant[1]
+	var mid: Mesh = variant[2]
+	if far == null:
+		return [[near, 0.0, 0.0]]
+	if mid == null:
+		return [[near, 0.0, TREE_LOD_DIST], [far, TREE_LOD_DIST, 0.0]]
+	return [[near, 0.0, TREE_NEAR_DIST], [mid, TREE_NEAR_DIST, TREE_MID_DIST], [far, TREE_MID_DIST, 0.0]]
+
+
+## Which variant a tree standing at `at` is: from its position, so the choice draws
+## no random numbers and the rest of the map comes out the same.
+static func tree_variant(at: Vector3, count: int) -> int:
+	return absi(hash(Vector2i(roundi(at.x * 10.0), roundi(at.z * 10.0)))) % count
+
+
+static func _tree_part(n: String) -> ArrayMesh:
+	return _cached("tree_" + n, func(): return _gltf_parts(TREES_GLB, [n.replace("_", "")]).commit())
+
+
 static func rock() -> ArrayMesh:
 	return _cached("rock", func():
 		var mb := MeshBuilder.new()
@@ -455,7 +504,18 @@ static func _rail(mb: MeshBuilder, a: Vector3, b: Vector3, col: Color) -> void:
 ## A gull, about 1.4 m across (+Z forward, wings out along X, upper sides facing
 ## up). Wing vertices carry alpha 0.5, which seagull.gdshader flaps and folds about
 ## the shoulder (|x| = 0.06); it also lightens their undersides, so they are single panels.
+## Gulls use the mid-poly gull modelled in Blender (MID_SEAGULL_GLB, built by
+## art/seagull_mid.py), whose wing vertices also carry their folded position in UV and
+## UV2.x for seagull.gdshader. The one below is the fallback: with `--classic-gull`, or
+## if the model is missing (its wings fold by formula instead).
+const MID_SEAGULL_GLB := "res://assets/models/seagull_mid.glb"
+static var mid_seagull := not "--classic-gull" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(MID_SEAGULL_GLB)
+
+
 static func seagull() -> ArrayMesh:
+	if mid_seagull:
+		return _cached("seagull_mid", func(): return _gltf_mesh(MID_SEAGULL_GLB, "seagull"))
 	return _cached("seagull", func():
 		var mb := MeshBuilder.new()
 		var white := Color(0.95, 0.95, 0.93)
@@ -488,12 +548,26 @@ static func seagull() -> ArrayMesh:
 		return mb.commit())
 
 
+## Orcas use the mid-poly orca modelled in Blender (MID_ORCA_GLB, built by
+## art/orca_mid.py into art/orca_mid.blend) to the same rules as the one below: one
+## unit long, fin base at cetacean.gdshader's FIN_BASE, fin vertex alpha = 1 - t/2 for
+## height fraction t. Its body is plain black with UV = (distance from the nose,
+## angle round from the back / pi), and cetacean.gdshader draws each animal's own
+## markings from that (orca_markings). The one below is the fallback: with `--classic-orca`, or if the
+## model is missing.
+const MID_ORCA_GLB := "res://assets/models/orca_mid.glb"
+static var mid_orca := not "--classic-orca" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(MID_ORCA_GLB)
+
+
 ## An orca one unit long (+Z forward, nose at z = 0.5), drawn per animal by Cetaceans'
 ## multimesh and scaled to its length. The dorsal fin's vertices carry alpha < 1:
 ## cetacean.gdshader raises them to each animal's fin height and sweeps them back (a
 ## bull's fin stands tall and straight, a cow's is shorter and curved). It also beats
 ## the tail. Belly, chin, eye patch and flank are white, the saddle grey.
 static func orca() -> ArrayMesh:
+	if mid_orca:
+		return _cached("orca_mid", func(): return _gltf_mesh(MID_ORCA_GLB, "orca"))
 	return _cached("orca", func():
 		var mb := MeshBuilder.new()
 		var black := Color(0.05, 0.055, 0.065)
@@ -919,7 +993,78 @@ static func ferry_lights(fc: FerryClass) -> ArrayMesh:
 		return gb.commit())
 
 
+## Sailboats use the mid-poly sloop modelled in Blender (MID_SAILBOAT_GLB, source
+## art/sailboat_mid.blend). The original code-built sloop below is the fallback: with
+## the `--classic-sailboat` launch flag, or if the model is missing.
+const MID_SAILBOAT_GLB := "res://assets/models/sailboat_mid.glb"
+static var mid_sailboat := not "--classic-sailboat" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(MID_SAILBOAT_GLB)
+const MID_SAILBOAT_HULL := ["hull", "deckfittings", "keel", "mast", "rigging"]
+# The mid-poly jib sets on a real forestay, so it hinges on a different line.
+const MID_JIB_TACK := Vector3(0, 0.62, 1.976)
+const MID_JIB_HEAD := Vector3(0, 3.55, 0.391)
+
+
+static func jib_tack() -> Vector3:
+	return MID_JIB_TACK if mid_sailboat else SAIL_JIB_TACK
+
+
+static func jib_head() -> Vector3:
+	return MID_JIB_HEAD if mid_sailboat else SAIL_JIB_HEAD
+
+
+## The parts of an imported glTF model named in `parts` (node names lower-cased, spaces
+## and underscores dropped), merged in their own frames into one MeshBuilder so they
+## take the shared material. glTF vertex colours are linear; the shader wants sRGB.
+static func _gltf_parts(path: String, parts: Array) -> MeshBuilder:
+	var mb := MeshBuilder.new()
+	var root := (load(path) as PackedScene).instantiate()
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var key := String(n.name).to_lower().replace(" ", "").replace("_", "")
+		if not key in parts:
+			continue
+		var mesh: Mesh = (n as MeshInstance3D).mesh
+		for s in mesh.get_surface_count():
+			var arr := mesh.surface_get_arrays(s)
+			var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var nrm: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+			var col: PackedColorArray = arr[Mesh.ARRAY_COLOR] if arr[Mesh.ARRAY_COLOR] != null else PackedColorArray()
+			var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+			var count := idx.size() if not idx.is_empty() else v.size()
+			for k in count:
+				var i := idx[k] if not idx.is_empty() else k
+				mb.verts.append(v[i])
+				mb.normals.append(nrm[i])
+				mb.colors.append(col[i].linear_to_srgb() if not col.is_empty() else WHITE)
+	root.free()
+	return mb
+
+
+## One part of an imported glTF model as it is (smooth normals, UVs, indices), its
+## vertex colours turned sRGB for the shaders. No shadow mesh.
+static func _gltf_mesh(path: String, part: String) -> ArrayMesh:
+	var root := (load(path) as PackedScene).instantiate()
+	var mesh := ArrayMesh.new()
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		if String(n.name).to_lower().replace(" ", "").replace("_", "") != part:
+			continue
+		var arr := (n as MeshInstance3D).mesh.surface_get_arrays(0)
+		var col: PackedColorArray = arr[Mesh.ARRAY_COLOR]
+		for i in col.size():
+			col[i] = col[i].linear_to_srgb()
+		arr[Mesh.ARRAY_COLOR] = col
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		mesh.surface_set_material(0, vc_material())
+	root.free()
+	return mesh
+
+
 static func sailboat() -> ArrayMesh:
+	if mid_sailboat:
+		return _cached("sailboat_mid", func():
+			var mb := _gltf_parts(MID_SAILBOAT_GLB, MID_SAILBOAT_HULL)
+			add_lantern(mb, SAIL_MAST_TOP, GlowBuilder.LED, SAIL_LANTERN)
+			return mb.commit())
 	return _cached("sailboat", func():
 		var mb := MeshBuilder.new()
 		var hull := PackedVector2Array([Vector2(-0.6, -1.6), Vector2(0.6, -1.6), Vector2(0.65, 0.6), Vector2(0.0, 2.0), Vector2(-0.65, 0.6)])
@@ -937,6 +1082,8 @@ const SAIL_JIB_HEAD := Vector3(0, 3.6, 0.35)
 
 
 static func sailboat_main() -> ArrayMesh:
+	if mid_sailboat:
+		return _cached("sailboat_main_mid", func(): return _gltf_parts(MID_SAILBOAT_GLB, ["mainsail"]).commit())
 	return _cached("sailboat_main", func():
 		var mb := MeshBuilder.new()
 		var a := Vector3(0, 0.7, 0)
@@ -949,6 +1096,8 @@ static func sailboat_main() -> ArrayMesh:
 
 
 static func sailboat_jib() -> ArrayMesh:
+	if mid_sailboat:
+		return _cached("sailboat_jib_mid", func(): return _gltf_parts(MID_SAILBOAT_GLB, ["jib"]).commit())
 	return _cached("sailboat_jib", func():
 		var mb := MeshBuilder.new()
 		var head := SAIL_JIB_HEAD - SAIL_JIB_TACK
@@ -960,6 +1109,11 @@ static func sailboat_jib() -> ArrayMesh:
 
 ## The sailboat at its berth: sails stowed along the boom.
 static func sailboat_furled() -> ArrayMesh:
+	if mid_sailboat:
+		return _cached("sailboat_furled_mid", func():
+			var mb := _gltf_parts(MID_SAILBOAT_GLB, MID_SAILBOAT_HULL + ["furled"])
+			add_lantern(mb, SAIL_MAST_TOP, GlowBuilder.LED, SAIL_LANTERN)
+			return mb.commit())
 	return _cached("sailboat_furled", func():
 		var mb := MeshBuilder.new()
 		var hull := PackedVector2Array([Vector2(-0.6, -1.6), Vector2(0.6, -1.6), Vector2(0.65, 0.6), Vector2(0.0, 2.0), Vector2(-0.65, 0.6)])
@@ -1574,6 +1728,52 @@ const TUG_SIDELIGHT := Vector3(1.56, 4.7, 2.9)
 const TUG_HULLS := [Color(0.1, 0.1, 0.11), Color(0.62, 0.15, 0.12), Color(0.13, 0.22, 0.36)]
 const TUG_HOUSES := [Color(0.94, 0.95, 0.94), Color(0.94, 0.95, 0.94), Color(0.9, 0.84, 0.62)]
 const TUG_STACKS := [Color(0.86, 0.33, 0.1), Color(0.1, 0.1, 0.11), Color(0.75, 0.15, 0.13)]
+const TUG_STERN_LIGHT := Vector3(0, 1.4, -7.08)
+
+## Tugs use the mid-poly escort tug modelled in Blender (MID_TUG_GLB, source
+## art/tug_mid.py / tug_mid.blend). The code-built tug below is the fallback: with the
+## `--classic-tug` launch flag, or if the model is missing. The glb's livery parts
+## (hull, house, stack) are recoloured per variant; its glass parts get their alpha.
+const MID_TUG_GLB := "res://assets/models/tug_mid.glb"
+static var mid_tug := not "--classic-tug" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(MID_TUG_GLB)
+const MID_TUG_MAST := Vector3(0, 8.05, 1.25)
+# Sidelight lamps (add_sidelight) on the wheelhouse sides, below the windows.
+const MID_TUG_SIDELIGHT := Vector3(1.5, 3.95, 2.6)
+const MID_TUG_SIDELIGHT_SCALE := 1.2
+const MID_TUG_STERN_LIGHT := Vector3(0, 2.02, -7.11)
+
+
+static func _tug_mast() -> Vector3:
+	return MID_TUG_MAST if mid_tug else TUG_MAST
+
+
+## Where the port (+x, red) sidelight's glow sits; the starboard one mirrors it.
+static func _tug_sidelight() -> Vector3:
+	return sidelight_glow_at(MID_TUG_SIDELIGHT, 1.0, MID_TUG_SIDELIGHT_SCALE) if mid_tug else TUG_SIDELIGHT
+
+
+static func _tug_stern_light() -> Vector3:
+	return MID_TUG_STERN_LIGHT if mid_tug else TUG_STERN_LIGHT
+
+
+## The mid-poly tug in `variant`'s livery.
+static func _mid_tug(variant: int) -> MeshBuilder:
+	var mb := _gltf_parts(MID_TUG_GLB, ["fixed"])
+	var paint := {"hull": TUG_HULLS[variant % TUG_HULLS.size()], "house": TUG_HOUSES[variant % TUG_HOUSES.size()],
+		"stack": TUG_STACKS[variant % TUG_STACKS.size()], "glass": WINDOW_LIT, "window": WINDOW,
+		"lens": lamp_glass(GlowBuilder.LED)}
+	for part: String in paint:
+		var p := _gltf_parts(MID_TUG_GLB, [part])
+		mb.verts.append_array(p.verts)
+		mb.normals.append_array(p.normals)
+		for i in p.verts.size():
+			mb.colors.append(paint[part])
+	add_lantern(mb, MID_TUG_MAST, GlowBuilder.LED, TUG_LANTERN)
+	for sx: float in [-1.0, 1.0]:
+		add_sidelight(mb, Vector3(sx * MID_TUG_SIDELIGHT.x, MID_TUG_SIDELIGHT.y, MID_TUG_SIDELIGHT.z), sx, 1.0,
+			MID_TUG_SIDELIGHT_SCALE)
+	return mb
 
 
 static func _tug_outline(grow := 0.0) -> PackedVector2Array:
@@ -1588,6 +1788,8 @@ static func _tug_outline(grow := 0.0) -> PackedVector2Array:
 
 ## A tug; `variant` picks its colours.
 static func tug(variant: int) -> ArrayMesh:
+	if mid_tug:
+		return _cached("tug_mid_%d" % variant, func(): return _mid_tug(variant).commit())
 	return _cached("tug_%d" % variant, func():
 		var mb := MeshBuilder.new()
 		var hull: Color = TUG_HULLS[variant % TUG_HULLS.size()]
@@ -1633,7 +1835,7 @@ static func tug(variant: int) -> ArrayMesh:
 			mb.box(Vector3(x * 1.9, 2.4, -5.8), Vector3(0.3, 2.2, 0.3), stack)
 			mb.cylinder(Vector3(x * 1.4, 1.3, -6.3), 0.2, 0.2, 0.5, 8, steel)
 		mb.box(Vector3(0, 3.5, -5.8), Vector3(4.1, 0.3, 0.3), stack)
-		mb.box(Vector3(0, 1.4, -7.02), Vector3(0.18, 0.14, 0.04), lamp_glass(GlowBuilder.LED))
+		mb.box(TUG_STERN_LIGHT + Vector3(0, 0, 0.06), Vector3(0.18, 0.14, 0.04), lamp_glass(GlowBuilder.LED))
 		return mb.commit())
 
 
@@ -1641,11 +1843,15 @@ static func tug_lights() -> ArrayMesh:
 	return _cached("tug_lights", func():
 		var gb := GlowBuilder.new()
 		var window := Color(1.0, 0.74, 0.42)
-		for x: float in [-1.55, 1.55]:
+		# The wheelhouse windows (the mid-poly one runs further aft, raked out forward).
+		var y := 4.65 if mid_tug else 4.62
+		var z0 := 1.0 if mid_tug else 1.3
+		var front := 3.6 if mid_tug else 3.55
+		for x: float in [-1.56, 1.56]:
 			for i in 3:
-				gb.reflection(Vector3(x, 4.62, 1.3 + i * 0.9), window, 0.2, 1.6, Vector3(signf(x), 0, 0))
+				gb.reflection(Vector3(x, y, z0 + i * 0.9), window, 0.2, 1.6, Vector3(signf(x), 0, 0))
 		for i in 3:
-			gb.reflection(Vector3(-1.0 + i, 4.62, 3.55), window, 0.2, 1.6, Vector3(0, 0, 1))
+			gb.reflection(Vector3(-1.0 + i, y, front), window, 0.2, 1.6, Vector3(0, 0, 1))
 		return gb.commit())
 
 
@@ -1653,9 +1859,12 @@ static func tug_lights() -> ArrayMesh:
 static func tug_nav_lights() -> ArrayMesh:
 	return _cached("tug_nav", func():
 		var gb := GlowBuilder.new()
-		gb.glow(Vector3(TUG_SIDELIGHT.x, TUG_SIDELIGHT.y, TUG_SIDELIGHT.z + 0.1), GlowBuilder.RED, 0.18, 6.0, true, 0.0, Vector3(1, 0, 0.8), 0.0)
-		gb.glow(Vector3(-TUG_SIDELIGHT.x, TUG_SIDELIGHT.y, TUG_SIDELIGHT.z + 0.1), GlowBuilder.GREEN, 0.18, 6.0, true, 0.0, Vector3(-1, 0, 0.8), 0.0)
-		gb.glow(Vector3(0, 1.4, -7.08), GlowBuilder.LED, 0.12, 4.0, true, 0.0, Vector3(0, 0, -1), 0.0)
+		var sl := _tug_sidelight()
+		if not mid_tug:
+			sl.z += 0.1
+		gb.glow(Vector3(sl.x, sl.y, sl.z), GlowBuilder.RED, 0.18, 6.0, true, 0.0, Vector3(1, 0, 0.8), 0.0)
+		gb.glow(Vector3(-sl.x, sl.y, sl.z), GlowBuilder.GREEN, 0.18, 6.0, true, 0.0, Vector3(-1, 0, 0.8), 0.0)
+		gb.glow(_tug_stern_light(), GlowBuilder.LED, 0.12, 4.0, true, 0.0, Vector3(0, 0, -1), 0.0)
 		return gb.commit())
 
 
@@ -1663,7 +1872,7 @@ static func tug_nav_lights() -> ArrayMesh:
 static func tug_mast_light() -> ArrayMesh:
 	return _cached("tug_mast", func():
 		var gb := GlowBuilder.new()
-		gb.glow(lantern_glow_at(TUG_MAST, TUG_LANTERN), GlowBuilder.LED, 0.2, 7.0, true, 0.0, Vector3.ZERO, 0.0)
+		gb.glow(lantern_glow_at(_tug_mast(), TUG_LANTERN), GlowBuilder.LED, 0.2, 7.0, true, 0.0, Vector3.ZERO, 0.0)
 		return gb.commit())
 
 

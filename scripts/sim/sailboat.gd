@@ -58,7 +58,7 @@ func setup(t: MarineTraffic, nm: String, sp: VesselSpec, m: MapData.Marina, b: i
 	_hull.add_child(_main)
 	_jib = MeshInstance3D.new()
 	_jib.mesh = Models.sailboat_jib()
-	_jib.position = Models.SAIL_JIB_TACK
+	_jib.position = Models.jib_tack()
 	_hull.add_child(_jib)
 	_moor()
 
@@ -309,9 +309,15 @@ func _pose(delta: float) -> void:
 	_sheet = move_toward(_sheet, sheet, 1.4 * delta)
 	var heel := -0.13 * lee * clampf(speed / cruise, 0.0, 1.0) * clampf(sin(off) * 1.3, 0.3, 1.0) if sails else 0.0
 	_heel = move_toward(_heel, heel, 0.15 * delta)
-	_main.basis = Basis(Vector3.UP, -_sheet)
-	var stay := (Models.SAIL_JIB_HEAD - Models.SAIL_JIB_TACK).normalized()
-	_jib.basis = Basis(stay, -clampf(_sheet, -0.8, 0.8))
+	# Cambered sails (cut with their belly to +x) are mirrored to bulge to leeward,
+	# flattening as they swing across through the wind.
+	var belly := Basis.IDENTITY
+	if Models.mid_sailboat:
+		var f := clampf(_sheet / 0.12, -1.0, 1.0)
+		belly = Basis.from_scale(Vector3(f if absf(f) > 0.1 else 0.1 * signf(f + 1e-6), 1, 1))
+	_main.basis = Basis(Vector3.UP, -_sheet) * belly
+	var stay := (Models.jib_head() - Models.jib_tack()).normalized()
+	_jib.basis = Basis(stay, -clampf(_sheet, -0.8, 0.8)) * belly
 	basis = Basis(Vector3.UP, _yaw) * Basis(Vector3.BACK, _heel + sin(_bob * 1.2) * 0.03)
 
 
