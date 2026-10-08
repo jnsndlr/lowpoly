@@ -49,6 +49,7 @@ const BUOY_LAMP_Y := 1.65
 const BUOY_LANTERN := 1.1
 
 static var _vc_mat: ShaderMaterial
+static var _hull_mat: ShaderMaterial
 static var _cache := {}
 
 
@@ -57,6 +58,15 @@ static func vc_material() -> ShaderMaterial:
 		_vc_mat = ShaderMaterial.new()
 		_vc_mat.shader = load("res://shaders/lit_vc.gdshader")
 	return _vc_mat
+
+
+## The same for a vessel's or ferry's hull, as its material_override: this one takes
+## the per-instance room_seed and nav_flip (which only hulls set; see lit_vc.gdshaderinc).
+static func hull_material() -> ShaderMaterial:
+	if _hull_mat == null:
+		_hull_mat = ShaderMaterial.new()
+		_hull_mat.shader = load("res://shaders/lit_vc_hull.gdshader")
+	return _hull_mat
 
 
 static func unshaded_material() -> StandardMaterial3D:

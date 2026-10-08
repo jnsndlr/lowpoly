@@ -78,6 +78,7 @@ func setup(s: Simulation, r: MapData.Route, nm: String, size: int) -> void:
 	hull = MeshInstance3D.new()
 	hull.mesh = Models.ferry(fc)
 	# Fixes which of its rooms are lit (lit_vc.gdshader); the origin would change every frame.
+	hull.material_override = Models.hull_material()
 	hull.set_instance_shader_parameter("room_seed", randf_range(1.0, 1000.0))
 	add_child(hull)
 	_place(-_inset)

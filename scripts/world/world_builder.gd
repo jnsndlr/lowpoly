@@ -108,24 +108,24 @@ func _multimesh(mesh: Mesh, xforms: Array[Transform3D], colors: Array[Color], no
 	var levels: Array = Models.tree_lod_levels(variant) if not variant.is_empty() else [[mesh, 0.0, 0.0]]
 	for key: Vector2i in tiles:
 		var idx: Array = tiles[key]
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_colors = not colors.is_empty()
-		mm.mesh = mesh
-		mm.instance_count = idx.size()
-		for j in idx.size():
-			mm.set_instance_transform(j, xforms[idx[j]])
-			if mm.use_colors:
-				mm.set_instance_color(j, colors[idx[j]])
+		# Each level gets its own MultiMesh, filled afresh: duplicate() copies the
+		# instance buffer, which the headless renderer hands back empty.
+		var make := func(m: Mesh) -> MultiMesh:
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.use_colors = not colors.is_empty()
+			mm.mesh = m
+			mm.instance_count = idx.size()
+			for j in idx.size():
+				mm.set_instance_transform(j, xforms[idx[j]])
+				if mm.use_colors:
+					mm.set_instance_color(j, colors[idx[j]])
+			return mm
 		var base := "%s_%d_%d" % [node_name, key.x, key.y]
 		for l in levels.size():
 			var lv: Array = levels[l]
 			var mmi := MultiMeshInstance3D.new()
-			if l == 0:
-				mmi.multimesh = mm
-			else:
-				mmi.multimesh = mm.duplicate() as MultiMesh
-				mmi.multimesh.mesh = lv[0]
+			mmi.multimesh = make.call(lv[0] if l > 0 else mesh)
 			mmi.visibility_range_begin = lv[1]
 			mmi.visibility_range_end = lv[2]
 			mmi.name = base if l == 0 else "%s_lod%d" % [base, l]
@@ -136,8 +136,7 @@ func _multimesh(mesh: Mesh, xforms: Array[Transform3D], colors: Array[Color], no
 				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		if levels.size() > 1:
 			var shade := MultiMeshInstance3D.new()
-			shade.multimesh = mm.duplicate() as MultiMesh
-			shade.multimesh.mesh = levels[-1][0]
+			shade.multimesh = make.call(levels[-1][0])
 			shade.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 			shade.visibility_range_end = levels[-1][1]
 			shade.name = base + "_shadow"
