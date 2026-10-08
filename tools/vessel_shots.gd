@@ -2,7 +2,7 @@ extends SceneTree
 ## Renders the motor yachts, pilot boats and tugs at work (fast-forwarding until
 ## each thing happens), for checking by eye: a yacht on the plane and at anchor
 ## in a cove by day and night, a pilot boat running out to a ship and alongside
-## it, a tug escorting a tanker, and the pilot station.
+## it, a tug escorting a tanker, the pilot station, and a container ship under way.
 ##   godot --path . --resolution 1600x900 --script tools/vessel_shots.gd -- --seed=123 --out=/some/dir [--only=name,name]
 
 var main: Node
@@ -26,6 +26,10 @@ var shots := [
 	["pilot_night", "pilot_alongside", 1.9, 0.4, 50.0, 23.0],
 	["tug_escort", "tug_escort", 0.5, 0.55, 120.0, -1.0],
 	["tug_close", "tug_escort", 1.0, 0.3, 40.0, -1.0],
+	["boxship", "boxship", 0.9, 0.35, 95.0, 13.0],
+	["boxship_bow", "boxship", 2.5, 0.22, 50.0, 13.0],
+	["boxship_quarter", "boxship", -0.6, 0.3, 55.0, 13.0],
+	["boxship_night", "boxship", 1.1, 0.35, 85.0, 22.5],
 	["station", "station", 0.6, 0.55, 75.0, 11.0],
 	["station_night", "station", 0.6, 0.5, 75.0, 22.0],
 ]
@@ -132,6 +136,10 @@ func _find(what: String) -> Vessel:
 			for b in m.pilotage.pilot_boats:
 				if b.state == ShipTender.State.WORKING:
 					return b
+		"boxship":
+			for c in m.cargo_ships:
+				if c.spec.id in ["container", "feeder"] and c.speed > 0.5 * c.cruise:
+					return c
 		"tug_escort":
 			for t in m.pilotage.tugs:
 				if t.state == ShipTender.State.WORKING:

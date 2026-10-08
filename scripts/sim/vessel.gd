@@ -210,6 +210,11 @@ func apply_spec(s: VesselSpec, variant := 0) -> MeshInstance3D:
 	# Fixes which of its rooms are lit (lit_vc.gdshader); the origin would change every frame.
 	hull.set_instance_shader_parameter("room_seed", randf_range(1.0, 1000.0))
 	add_child(hull)
+	var plate: ArrayMesh = s.name_plate.call(vessel_name) if s.name_plate.is_valid() and vessel_name != "" else null
+	if plate:
+		var mi := MeshInstance3D.new()
+		mi.mesh = plate
+		hull.add_child(mi)
 	lights = MeshInstance3D.new()
 	lights.mesh = s.lights.call(variant)
 	lights.scale = Vector3.ONE * s.scale

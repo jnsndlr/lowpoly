@@ -43,6 +43,7 @@ var shape := Vector4(1.4, 0.0, 0.3, 0.9)
 var model: Callable
 var model_alt: Callable
 var lights: Callable
+var name_plate: Callable        # fn(name) -> ArrayMesh or null: its name painted on, if it has one
 var scale := 1.0
 var variants := 1               # how many variants `model` has
 

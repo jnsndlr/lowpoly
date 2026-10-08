@@ -41,6 +41,12 @@ func _initialize() -> void:
 		"pilot": [Models.pilot_boat(0), Vector3(0, 1.8, 0), 16.0],
 		"pilot1": [Models.pilot_boat(1), Vector3(0, 1.8, 0), 16.0],
 		"pilot2": [Models.pilot_boat(2), Vector3(0, 1.8, 0), 16.0],
+		"cargo": [Models.cargo_ship(0), Vector3(0, 7, 0), 80.0, Models.cargo_name_plate("Cascade Carrier")],
+		"cargo_bow": [Models.cargo_ship(0), Vector3(0, 3, 22), 22.0, Models.cargo_name_plate("Cascade Carrier")],
+		"cargo_box": [Models.cargo_ship(0), Vector3(3, 8, -2), 13.0],
+		"cargo_stern": [Models.cargo_ship(0), Vector3(0, 7, -27), 20.0, Models.cargo_name_plate("Cascade Carrier")],
+		"cargo1": [Models.cargo_ship(1), Vector3(0, 7, 0), 80.0],
+		"cargo2": [Models.cargo_ship(2), Vector3(0, 7, 0), 80.0],
 		"tug": [Models.tug(0), Vector3(0, 3, 0), 24.0],
 		"tug1": [Models.tug(1), Vector3(0, 3, 0), 24.0],
 		"tug2": [Models.tug(2), Vector3(0, 3, 0), 24.0],
@@ -77,6 +83,11 @@ func _process(_delta: float) -> bool:
 		mi.mesh = j[1][0]
 		mi.material_override = Models.vc_material()
 		holder.add_child(mi)
+		if j[1].size() > 3 and j[1][3] != null:
+			var extra := MeshInstance3D.new()
+			extra.mesh = j[1][3]
+			extra.material_override = Models.vc_material()
+			holder.add_child(extra)
 		var target: Vector3 = j[1][1]
 		var d: float = j[1][2] * dist_k
 		var yaw: float = j[2]

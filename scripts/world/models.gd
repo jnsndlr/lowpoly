@@ -1173,6 +1173,8 @@ const CONTAINERS := [Color(0.62, 0.2, 0.15), Color(0.18, 0.33, 0.6), Color(0.2, 
 ## A container ship about 64 m long and 11 m in the beam, its accommodation block
 ## aft. `variant` picks the funnel colour and how the boxes are stacked.
 static func cargo_ship(variant: int) -> ArrayMesh:
+	if mid_cargo:
+		return _cached("cargo_mid_%d" % variant, func(): return _mid_cargo(variant).commit())
 	return _cached("cargo_%d" % variant, func():
 		var mb := MeshBuilder.new()
 		var topsides := Color(0.12, 0.16, 0.24)
@@ -1321,8 +1323,256 @@ static func _cargo_hull(mb: MeshBuilder, topsides: Color, deck: Color, funnel: C
 	add_lantern(mb, CARGO_FORE_MAST, GlowBuilder.LED, CARGO_LANTERN)
 
 
-## Masthead, stern and sidelights and the lit bridge's reflection, in the ship's frame.
-static func cargo_ship_lights() -> ArrayMesh:
+## Container ships use the mid-poly feeder modelled in Blender (MID_CARGO_GLB, source
+## art/cargo_mid.py / cargo_mid.blend, which also writes CargoMidData: the glyph
+## advances, the bow's surface and the container slots). The code-built one above is
+## the fallback: with the `--classic-cargo` launch flag, or if the model is missing.
+## Tankers and bulk carriers stay on the code-built hull for now.
+const MID_CARGO_GLB := "res://assets/models/cargo_mid.glb"
+static var mid_cargo := not "--classic-cargo" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(MID_CARGO_GLB)
+const MID_CARGO_HULLS := [Color(0.12, 0.16, 0.24), Color(0.1, 0.1, 0.11), Color(0.42, 0.12, 0.1)]
+# How often each line's boxes turn up (CargoMidData.LINES order); the leasing boxes last.
+const MID_CARGO_LINE_WEIGHTS := [1.0, 1.0, 1.0, 1.0, 0.8, 0.8, 0.7, 0.7, 0.9, 0.6, 0.5]
+const MID_CARGO_SIDELIGHT_SCALE := 1.4
+const MID_CARGO_NAME_CAP := 0.8
+const MID_CARGO_REGISTRIES := ["NASSAU", "MAJURO", "MONROVIA", "VALLETTA", "LIMASSOL"]
+static var _gltf_libs := {}
+
+
+## Every part of an imported glTF model by key (named as _gltf_parts names them), each
+## a MeshBuilder holding its triangles with sRGB colours; loaded once per file.
+static func _gltf_library(path: String) -> Dictionary:
+	if _gltf_libs.has(path):
+		return _gltf_libs[path]
+	var lib := {}
+	var root := (load(path) as PackedScene).instantiate()
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var key := String(n.name).to_lower().replace(" ", "").replace("_", "")
+		lib[key] = _gltf_parts_of(n as MeshInstance3D)
+	root.free()
+	_gltf_libs[path] = lib
+	return lib
+
+
+static func _gltf_parts_of(n: MeshInstance3D) -> MeshBuilder:
+	var mb := MeshBuilder.new()
+	for s in n.mesh.get_surface_count():
+		var arr := n.mesh.surface_get_arrays(s)
+		var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var nrm: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+		var col: PackedColorArray = arr[Mesh.ARRAY_COLOR] if arr[Mesh.ARRAY_COLOR] != null else PackedColorArray()
+		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		var count := idx.size() if not idx.is_empty() else v.size()
+		for k in count:
+			var i := idx[k] if not idx.is_empty() else k
+			mb.verts.append(v[i])
+			mb.normals.append(nrm[i])
+			mb.colors.append(col[i].linear_to_srgb() if not col.is_empty() else WHITE)
+	return mb
+
+
+## Appends `part` to `mb` moved by `xf` (rigid, or uniformly scaled), its colours multiplied by
+## `tint`, or all painted `paint` if that is given.
+static func _append_part(mb: MeshBuilder, part: MeshBuilder, xf: Transform3D, tint := Color.WHITE,
+		paint := Color(-1, 0, 0)) -> void:
+	mb.verts.append_array(xf * part.verts)
+	mb.normals.append_array(Transform3D(xf.basis.orthonormalized(), Vector3.ZERO) * part.normals)
+	if paint.r >= 0.0:
+		var c := PackedColorArray()
+		c.resize(part.colors.size())
+		c.fill(paint)
+		mb.colors.append_array(c)
+	elif tint == Color.WHITE:
+		mb.colors.append_array(part.colors)
+	else:
+		for c in part.colors:
+			mb.colors.append(c * tint)
+
+
+## The mid-poly container ship in `variant`'s livery, loaded as the variant stows it.
+static func _mid_cargo(variant: int) -> MeshBuilder:
+	var lib := _gltf_library(MID_CARGO_GLB)
+	var mb := MeshBuilder.new()
+	var one := Transform3D.IDENTITY
+	_append_part(mb, lib["fixed"], one)
+	var paint := {"hull": MID_CARGO_HULLS[variant % MID_CARGO_HULLS.size()],
+		"funnel": CARGO_FUNNELS[variant % CARGO_FUNNELS.size()], "glass": WINDOW_LIT, "window": WINDOW,
+		"lens": lamp_glass(GlowBuilder.LED)}
+	for part: String in paint:
+		_append_part(mb, lib[part], one, Color.WHITE, paint[part])
+	add_lantern(mb, CargoMidData.FORE_MAST, GlowBuilder.LED, CARGO_LANTERN)
+	add_lantern(mb, CargoMidData.AFT_MAST, GlowBuilder.LED, CARGO_LANTERN)
+	for sx: float in [-1.0, 1.0]:
+		var sl := CargoMidData.SIDELIGHT
+		add_sidelight(mb, Vector3(sx * sl.x, sl.y, sl.z), sx, 1.0, MID_CARGO_SIDELIGHT_SCALE)
+	_stow_containers(mb, lib, variant)
+	return mb
+
+
+## Stows the deck cargo for `variant`: in each of the three hatches, each row takes a
+## stack of forty-footers or two of twenty-footers; how high is picked per hatch and
+## varied per stack. Only the sides and roofs not hidden by a neighbour are built.
+static func _stow_containers(mb: MeshBuilder, lib: Dictionary, variant: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = 7019 + variant * 131
+	var lines: Array = CargoMidData.LINES
+	# A feeder on charter carries mostly its charterer's boxes.
+	var weights: Array = MID_CARGO_LINE_WEIGHTS.duplicate()
+	weights[variant * 3 % 8] = 4.0
+	var tiers_lo := 1 if variant % 3 != 1 else 2
+	var tiers_hi := 3
+	var cols := CargoMidData.COL_X.size()
+	# Stacks: [hatch, column, half (-1: a forty-footer, 0/1: aft/fore twenty), tiers].
+	var stacks: Array = []
+	# occ[hatch][column][half][tier]: whether that twenty-foot space is filled.
+	var occ := {}
+	for h in CargoMidData.HATCH_Z.size():
+		var base := r.randi_range(tiers_lo, tiers_hi)
+		for c in cols:
+			var forty := r.randf() < 0.6
+			for half: int in ([-1] if forty else [0, 1]):
+				var t := clampi(base + r.randi_range(-1, 1) if r.randf() < 0.45 else base, 0, 3)
+				# The outer rows forward sit a tier lower, for the bridge's view over the bow.
+				if h == CargoMidData.HATCH_Z.size() - 1 and (c == 0 or c == cols - 1):
+					t = mini(t, 2)
+				stacks.append([h, c, half, t])
+				for ti in t:
+					for hh: int in ([0, 1] if half < 0 else [half]):
+						occ[Vector4i(h, c, hh, ti)] = true
+	for st: Array in stacks:
+		var h: int = st[0]
+		var c: int = st[1]
+		var half: int = st[2]
+		var halves: Array = [0, 1] if half < 0 else [half]
+		var z: float = CargoMidData.HATCH_Z[h] + (0.0 if half < 0 else (half - 0.5) * CargoMidData.BAY_PITCH)
+		for ti in st[3]:
+			var line: String = lines[_pick_weighted(weights, r)]
+			var tag := "c20" if half >= 0 else "c40"
+			if half < 0 and line in CargoMidData.REEFERS and r.randf() < 0.3:
+				tag = "c40r"
+			var key := tag + line
+			var tint := Color.WHITE.darkened(r.randf() * 0.14)
+			var at := Vector3(CargoMidData.COL_X[c], CargoMidData.COVER_TOP + ti * CargoMidData.CONTAINER_H, z)
+			var doors_aft := r.randf() < 0.5
+			var turn := Basis(Vector3.UP, PI)
+			_append_part(mb, lib[key + "body"], Transform3D(turn if doors_aft else Basis.IDENTITY, at), tint)
+			if not _stowed(occ, h, c, halves, ti + 1):
+				_append_part(mb, lib[key + "roof"], Transform3D(Basis.IDENTITY, at), tint)
+			# The +X side as modelled; turned round for the -X one.
+			if c == cols - 1 or not _stowed(occ, h, c + 1, halves, ti):
+				_append_part(mb, lib[key + "side"], Transform3D(Basis.IDENTITY, at), tint)
+			if c == 0 or not _stowed(occ, h, c - 1, halves, ti):
+				_append_part(mb, lib[key + "side"], Transform3D(turn, at), tint)
+
+
+static func _stowed(occ: Dictionary, h: int, c: int, halves: Array, tier: int) -> bool:
+	for hh: int in halves:
+		if not occ.has(Vector4i(h, c, hh, tier)):
+			return false
+	return true
+
+
+static func _pick_weighted(weights: Array, r: RandomNumberGenerator) -> int:
+	var total := 0.0
+	for w: float in weights:
+		total += w
+	var x := r.randf() * total
+	for i in weights.size():
+		x -= weights[i]
+		if x <= 0.0:
+			return i
+	return weights.size() - 1
+
+
+## The ship's name in white capitals on both bows and across the transom, the port of
+## registry under it there; in the ship's frame, for the mid-poly container ship.
+static func cargo_name_plate(ship_name: String) -> ArrayMesh:
+	if not mid_cargo:
+		return null
+	return _cached("cargo_name_" + ship_name, func():
+		var lib := _gltf_library(MID_CARGO_GLB)
+		var mb := MeshBuilder.new()
+		var text := ship_name.to_upper()
+		var cap := MID_CARGO_NAME_CAP
+		# Down each bow from abaft the draft marks, where the bow is still fair, reading
+		# left to right from outside: aft on the port (+X) side, forward on the starboard.
+		var bow: Array = CargoMidData.BOW
+		var width := _text_width(text) * cap * 1.06
+		var fwd := bow.size() - 5
+		for sx: float in [1.0, -1.0]:
+			var pen := 0.0 if sx > 0.0 else -width
+			for ch in text:
+				var adv: float = CargoMidData.ADVANCE.get(ch, CargoMidData.ADVANCE[" "]) * cap * 1.06
+				if lib.has("gl" + ch.to_lower()):
+					# Distance aft of the forward end: walk the table to the glyph's middle.
+					var d := absf(pen + adv * 0.5)
+					var f := clampf(fwd - d / 0.4, 0.0, fwd - 0.001)
+					var i := int(f)
+					var a: Array = bow[i]
+					var b: Array = bow[i + 1]
+					var p: Vector3 = (a[0] as Vector3).lerp(b[0], f - i)
+					var n: Vector3 = (a[1] as Vector3).lerp(b[1], f - i).normalized()
+					p.x *= sx
+					n.x *= sx
+					var x := (Vector3(0, 0, -sx)).slide(n).normalized()
+					var y := n.cross(x).normalized()
+					x = y.cross(n)
+					var o := p + n * 0.03 - x * adv * 0.5 / 1.06 - y * cap * 0.5
+					_append_part(mb, lib["gl" + ch.to_lower()], Transform3D(Basis(x * cap, y * cap, n * cap), o))
+				pen += adv
+		# The transom, facing aft: the name, the port of registry smaller under it.
+		var port: String = MID_CARGO_REGISTRIES[absi(hash(ship_name)) % MID_CARGO_REGISTRIES.size()]
+		for row: Array in [[text, 0.62, 2.55], [port, 0.42, 1.65]]:
+			var s: float = row[1]
+			var w := _text_width(row[0]) * s * 1.06
+			var pen := w * 0.5
+			for ch: String in row[0]:
+				var adv: float = CargoMidData.ADVANCE.get(ch, CargoMidData.ADVANCE[" "]) * s * 1.06
+				if lib.has("gl" + ch.to_lower()):
+					var o := Vector3(pen, row[2] - s * 0.5, CargoMidData.TRANSOM_Z - 0.03)
+					_append_part(mb, lib["gl" + ch.to_lower()],
+						Transform3D(Basis(Vector3(-s, 0, 0), Vector3(0, s, 0), Vector3(0, 0, -s)), o))
+				pen -= adv
+		return mb.commit())
+
+
+static func _text_width(text: String) -> float:
+	var w := 0.0
+	for ch in text:
+		w += CargoMidData.ADVANCE.get(ch, CargoMidData.ADVANCE[" "])
+	return w
+
+
+## The mid-poly ship's masthead, stern and sidelights and its lit bridge's reflection.
+static func _mid_cargo_lights() -> ArrayMesh:
+	return _cached("cargo_mid_lights", func():
+		var gb := GlowBuilder.new()
+		for top: Vector3 in [CargoMidData.FORE_MAST, CargoMidData.AFT_MAST]:
+			gb.glow(lantern_glow_at(top, CARGO_LANTERN), GlowBuilder.LED, 0.35, 9.0, true, 0.0, Vector3.ZERO, 0.0)
+		var sl := CargoMidData.SIDELIGHT
+		for sx: float in [-1.0, 1.0]:
+			var w := Vector3(sx * sl.x, sl.y, sl.z)
+			gb.glow(sidelight_glow_at(w, sx, MID_CARGO_SIDELIGHT_SCALE), GlowBuilder.RED if sx > 0.0 else GlowBuilder.GREEN,
+				0.25, 7.0, true, 0.0, Vector3(sx, 0, 0.8), 0.0)
+		gb.glow(CargoMidData.STERN_LIGHT - Vector3(0, 0, 0.1), GlowBuilder.LED, 0.2, 5.0, true, 0.0, Vector3(0, 0, -1), 0.0)
+		var window := Color(1.0, 0.74, 0.42)
+		var y := CargoMidData.BRIDGE_SILL + 0.55
+		var bz := CargoMidData.BRIDGE_Z
+		for sx: float in [-1.0, 1.0]:
+			for i in 5:
+				gb.reflection(Vector3(sx * (CargoMidData.BRIDGE_HW + 0.05), y, lerpf(bz.x + 0.4, bz.y - 0.6, i / 4.0)),
+					window, 0.3, 2.2, Vector3(sx, 0, 0))
+		for i in 7:
+			gb.reflection(Vector3(-3.3 + i * 1.1, y, bz.y + 0.25), window, 0.3, 2.2, Vector3(0, 0, 1))
+		return gb.commit())
+
+
+## Masthead, stern and sidelights and the lit bridge's reflection, in the ship's frame
+## (`mid`: the mid-poly container ship's; tankers and bulk carriers pass false).
+static func cargo_ship_lights(mid := mid_cargo) -> ArrayMesh:
+	if mid:
+		return _mid_cargo_lights()
 	return _cached("cargo_lights", func():
 		var gb := GlowBuilder.new()
 		for top: Vector3 in [CARGO_FORE_MAST, CARGO_AFT_MAST]:
