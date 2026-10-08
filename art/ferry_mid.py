@@ -16,7 +16,8 @@
 # the fan room between them, a pilothouse at each end set back from the cabin's ends,
 # its mast on its roof.
 # Glass is split out for the vertex alpha the game's shader reads: `glass` (the
-# pilothouses, lit at night) and `window` (the cabin, some lit); the rest is `fixed`.
+# pilothouses and the passenger cabin, lit at night) and `window` (the crew houses,
+# some lit); the rest is `fixed`.
 #
 # Numbers the game wants (game frame, metres):
 #   CAR_DECK 2.85; lanes at x = -8.45, -1.9, 1.9, 8.45 (wing, tunnel, tunnel, wing);
@@ -526,7 +527,7 @@ def cabin_dims():
 def cabin():
     hw, ch = cabin_dims()
     base, sill, head, top = (rect(0, y, 0, hw, cabin_hd(y), ch) for y in (PAX_TOP, SILL, HEAD, ROOF))
-    loft([base, sill, head, top], lambda i, j, c: "window" if i == 1 else "white", caps=False)
+    loft([base, sill, head, top], lambda i, j, c: "glass" if i == 1 else "white", caps=False)
     # Piers between the windows, about 2.1 m apart (following the raked ends).
     pw = 0.5
     for k in range(8):
