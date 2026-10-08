@@ -16,14 +16,14 @@
 # the fan room between them, a pilothouse at each end set back from the cabin's ends,
 # its mast on its roof.
 # Glass is split out for the vertex alpha the game's shader reads: `glass` (the
-# pilothouses and the passenger cabin, lit at night) and `window` (the crew houses,
-# some lit); the rest is `fixed`.
+# pilothouses and the passenger cabin, lit at night), `window` (the crew houses, some
+# lit) and `lamp` (the lenses of the car deck's ceiling lights); the rest is `fixed`.
 #
 # Numbers the game wants (game frame, metres):
 #   CAR_DECK 2.85; lanes at x = -8.45, -1.9, 1.9, 8.45 (wing, tunnel, tunnel, wing);
 #   tunnel |x| < 4.0, casings 4.0..6.4 over |z| < CASING_Z, wings 6.4..10.5 inside the
-#   hull side; clear headroom to the deckhead 4.15 (13 ft 6 in, as signed on her; 3.83
-#   under the shallow beams and lights, so the game's trucks clear them at its scale). The
+#   hull side; clear headroom to the deckhead 4.15 (13 ft 6 in, as signed on her; 3.89
+#   under the shallow beams, so the game's trucks clear them at its scale). The
 #   hull sides round in toward the ends (half beam 9.5 at |z| 35, 7.0 at the forks'
 #   ends at 41.6), so wing cars park inside |z| ~ 36 and turn in to leave.
 #   Masthead lanterns MAST_TOP at z = +-MAST_Z; sidelights on the pilothouse sides.
@@ -40,7 +40,7 @@ PAL = {
     "yellow": (0.88, 0.7, 0.12), "bronze": (0.55, 0.42, 0.22), "apron": (0.4, 0.34, 0.29),
     "mesh": (0.72, 0.76, 0.75), "dkwall": (0.2, 0.21, 0.22), "gold": (0.78, 0.6, 0.2),
 }
-ROLES = ("glass", "window")
+ROLES = ("glass", "window", "lamp")
 UP = Vector((0, 1, 0))
 
 
@@ -426,7 +426,8 @@ def car_deck():
             box(V(x, CAR_DECK + 0.005, z + 1.0), (0.15, 0.01, 2.0), "yellow")
             z += 3.5
     # Deck beams across the deckhead (only under the forks past the walkway), curved
-    # knees where they meet the hull sides, lights between them over each lane; a big
+    # knees where they meet the hull sides, flat ceiling lights between them over each
+    # lane (a shallow housing and its lens, flush on the deckhead); a big
     # knee at each fork's end, arching the wing's entrance.
     z = -40.0
     while z <= 40.01:
@@ -440,7 +441,8 @@ def car_deck():
             knee(s, z, 0.9, 0.3)
         for x in (-8.45, -1.9, 1.9, 8.45):
             if abs(x) < hw - 1.0 and abs(z) < 41.0 and (abs(z + 2.0) < WALK_Z - 0.6 or abs(x) > FORK_X + 0.6):
-                box(V(x, PAX_DECK - 0.29, z + 2.0), (0.3, 0.06, 1.2), "lamp")
+                box(V(x, PAX_DECK - 0.03, z + 2.0), (0.7, 0.06, 1.6), "steel")
+                box(V(x, PAX_DECK - 0.075, z + 2.0), (0.56, 0.03, 1.46), "lamp")
         z += 4.0
     for e in (1, -1):
         for s in (1, -1):

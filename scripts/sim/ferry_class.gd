@@ -3,8 +3,12 @@ extends RefCounted
 ## The five sizes of double-ended car ferry, smallest (1) to largest (5): lanes and
 ## rows of cars, hull, speed, and where the fittings (masthead and side lights,
 ## deck lamps, lit windows, gull perches) sit in the hull's frame, shared by
-## Models' hull and lights and by Seagulls. Size 1 is an open-deck boat with the
-## wheelhouse up on one side; size 2 (after the M/V Hiyu) runs its cars through a
+## Models' hull and lights and by Seagulls. Size 1 is Skagit County's M/V Guemes,
+## from the mid-poly model (art/guemes_mid.py, shown at MID_SCALE like the Evergreen
+## State): an open deck of three lanes, the house down the starboard side, the
+## port lane's +Z end slot taken by the port engine room's box, its cars turning in
+## round it (`--classic-ferry` keeps the code-built open-deck boat with the
+## wheelhouse up on one side); size 2 (after the M/V Hiyu) runs its cars through a
 ## portal: passenger cabins over the two outer lanes, a bridge over the tall centre
 ## lane, and one double-ended pilothouse on top; 3 to 5 carry their passenger
 ## decks over the cars. Size 4 is the WSF Evergreen State class, from the mid-poly
@@ -28,8 +32,16 @@ const SIDELIGHT_Y := 20.94
 # the code-built size 4.
 const MID_GLB := "res://assets/models/ferry_mid.glb"
 const MID_SCALE := 1.26
-const MID_DROP := 2.85 * MID_SCALE - Layout.DECK_Y
+const MID_CAR_DECK := 2.85  # her car deck above the waterline (art/ferry_mid.py CAR_DECK)
+const MID_DROP := MID_CAR_DECK * MID_SCALE - Layout.DECK_Y
 static var mid := not "--classic-ferry" in OS.get_cmdline_user_args() and ResourceLoader.exists(MID_GLB)
+
+# The mid-poly M/V Guemes (size 1), shown and dropped like the Evergreen State; her
+# model's freeboard is raised so her car deck meets DECK_Y (MID_SCALE x 2.5 = 3.15).
+const SMALL_GLB := "res://assets/models/guemes_mid.glb"
+const SMALL_CAR_DECK := 2.5  # art/guemes_mid.py CAR_DECK
+const SMALL_DROP := SMALL_CAR_DECK * MID_SCALE - Layout.DECK_Y
+static var small := not "--classic-ferry" in OS.get_cmdline_user_args() and ResourceLoader.exists(SMALL_GLB)
 
 # size: [lanes, rows, half length, half beam, cruise, label]
 const TABLE := {
@@ -53,6 +65,9 @@ var cruise := 27.0
 var open_deck := false
 var portal := false
 var evergreen := false             # the mid-poly Evergreen State (size 4, `mid`)
+var guemes := false                # the mid-poly M/V Guemes (size 1, `small`)
+# Slots no car may take (index row * lanes + lane): the Guemes' engine room box.
+var blocked := PackedInt32Array()
 # Lanes outboard of throat_x can't run straight out over the end: they turn in to it
 # (at the end, end_z) from turn_z, beyond their last row.
 var throat_x := INF
@@ -61,6 +76,10 @@ var tall := PackedInt32Array()     # lanes with the headroom for trucks (none li
 var cols := PackedFloat32Array()   # lane centres (x), port to starboard
 var row_z := PackedFloat32Array()  # row centres (z), +Z end first
 var end_z := 42.0                  # where cars cross the hull's end
+# The nets across the car deck at ±net_z, net_half_w either side of the centreline:
+# both up under way, the one at the docked end down while cars cross it.
+var net_z := 0.0
+var net_half_w := 0.0
 # Hull outline: the sides run straight to ±(half_length - chamfer), then close in
 # to ±(half_beam - end_in) at the ends.
 var chamfer := 9.0
@@ -109,6 +128,7 @@ var lanterns := PackedVector3Array()   # masthead lantern bases
 var sidelights := []                   # [wall point, sx, sz]
 var lamps := []                        # deck lamps: [point, out]
 var windows := []                      # lit-window reflections: [point, size, energy, facing]
+var deck_lights := PackedVector3Array() # lights filling the enclosed car deck (NightLights)
 var perches := []                      # gull perches: [from, to, spread]
 
 
@@ -148,9 +168,16 @@ func _init(s: int) -> void:
 	cruise = t[4]
 	label = t[5]
 	capacity = lanes * rows
-	open_deck = s == 1
+	guemes = s == 1 and small
+	open_deck = s == 1 and not guemes
 	portal = s == 2
 	evergreen = s == 4 and mid
+	if guemes:
+		lanes = 3
+		rows = 5
+		half_length = 18.9 * MID_SCALE
+		half_beam = 7.93 * MID_SCALE
+		label = "Guemes"
 	if evergreen:
 		lanes = 4
 		rows = 11
@@ -175,6 +202,13 @@ func _init(s: int) -> void:
 		lantern_scale = 2.7
 		lamp_scale = 2.1
 		_lay_out_portal()
+	elif guemes:
+		chamfer = 15.6
+		end_in = 5.4
+		sidelight_scale = 2.7
+		lantern_scale = 2.7
+		lamp_scale = 2.1
+		_lay_out_guemes()
 	elif evergreen:
 		chamfer = 21.0
 		end_in = 7.2
@@ -183,8 +217,22 @@ func _init(s: int) -> void:
 		for i in lanes:
 			cols.append((i - (lanes - 1) * 0.5) * LANE_SPACING)
 		_lay_out_full()
+	capacity = lanes * rows - blocked.size()
 	var c := chamfer
 	hull_radius = maxf(half_beam, (half_beam * half_beam + c * c) / (2.0 * c) - 0.42)
+	if net_z == 0.0:
+		_place_nets()
+
+
+## The nets just past the end rows' cars (and inside the hull's end), from side to
+## side of the car deck there.
+func _place_nets() -> void:
+	net_z = minf(row_z[0] + 4.5, end_z - 1.5)
+	if evergreen:
+		net_half_w = (_mid_beam(net_z / MID_SCALE) - 0.45) * MID_SCALE
+	else:
+		var into := maxf(0.0, net_z - (half_length - chamfer)) / chamfer
+		net_half_w = half_beam - end_in * into - 0.6
 
 
 ## Whether lane `c` suits a truck (`truck`) or a car: trucks want the headroom,
@@ -282,9 +330,13 @@ func _lay_out_evergreen() -> void:
 		lanterns.append(_mid(0, 21.95, e * 22.5))
 		for x: float in [-1.0, 1.0]:
 			sidelights.append([_mid(x * 4.52, 12.1, e * 25.2), x, e])
-			# Deck lamps on the walkway's fascia over the tunnel and on the forks' tips.
-			lamps.append([_mid(x * 2.6, 6.62, e * 30.64), Vector3(0, 0, e)])
-			lamps.append([_mid(x * 5.85, 6.55, e * 41.62), Vector3(0, 0, e)])
+	# Lights filling the car deck under her ceiling lights: down the tunnel, and down
+	# each wing short of where the hull sides round in.
+	for z: float in [-33.0, -22.0, -11.0, 0.0, 11.0, 22.0, 33.0]:
+		deck_lights.append(_mid(0, 6.3, z))
+	for z: float in [-28.0, -14.0, 0.0, 14.0, 28.0]:
+		for x: float in [-8.3, 8.3]:
+			deck_lights.append(_mid(x, 6.3, z))
 	# Lit windows: every other one down the cabin's sides, and across its end faces.
 	for x: float in [-1.0, 1.0]:
 		var z := -26.6
@@ -308,6 +360,60 @@ func _lay_out_evergreen() -> void:
 	for x: float in [-1.0, 1.0]:
 		perches.append([_mid(x * 10.35, 11.8, -27.5), _mid(x * 10.35, 11.8, 27.5), 0.0])
 		perches.append([_mid(x * 4.2, 14.82, -0.6), _mid(x * 4.2, 14.82, 0.6), 0.0])
+
+
+## A point in the Guemes model (metres, waterline at 0) in the hull's frame.
+static func _small(x: float, y: float, z: float) -> Vector3:
+	return Vector3(x, y, z) * MID_SCALE - Vector3(0, SMALL_DROP, 0)
+
+
+## The Guemes model's half beam at the deck at |z| (art/guemes_mid.py deck_x).
+static func _small_beam(z: float) -> float:
+	var t := clampf((absf(z) - 6.5) / 12.22, 0.0, 1.0)
+	return 7.75 * pow(maxf(0.0, 1.0 - pow(t, 2.6)), 1.0 / 2.6)
+
+
+func _lay_out_guemes() -> void:
+	var k := MID_SCALE
+	var d := SMALL_CAR_DECK
+	cols = PackedFloat32Array([-5.2 * k, -1.63 * k, 1.94 * k])
+	# The port lane's +Z end slot is the port engine room's; the lane's cars turn
+	# in past its last row to clear the box on their way over that end (and the
+	# other, alike).
+	blocked = PackedInt32Array([0])
+	net_z = 15.2 * k
+	net_half_w = (_small_beam(15.2) - 0.2) * k
+	throat_x = 2.0 * k
+	turn_z = 8.6 * k
+	lanterns.append(_small(5.75, d + 13.3, 0))
+	for e: float in [-1.0, 1.0]:
+		for x: float in [-1.0, 1.0]:
+			sidelights.append([_small(5.75 + x * 1.62, d + 5.5, e * 1.6), x, e])
+	# Deck lamps on the house's inboard face and the corner panels opposite it.
+	for e: float in [-1.0, 1.0]:
+		lamps.append([_small(3.95, d + 2.9, e * 9.0), Vector3(-1, 0, 0)])
+		lamps.append([_small(-(_small_beam(12.6) - 0.2), d + 1.95, e * 12.6), Vector3(1, 0, 0)])
+	# Lit windows: the cabin's toward the cars and outboard, the pilothouse's.
+	for z: float in [-4.0, -2.0, 0.0, 2.0, 4.0]:
+		windows.append([_small(3.9, d + 1.8, z), 0.75, 1.6, Vector3(-1, 0, 0)])
+	for e: float in [-1.0, 1.0]:
+		for z: float in [0.9, 1.65, 4.6, 5.35, 8.2]:
+			windows.append([_small(7.6, d + 1.85, e * z), 0.6, 1.6, Vector3(1, 0, 0)])
+		windows.append([_small(5.75, d + 6.4, e * 2.75), 0.9, 1.4, Vector3(0, 0, e)])
+	for x: float in [-1.0, 1.0]:
+		windows.append([_small(5.75 + x * 1.8, d + 6.4, 0), 0.9, 1.4, Vector3(x, 0, 0)])
+	# Perches: the pilothouse roof, the upper deck's rail, the port pipe rail, the
+	# corner panels' tops, the stacks.
+	perches.append([_small(5.75, d + 7.47, -2.2), _small(5.75, d + 7.47, 2.2), 1.4 * k])
+	for x: float in [3.4, 7.67]:
+		perches.append([_small(x, d + 4.7, -10.9), _small(x, d + 4.7, 10.9), 0.0])
+	perches.append([_small(-7.6, d + 1.75, -10.6), _small(-7.6, d + 1.75, 10.6), 0.0])
+	for e: float in [-1.0, 1.0]:
+		for x: float in [-1.0, 1.0]:
+			perches.append([_small(x * (_small_beam(12.4) - 0.1), d + 2.2, e * 12.4),
+				_small(x * (_small_beam(14.8) - 0.1), d + 2.2, e * 14.8), 0.0])
+	perches.append([_small(-6.25, d + 7.97, 13.4), _small(-6.25, d + 7.97, 13.5), 0.0])
+	perches.append([_small(6.35, d + 7.97, -12.4), _small(6.35, d + 7.97, -12.5), 0.0])
 
 
 func _lay_out_open() -> void:

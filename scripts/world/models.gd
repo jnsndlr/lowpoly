@@ -262,7 +262,11 @@ static func truck(color_index: int) -> ArrayMesh:
 ## identical; car deck top at DECK_Y.
 static func ferry(fc: FerryClass) -> ArrayMesh:
 	if fc.evergreen:
-		return _cached("ferry_%d" % fc.size, func(): return _mid_ferry(fc).commit())
+		return _cached("ferry_%d" % fc.size, func():
+			return _mid_ferry(fc, FerryClass.MID_GLB, FerryClass.MID_DROP, ["fixed", "glass", "window", "lamp"]).commit())
+	if fc.guemes:
+		return _cached("ferry_%d" % fc.size, func():
+			return _mid_ferry(fc, FerryClass.SMALL_GLB, FerryClass.SMALL_DROP, ["fixed", "glass", "window"]).commit())
 	return _cached("ferry_%d" % fc.size, func():
 		var mb := MeshBuilder.new()
 		var b := fc.half_beam
@@ -293,23 +297,60 @@ static func ferry(fc: FerryClass) -> ArrayMesh:
 		return mb.commit())
 
 
-## The mid-poly Evergreen State (FerryClass.MID_GLB, source art/ferry_mid.py), scaled
-## and dropped into the hull's frame; its pilothouse glass lit, its cabin windows
-## lit room by room. Then the class's lanterns, sidelights and deck lamps.
-static func _mid_ferry(fc: FerryClass) -> MeshBuilder:
+# Car deck nets: rope on yellow posts.
+const NET_ROPE := Color(0.7, 0.58, 0.38)
+const NET_POST := Color(0.88, 0.7, 0.12)
+const NET_H := 1.6
+
+
+## One of a ferry's car deck nets (FerryClass.net_z, net_half_w), centred on z = 0:
+## rope strung between yellow posts, standing on the car deck. Ferry places one at
+## each end and drops the one at the docked end while cars cross it.
+static func ferry_net(fc: FerryClass) -> ArrayMesh:
+	return _cached("ferry_net_%d" % fc.size, func():
+		var mb := MeshBuilder.new()
+		var w := fc.net_half_w
+		var y := Layout.DECK_Y
+		var posts := maxi(2, ceili(2.0 * w / 3.6) + 1)
+		for i in posts:
+			mb.box(Vector3(lerpf(-w, w, i / float(posts - 1)), y + NET_H * 0.5, 0), Vector3(0.15, NET_H, 0.15), NET_POST)
+		for f: float in [0.2, 0.46, 0.73, 0.95]:
+			mb.box(Vector3(0, y + f * NET_H, 0), Vector3(2.0 * w, 0.06, 0.06), NET_ROPE)
+		var n := ceili(2.0 * w / 0.5)
+		for i in range(1, n):
+			mb.box(Vector3(lerpf(-w, w, i / float(n)), y + 0.575 * NET_H, 0), Vector3(0.06, 0.75 * NET_H, 0.06), NET_ROPE)
+		return mb.commit())
+
+
+# The Evergreen State's car deck lights: the lenses' glow, and the light they throw
+# on the deck (an oval pool under each, its half width and half length in her
+# metres, and its energy).
+const CAR_DECK_LIGHT := Color(1.0, 0.82, 0.55)
+const CAR_DECK_POOL := Vector2(2.6, 5.2)
+const CAR_DECK_POOL_ENERGY := 0.2
+
+
+## A mid-poly ferry: the Evergreen State (FerryClass.MID_GLB, source
+## art/ferry_mid.py) or the Guemes (SMALL_GLB, art/guemes_mid.py), scaled and dropped
+## into the hull's frame; its `glass` (pilothouse, cabin) lit, its `window`s lit room
+## by room, the Evergreen State's car deck ceiling `lamp`s glowing. Then the class's
+## lanterns, sidelights and deck lamps.
+static func _mid_ferry(fc: FerryClass, glb: String, drop_y: float, parts: Array) -> MeshBuilder:
 	var mb := MeshBuilder.new()
 	var k := FerryClass.MID_SCALE
-	var drop := Vector3(0, FerryClass.MID_DROP, 0)
-	for part: String in ["fixed", "glass", "window"]:
-		var p := _gltf_parts(FerryClass.MID_GLB, [part])
+	var drop := Vector3(0, drop_y, 0)
+	var lens := lamp_glass(CAR_DECK_LIGHT)
+	for part: String in parts:
+		var p := _gltf_parts(glb, [part])
 		for i in p.verts.size():
 			mb.verts.append(p.verts[i] * k - drop)
 			mb.normals.append(p.normals[i])
 		if part == "fixed":
 			mb.colors.append_array(p.colors)
 		else:
+			var c: Color = {"glass": WINDOW_LIT, "window": WINDOW, "lamp": lens}[part]
 			for i in p.verts.size():
-				mb.colors.append(WINDOW_LIT if part == "glass" else WINDOW)
+				mb.colors.append(c)
 	for p in fc.lanterns:
 		add_lantern(mb, p, GlowBuilder.LED, fc.lantern_scale)
 	for sl: Array in fc.sidelights:
@@ -1059,7 +1100,34 @@ static func ferry_lights(fc: FerryClass) -> ArrayMesh:
 		var window := Color(1.0, 0.74, 0.42)
 		for w: Array in fc.windows:
 			gb.reflection(w[0], window, w[1], w[2], w[3])
+		if fc.evergreen:
+			for c in _mid_car_deck_lights():
+				# Kept inside the hull sides, or the wings' pools spill out over the water.
+				var w := clampf(FerryClass._mid_beam(c.z) - 0.6 - absf(c.x), 1.0, CAR_DECK_POOL.x)
+				gb.pool(FerryClass._mid(c.x, FerryClass.MID_CAR_DECK + 0.03, c.z), CAR_DECK_LIGHT,
+					w * FerryClass.MID_SCALE, CAR_DECK_POOL_ENERGY, LAMP_ON_AT, CAR_DECK_POOL.y * FerryClass.MID_SCALE)
 		return gb.commit())
+
+
+## Where the Evergreen State's car deck lights are (her metres, x and z): the centres
+## of the model's `lamp` lenses, which lie well apart.
+static func _mid_car_deck_lights() -> PackedVector3Array:
+	var p := _gltf_parts(FerryClass.MID_GLB, ["lamp"])
+	var sums := PackedVector3Array()
+	var counts := PackedInt32Array()
+	for v in p.verts:
+		var j := 0
+		while j < sums.size() and Vector2(v.x - sums[j].x / counts[j], v.z - sums[j].z / counts[j]).length() > 1.5:
+			j += 1
+		if j == sums.size():
+			sums.append(Vector3.ZERO)
+			counts.append(0)
+		sums[j] += v
+		counts[j] += 1
+	var out := PackedVector3Array()
+	for j in sums.size():
+		out.append(sums[j] / counts[j])
+	return out
 
 
 ## Sailboats use the mid-poly sloop modelled in Blender (MID_SAILBOAT_GLB, source

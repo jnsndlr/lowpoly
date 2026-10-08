@@ -67,10 +67,11 @@ func nav(p: Vector3, size: float, energy: float, facing := Vector3.ZERO) -> void
 	_quad(c, Color.WHITE, NAV_REFLECT, size, 0.0, 0.0, facing, energy)
 
 
-## A soft round pool of light on the ground (or water).
-func pool(p: Vector3, col: Color, radius: float, energy: float, on_at := -1.0) -> void:
+## A soft round pool of light on the ground (or water); with `length`, an oval
+## that long (radius) along local z.
+func pool(p: Vector3, col: Color, radius: float, energy: float, on_at := -1.0, length := 0.0) -> void:
 	var c := xform * p
-	_quad(c, col, POOL, radius, _on_at(c, on_at), 0.0, Vector3(0, 0, radius), energy)
+	_quad(c, col, POOL, radius, _on_at(c, on_at), 0.0, Vector3(0, 0, length if length > 0.0 else radius), energy)
 
 
 ## A headlight cone on the road from `p` along `dir` for `length`.

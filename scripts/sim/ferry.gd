@@ -34,6 +34,8 @@ var term_b: Terminal
 var state := State.LOADING
 var at_a := true        # docked at A, or departed from A while sailing
 var hull: MeshInstance3D
+# The car deck nets at -Z and +Z (FerryClass.net_z).
+var _nets: Array[MeshInstance3D] = []
 var traveled := 0.0      # how far the hull's centre has come, dock to dock
 var trips := 0
 var aboard: Array[Vehicle] = []
@@ -74,13 +76,19 @@ func setup(s: Simulation, r: MapData.Route, nm: String, size: int) -> void:
 	term_b = sim.terminals[r.b]
 	term_a.ferry_for[r.id] = self
 	term_b.ferry_for[r.id] = self
-	_slots.resize(fc.capacity)
+	_slots.resize(fc.lanes * fc.rows)
 	hull = MeshInstance3D.new()
 	hull.mesh = Models.ferry(fc)
 	# Fixes which of its rooms are lit (lit_vc.gdshader); the origin would change every frame.
 	hull.material_override = Models.hull_material()
 	hull.set_instance_shader_parameter("room_seed", randf_range(1.0, 1000.0))
 	add_child(hull)
+	for e: float in [-1.0, 1.0]:
+		var net := MeshInstance3D.new()
+		net.mesh = Models.ferry_net(fc)
+		net.position.z = e * fc.net_z
+		add_child(net)
+		_nets.append(net)
 	_place(-_inset)
 
 
@@ -157,7 +165,7 @@ func _free_slot(truck := false) -> int:
 		var row := r if at_a else fc.rows - 1 - r
 		for c in fc.lanes:
 			var idx := row * fc.lanes + c
-			if _slots[idx] == null:
+			if _slots[idx] == null and not fc.blocked.has(idx):
 				if fc.lane_suits(c, truck):
 					return idx
 				if fallback < 0:
@@ -167,6 +175,11 @@ func _free_slot(truck := false) -> int:
 
 func _process(delta: float) -> void:
 	_state_time += delta
+	# Both nets up under way; alongside, the one at the docked end (-Z at A) is down
+	# while cars drive off and on over it.
+	var docked := state != State.SAILING
+	_nets[0].visible = not (docked and at_a)
+	_nets[1].visible = not (docked and not at_a)
 	match state:
 		State.UNLOADING:
 			_tick_unloading(delta)

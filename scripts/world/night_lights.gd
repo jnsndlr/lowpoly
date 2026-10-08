@@ -7,6 +7,10 @@ extends Node3D
 
 # Kept off the minimap, like the clouds.
 const LAYER := 1 << (CloudLayer.VISUAL_LAYER - 1)
+# The ferries' car deck lights (FerryClass.deck_lights): warm, like her ceiling lights.
+const DECK_LIGHT_COLOR := Color(1.0, 0.8, 0.52)
+const DECK_LIGHT_ENERGY := 10.0
+const DECK_LIGHT_RANGE := 12.0
 
 var sim: Simulation
 var rig: CameraRig
@@ -16,6 +20,7 @@ var static_lights: MeshInstance3D
 var _cars: MultiMesh
 var _car_mmi: MultiMeshInstance3D
 var _ferry_lights: Array[MeshInstance3D] = []
+var _deck_lights: Array[OmniLight3D] = []
 var _buf := PackedFloat32Array()
 var _on := true
 
@@ -33,6 +38,23 @@ func setup(s: Simulation, r: CameraRig, d: DayCycle, fixed: MeshInstance3D) -> v
 		mi.layers = LAYER
 		f.add_child(mi)
 		_ferry_lights.append(mi)
+		# Real lights in the enclosed car deck, so its floor, walls, deckhead and the
+		# cars aboard all show lit (shadowless: they stay short enough not to reach
+		# the water past the hull).
+		for p in f.fc.deck_lights:
+			var l := OmniLight3D.new()
+			l.position = p
+			l.light_color = DECK_LIGHT_COLOR
+			l.omni_range = DECK_LIGHT_RANGE
+			l.omni_attenuation = 1.4
+			l.shadow_enabled = false
+			l.light_specular = 0.2
+			l.distance_fade_enabled = true
+			l.distance_fade_begin = 700.0
+			l.distance_fade_length = 150.0
+			l.layers = LAYER
+			f.add_child(l)
+			_deck_lights.append(l)
 
 	var mat := GlowBuilder.material().duplicate() as ShaderMaterial
 	mat.set_shader_parameter("instance_gate", true)
@@ -58,6 +80,8 @@ func _set_on(on: bool) -> void:
 	_car_mmi.visible = on
 	for mi in _ferry_lights:
 		mi.visible = on
+	for l in _deck_lights:
+		l.visible = on
 	_vessel_lights(on)
 	if not on:
 		_cars.visible_instance_count = 0
@@ -68,6 +92,10 @@ func _process(_delta: float) -> void:
 	if not _on:
 		return
 	RenderingServer.global_shader_parameter_set("focus_distance", rig.distance)
+	# Up with the lamp glass (Models.LAMP_ON_AT).
+	var deck := DECK_LIGHT_ENERGY * smoothstep(Models.LAMP_ON_AT, Models.LAMP_ON_AT + 0.08, day_cycle.night)
+	for l in _deck_lights:
+		l.light_energy = deck
 	# Cargo ships come and go through the night.
 	_vessel_lights(true)
 	for i in sim.ferries.size():

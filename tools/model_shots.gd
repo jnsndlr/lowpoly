@@ -84,6 +84,11 @@ func _initialize() -> void:
 		models["ferry_wing"] = [ferry, Vector3(8.4, 4.6, 6), 4.5]
 		models["ferry_fork"] = [ferry, Vector3(7, 6, 37), 15.0]
 		models["ferry_stair"] = [ferry, Vector3(4.5, 4.5, 25.5), 8.0]
+	if ResourceLoader.exists("res://assets/models/guemes_mid.glb"):
+		var guemes: ArrayMesh = Models._gltf_parts("res://assets/models/guemes_mid.glb", ["fixed", "glass", "window"]).commit()
+		models["guemes"] = [guemes, Vector3(0, 3, 0), 48.0]
+		models["guemes_end"] = [guemes, Vector3(0, 3, 14), 18.0]
+		models["guemes_house"] = [guemes, Vector3(5.5, 6.5, 0), 14.0]
 	for n: String in Models.PINE_VARIANTS + Models.BROAD_VARIANTS:
 		models[n] = [Models._tree_part(n), Vector3(0, 4.6, 0), 13.0]
 		models[n + "_lod"] = [Models._tree_part(n + "_lod"), Vector3(0, 3.6, 0), 13.0]
