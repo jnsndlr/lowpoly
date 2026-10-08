@@ -128,7 +128,7 @@ func setup(w: Wildlife, t: Terrain) -> void:
 		Kind.new("humpback", Models.humpback(), {"breaths": Vector2i(3, 6), "gap": Vector2(4.0, 7.0),
 			"dive": Vector2(25.0, 45.0), "breach": 0.03, "spyhop": 0.0, "fluke": 0.75,
 			"blow": Vector3(2.0, 3.4, 2.0), "blow_life": 2.4, "roll": Vector2(2.4, 0.16),
-			"spread": Vector2(22.0, 26.0), "spacing": 18.0, "fin": 0.025, "sweep": 0.6, "tail": 0.025}),
+			"spread": Vector2(22.0, 26.0), "spacing": 18.0, "fin": 0.025, "sweep": 0.3, "tail": 0.025}),
 		Kind.new("gray", Models.gray_whale(), {"breaths": Vector2i(3, 5), "gap": Vector2(3.0, 5.0),
 			"dive": Vector2(18.0, 32.0), "breach": 0.01, "spyhop": 0.02, "fluke": 0.35,
 			"blow": Vector3(0.7, 2.3, 0.7), "blow_life": 2.0, "heart": true, "roll": Vector2(2.2, 0.15),

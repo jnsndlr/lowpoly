@@ -730,9 +730,20 @@ static func _spots(i: int, k: int, salt: float) -> float:
 	return fposmod(sin(i * 12.9898 + k * 78.233 + salt) * 43758.5453, 1.0)
 
 
+## Humpbacks and gray whales use the mid-poly ones modelled in Blender (MID_WHALES_GLB,
+## built by art/whales_mid.py into art/whales_mid.blend) to the same frame and fin
+## rules as the orca. The code-built ones below are the fallback: with
+## `--classic-whales`, or if the model is missing.
+const MID_WHALES_GLB := "res://assets/models/whales_mid.glb"
+static var mid_whales := not "--classic-whales" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(MID_WHALES_GLB)
+
+
 ## A humpback: long, knobbly-headed, with a small dorsal fin on a hump, very long
 ## pale flippers and broad flukes whose undersides are mostly white.
 static func humpback() -> ArrayMesh:
+	if mid_whales:
+		return _cached("humpback_mid", func(): return _gltf_mesh(MID_WHALES_GLB, "humpback"))
 	return _cached("humpback", func():
 		var mb := MeshBuilder.new()
 		var dark := Color(0.09, 0.095, 0.11)
@@ -761,6 +772,8 @@ static func humpback() -> ArrayMesh:
 ## A gray whale: slimmer, mottled grey with pale patches of barnacles, no dorsal
 ## fin but a low hump and a row of knuckles down its tail stock.
 static func gray_whale() -> ArrayMesh:
+	if mid_whales:
+		return _cached("gray_whale_mid", func(): return _gltf_mesh(MID_WHALES_GLB, "graywhale"))
 	return _cached("gray_whale", func():
 		var mb := MeshBuilder.new()
 		var base := Color(0.4, 0.42, 0.43)
@@ -1623,6 +1636,47 @@ const PILOT_HULLS := [Color(0.08, 0.08, 0.09), Color(0.86, 0.33, 0.1), Color(0.1
 const PILOT_TOPS := [Color(0.9, 0.4, 0.1), Color(0.94, 0.95, 0.94), Color(0.9, 0.4, 0.1)]
 
 
+## Pilot boats use the mid-poly launch modelled in Blender (MID_PILOT_GLB, source
+## art/pilot_mid.py / pilot_mid.blend). The code-built one below is the fallback: with
+## the `--classic-pilot` launch flag, or if the model is missing. The glb's livery parts
+## (hull, trim: the PILOT lettering and sheer stripe) are recoloured per variant.
+const MID_PILOT_GLB := "res://assets/models/pilot_mid.glb"
+static var mid_pilot := not "--classic-pilot" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(MID_PILOT_GLB)
+const MID_PILOT_HULLS := [Color(0.78, 0.13, 0.1), Color(0.14, 0.15, 0.16), Color(0.1, 0.15, 0.28)]
+const MID_PILOT_TRIMS := [Color(0.78, 0.13, 0.1), Color(0.78, 0.13, 0.1), Color(0.9, 0.4, 0.1)]
+# The red lantern sits on a bracket forward of the mast, the white one on its top.
+const MID_PILOT_RED := Vector3(0, 3.5, 0.93)
+# Sidelight lamps (add_sidelight) on the deckhouse sides, just below the windows.
+const MID_PILOT_SIDELIGHT := Vector3(1.1, 1.42, 1.15)
+const MID_PILOT_SIDELIGHT_SCALE := 0.75
+const MID_PILOT_STERN_LIGHT := Vector3(0, 1.45, -4.46)
+
+
+static func _pilot_red() -> Vector3:
+	return MID_PILOT_RED if mid_pilot else PILOT_RED
+
+
+## The mid-poly pilot boat in `variant`'s livery.
+static func _mid_pilot(variant: int) -> MeshBuilder:
+	var mb := _gltf_parts(MID_PILOT_GLB, ["fixed"])
+	var paint := {"hull": MID_PILOT_HULLS[variant % MID_PILOT_HULLS.size()],
+		"trim": MID_PILOT_TRIMS[variant % MID_PILOT_TRIMS.size()], "glass": WINDOW_LIT,
+		"lens": lamp_glass(GlowBuilder.LED)}
+	for part: String in paint:
+		var p := _gltf_parts(MID_PILOT_GLB, [part])
+		mb.verts.append_array(p.verts)
+		mb.normals.append_array(p.normals)
+		for i in p.verts.size():
+			mb.colors.append(paint[part])
+	add_lantern(mb, MID_PILOT_RED, GlowBuilder.RED, PILOT_LANTERN)
+	add_lantern(mb, PILOT_WHITE, GlowBuilder.LED, PILOT_LANTERN)
+	for sx: float in [-1.0, 1.0]:
+		add_sidelight(mb, Vector3(sx * MID_PILOT_SIDELIGHT.x, MID_PILOT_SIDELIGHT.y, MID_PILOT_SIDELIGHT.z), sx, 1.0,
+			MID_PILOT_SIDELIGHT_SCALE)
+	return mb
+
+
 static func _pilot_outline(grow := 0.0) -> PackedVector2Array:
 	var pts := PackedVector2Array([Vector2(-1.4, -4.5), Vector2(1.4, -4.5), Vector2(1.5, -3.5), Vector2(1.5, 1.0),
 		Vector2(1.3, 2.6), Vector2(0.75, 3.8), Vector2(0, 4.5), Vector2(-0.75, 3.8), Vector2(-1.3, 2.6),
@@ -1635,6 +1689,8 @@ static func _pilot_outline(grow := 0.0) -> PackedVector2Array:
 
 ## A pilot boat; `variant` picks its colours.
 static func pilot_boat(variant: int) -> ArrayMesh:
+	if mid_pilot:
+		return _cached("pilot_mid_%d" % variant, func(): return _mid_pilot(variant).commit())
 	return _cached("pilot_%d" % variant, func():
 		var mb := MeshBuilder.new()
 		var hull: Color = PILOT_HULLS[variant % PILOT_HULLS.size()]
@@ -1707,9 +1763,12 @@ static func pilot_boat_lights() -> ArrayMesh:
 	return _cached("pilot_lights", func():
 		var gb := GlowBuilder.new()
 		var window := Color(1.0, 0.74, 0.42)
+		# (The mid-poly deckhouse's windows run higher and further aft.)
+		var y := 1.92 if mid_pilot else 1.85
+		var z0 := -0.9 if mid_pilot else -0.6
 		for x: float in [-1.15, 1.15]:
 			for i in 3:
-				gb.reflection(Vector3(x, 1.85, -0.6 + i), window, 0.16, 1.4, Vector3(signf(x), 0, 0))
+				gb.reflection(Vector3(x, y, z0 + i), window, 0.16, 1.4, Vector3(signf(x), 0, 0))
 		return gb.commit())
 
 
@@ -1717,9 +1776,12 @@ static func pilot_boat_lights() -> ArrayMesh:
 static func pilot_boat_nav_lights() -> ArrayMesh:
 	return _cached("pilot_nav", func():
 		var gb := GlowBuilder.new()
-		gb.glow(PILOT_SIDELIGHT + Vector3(0.04, 0, 0.1), GlowBuilder.RED, 0.15, 5.0, true, 0.0, Vector3(1, 0, 0.8), 0.0)
-		gb.glow(Vector3(-PILOT_SIDELIGHT.x - 0.04, PILOT_SIDELIGHT.y, PILOT_SIDELIGHT.z + 0.1), GlowBuilder.GREEN, 0.15, 5.0, true, 0.0, Vector3(-1, 0, 0.8), 0.0)
-		gb.glow(Vector3(0, 0.8, -4.56), GlowBuilder.LED, 0.1, 3.5, true, 0.0, Vector3(0, 0, -1), 0.0)
+		var sl := sidelight_glow_at(MID_PILOT_SIDELIGHT, 1.0, MID_PILOT_SIDELIGHT_SCALE) if mid_pilot \
+			else PILOT_SIDELIGHT + Vector3(0.04, 0, 0.1)
+		gb.glow(sl, GlowBuilder.RED, 0.15, 5.0, true, 0.0, Vector3(1, 0, 0.8), 0.0)
+		gb.glow(Vector3(-sl.x, sl.y, sl.z), GlowBuilder.GREEN, 0.15, 5.0, true, 0.0, Vector3(-1, 0, 0.8), 0.0)
+		gb.glow(MID_PILOT_STERN_LIGHT if mid_pilot else Vector3(0, 0.8, -4.56), GlowBuilder.LED, 0.1, 3.5, true, 0.0,
+			Vector3(0, 0, -1), 0.0)
 		return gb.commit())
 
 
@@ -1728,7 +1790,7 @@ static func pilot_boat_duty_lights() -> ArrayMesh:
 	return _cached("pilot_duty", func():
 		var gb := GlowBuilder.new()
 		gb.glow(lantern_glow_at(PILOT_WHITE, PILOT_LANTERN), GlowBuilder.LED, 0.17, 6.0, true, 0.0, Vector3.ZERO, 0.0)
-		gb.glow(lantern_glow_at(PILOT_RED, PILOT_LANTERN), GlowBuilder.RED, 0.17, 6.0, true, 0.0, Vector3.ZERO, 0.0)
+		gb.glow(lantern_glow_at(_pilot_red(), PILOT_LANTERN), GlowBuilder.RED, 0.17, 6.0, true, 0.0, Vector3.ZERO, 0.0)
 		return gb.commit())
 
 
