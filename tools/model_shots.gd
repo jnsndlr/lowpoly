@@ -60,6 +60,15 @@ func _initialize() -> void:
 		"harbor_seal": [Models.harbor_seal(), Vector3(0, 0.08, 0), 1.2],
 		"sea_lion": [Models.sea_lion(), Vector3(0, 0.08, 0), 1.2],
 	}
+	if ResourceLoader.exists("res://assets/models/ferry_mid.glb"):
+		var ferry: ArrayMesh = Models._gltf_parts("res://assets/models/ferry_mid.glb", ["fixed", "glass", "window"]).commit()
+		models["ferry_mid"] = [ferry, Vector3(0, 7, 0), 115.0]
+		models["ferry_end"] = [ferry, Vector3(0, 5, 40), 34.0]
+		models["ferry_top"] = [ferry, Vector3(0, 12, 18), 34.0]
+		models["ferry_boat"] = [ferry, Vector3(4, 9, -33), 22.0]
+		models["ferry_deck"] = [ferry, Vector3(0, 4, 30), 16.0]
+		models["ferry_ports"] = [ferry, Vector3(10.8, 5, -2), 10.0]
+		models["ferry_wing"] = [ferry, Vector3(8.4, 4.6, 6), 4.5]
 	for n: String in Models.PINE_VARIANTS + Models.BROAD_VARIANTS:
 		models[n] = [Models._tree_part(n), Vector3(0, 4.6, 0), 13.0]
 		models[n + "_lod"] = [Models._tree_part(n + "_lod"), Vector3(0, 3.6, 0), 13.0]
