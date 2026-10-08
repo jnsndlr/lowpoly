@@ -8,20 +8,20 @@ extends RefCounted
 ## only says where a boat lies ("Anchored in a cove on Fox Island").
 
 const COUNT := 7
-const STEP := 8.0              # sampling grid for candidates (m)
-const DEPTH := Vector2(-11.0, -2.6)   # seabed range a boat anchors in
-const NEAR_LAND := 48.0        # how close in under the land a cove's water lies
+const STEP := 24.0              # sampling grid for candidates (m)
+const DEPTH := Vector2(-33.0, -7.8)   # seabed range a boat anchors in
+const NEAR_LAND := 144.0        # how close in under the land a cove's water lies
 const RAYS := 16
-const RAY_REACH := 150.0
+const RAY_REACH := 450.0
 const SHELTER := 0.56          # share of the horizon closed by land
-const SPOT_GAP := 15.0         # between spots (room to swing)
+const SPOT_GAP := 45.0         # between spots (room to swing)
 const SPOTS := 4
-const SPREAD := 34.0           # spots lie within this of the cove's centre
-const KEEP_FROM_COVES := 120.0
-const KEEP_FROM_ROUTES := 60.0
-const KEEP_FROM_HARBOURS := 90.0
-const KEEP_FROM_HAUL_OUTS := 45.0   # seals' beaches and rocks: don't anchor off them
-const KEEP_FROM_SHIPS := 18.0  # from water the ships can use (their hulls, and a boat swinging at anchor)
+const SPREAD := 102.0           # spots lie within this of the cove's centre
+const KEEP_FROM_COVES := 360.0
+const KEEP_FROM_ROUTES := 180.0
+const KEEP_FROM_HARBOURS := 270.0
+const KEEP_FROM_HAUL_OUTS := 135.0   # seals' beaches and rocks: don't anchor off them
+const KEEP_FROM_SHIPS := 54.0  # from water the ships can use (their hulls, and a boat swinging at anchor)
 
 class Spot:
 	var pos := Vector2.ZERO
@@ -50,11 +50,11 @@ static func find_all(t: MarineTraffic) -> Array[Anchorage]:
 		for i in n:
 			var h := terrain.height_at(-hs + i * STEP, -hs + j * STEP)
 			depth[j * n + i] = h
-			land[j * n + i] = 1 if h > -0.4 else 0
+			land[j * n + i] = 1 if h > -1.2 else 0
 	var avoid: Array[Vector2] = []
 	for isl in map.islands:
 		if isl.has_terminal:
-			avoid.append(Vector2(isl.shore.x, isl.shore.z) + Vector2(isl.dock_dir.x, isl.dock_dir.z) * 30.0)
+			avoid.append(Vector2(isl.shore.x, isl.shore.z) + Vector2(isl.dock_dir.x, isl.dock_dir.z) * 90.0)
 	for m in map.marinas:
 		var a := m.at(Layout.MARINA_APPROACH_U, 0.0)
 		avoid.append(Vector2(a.x, a.z))
@@ -84,7 +84,7 @@ static func find_all(t: MarineTraffic) -> Array[Anchorage]:
 			if h < DEPTH.x or h > DEPTH.y:
 				continue
 			var p := Vector2(-hs + i * STEP, -hs + j * STEP)
-			if absf(p.x) > hs - 30.0 or absf(p.y) > hs - 30.0 or not nav.open_at(p, false):
+			if absf(p.x) > hs - 90.0 or absf(p.y) > hs - 90.0 or not nav.open_at(p, false):
 				continue
 			if not _land_within(land, n, i, j, near_cells):
 				continue
@@ -156,7 +156,7 @@ func free_spots() -> int:
 ## is reachable from the rest of the water.
 static func _reach_from(t: MarineTraffic) -> Vector2:
 	for m in t.sim.map.marinas:
-		var a := m.at(Layout.MARINA_APPROACH_U + 10.0, 0.0)
+		var a := m.at(Layout.MARINA_APPROACH_U + 30.0, 0.0)
 		return Vector2(a.x, a.z)
 	return Vector2.INF
 

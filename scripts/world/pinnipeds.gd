@@ -24,7 +24,7 @@ const MAX_SPLASHES := 24
 # Must match seal_body[] in water.gdshader: animals in the water nearest the
 # camera (within FOAM_RANGE) that the water draws no contact foam round.
 const MAX_FOAM_CLEAR := 32
-const FOAM_RANGE := 250.0
+const FOAM_RANGE := 750.0
 # How long after its head went under an animal can still be clicked (real ms).
 const CLICK_GRACE := 1500
 
@@ -38,9 +38,9 @@ class Kind:
 	var hip_z := -0.2
 	var tints: Array[Color] = []
 	var crawl := 0.45                   # m per game minute on land
-	var swim := 2.5                     # in the water
-	var alert := 60.0                   # a boat under way this close: heads up
-	var flush := 30.0                   # this close: into the water
+	var swim := 7.5                    # in the water
+	var alert := 180.0                  # a boat under way this close: heads up
+	var flush := 90.0                   # this close: into the water
 	var tide := 1.0                     # how much more it hauls out at low tide
 	var mm: MultiMesh
 	var buf := PackedFloat32Array()
@@ -120,10 +120,10 @@ func setup(w: Wildlife, t: Terrain, water: ShaderMaterial = null) -> void:
 	for k: Kind in [
 		Kind.new("harbor_seal", Models.harbor_seal(), {"neck_z": 0.33, "hip_z": -0.22,
 			"tints": [Color(0.78, 0.8, 0.8), Color(0.62, 0.6, 0.56), Color(0.45, 0.44, 0.43), Color(0.82, 0.76, 0.64)] as Array[Color],
-			"crawl": 0.45, "swim": 2.2, "alert": 70.0, "flush": 32.0, "tide": 2.5}),
+			"crawl": 0.45, "swim": 6.6, "alert": 210.0, "flush": 96.0, "tide": 2.5}),
 		Kind.new("sea_lion", Models.sea_lion(), {"scale": 1.15, "neck_z": 0.27, "hip_z": -0.24,
 			"tints": [Color(0.42, 0.3, 0.2), Color(0.5, 0.36, 0.24), Color(0.3, 0.22, 0.16), Color(0.66, 0.5, 0.32)] as Array[Color],
-			"crawl": 0.8, "swim": 3.0, "alert": 22.0, "flush": 7.0, "tide": 0.0}),
+			"crawl": 0.8, "swim": 9.0, "alert": 66.0, "flush": 21.0, "tide": 0.0}),
 	]:
 		kinds[k.id] = k
 		var mat := ShaderMaterial.new()
@@ -243,7 +243,7 @@ func _nearest_boat(site: MapData.HaulOut) -> float:
 	var c := Vector2(site.spots[0].at.x, site.spots[0].at.z) if not site.spots.is_empty() else Vector2(site.water.x, site.water.z)
 	var best := INF
 	for b in sim.marine.vessels:
-		if b.speed < 1.0 or b is Ferry or b is CargoShip:
+		if b.speed < 3.0 or b is Ferry or b is CargoShip:
 			continue
 		best = minf(best, b.pos2().distance_to(c) - b.half_seg)
 	return best
@@ -298,7 +298,7 @@ func _swim(o: Animal, p: Pod, dt: float, leaving: bool) -> void:
 	var slot := v.pos + Basis(Vector3.UP, v.heading) * o.offset
 	if o.mother and o.mother.state != State.REST:
 		slot = o.mother.pos + Vector3(sin(o.mother.yaw + 1.6), 0.0, cos(o.mother.yaw + 1.6)) * L * 0.6
-	if terrain.height_at(slot.x, slot.z) > -0.9:
+	if terrain.height_at(slot.x, slot.z) > -2.7:
 		slot = v.pos
 	var to := slot - o.pos
 	to.y = 0.0
@@ -310,7 +310,7 @@ func _swim(o: Animal, p: Pod, dt: float, leaving: bool) -> void:
 		var ny := atan2(want.x, want.z)
 		o.yaw = lerp_angle(o.yaw, ny, 1.0 - exp(-dt * 1.5))
 		o.pos += Vector3(sin(o.yaw), 0.0, cos(o.yaw)) * spd * dt
-	o.phase += dt * (2.0 + spd * 1.2)
+	o.phase += dt * (2.0 + spd * 0.4)
 	o.roll = move_toward(o.roll, 0.0, dt * 0.8)
 	# Breathe: up for a while, head out looking about, then down again.
 	o.breath -= dt
@@ -326,7 +326,7 @@ func _swim(o: Animal, p: Pod, dt: float, leaving: bool) -> void:
 	var head := 0.7
 	var pitch := 0.0
 	var roll := 0.0
-	var sway := 0.035 * clampf(spd / 2.0, 0.2, 1.0)
+	var sway := 0.035 * clampf(spd / 6.0, 0.2, 1.0)
 	if o.state == State.RAFT:
 		sway = 0.0
 		if k.id == "harbor_seal":
@@ -721,11 +721,11 @@ func _clear_foam() -> void:
 		var o: Animal = bodies[i][1]
 		var f := Vector2(sin(o.yaw), cos(o.yaw)) * o.length * 0.5 * cos(o.pitch)
 		var at := Vector2(o.pos.x, o.pos.z)
-		_foam_clear[i] = Vector4(at.x, at.y, f.x, f.y)
+		_foam_clear[i] = Vector4(at.x, at.y, f.x, f.y) / WakeField.UNIT
 		var r := f.length() * 1.3 + 1.0
 		lo = lo.min(at - Vector2(r, r))
 		hi = hi.max(at + Vector2(r, r))
 	water_mat.set_shader_parameter("seal_count", bodies.size())
 	if not bodies.is_empty():
 		water_mat.set_shader_parameter("seal_body", _foam_clear)
-		water_mat.set_shader_parameter("seal_bounds", Vector4(lo.x, lo.y, hi.x, hi.y))
+		water_mat.set_shader_parameter("seal_bounds", Vector4(lo.x, lo.y, hi.x, hi.y) / WakeField.UNIT)

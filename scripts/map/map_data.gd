@@ -9,7 +9,7 @@ class Island:
 	var id := 0
 	var name := ""
 	var center := Vector2.ZERO      # x, z
-	var radius := 40.0
+	var radius := 120.0
 	var strength := 1.0             # elevation multiplier
 	var inhabited := true
 	var is_mainland := false
@@ -22,7 +22,7 @@ class Island:
 	var shore := Vector3.ZERO       # where the pier meets land, y = 0
 	var dock_dir := Vector3.FORWARD # horizontal unit vector pointing out to sea
 	var slips: Array[int] = []      # route ids, ordered left → right along lateral()
-	var lot_half_width := 12.0
+	var lot_half_width := 36.0
 
 	# Town
 	var town_center := Vector3.ZERO
@@ -83,7 +83,7 @@ class Harbour:
 
 	## How far apart boats waiting here hold station.
 	func wait_spacing() -> float:
-		return 7.0
+		return 21.0
 
 	## Whether a boat may wait its turn at (u, v) (out of the way in).
 	func wait_ok(_u: float, _v: float) -> bool:
@@ -102,7 +102,7 @@ class Marina extends Harbour:
 		return Vector2(Layout.MARINA_APPROACH_U, 0.0)
 
 	func wait_bounds() -> Vector2:
-		return Vector2(40.0, Layout.MARINA_HEAD_HALF + 12.0)
+		return Vector2(120.0, Layout.MARINA_HEAD_HALF + 36.0)
 
 
 ## A wharf boats lie alongside (see Layout's quay frame): a jetty out to a wharf
@@ -116,14 +116,14 @@ class Wharf extends Harbour:
 		return Vector2(Layout.QUAY_LANE_U, -side * Layout.QUAY_RUN)
 
 	func wait_bounds() -> Vector2:
-		return Vector2(Layout.QUAY_LANE_U + 20.0, 0.0)
+		return Vector2(Layout.QUAY_LANE_U + 60.0, 0.0)
 
 	func wait_spacing() -> float:
-		return 32.0
+		return 96.0
 
 	## Not off the end of the lane where boats run in.
 	func wait_ok(_u: float, v: float) -> bool:
-		return absf(v + side * Layout.QUAY_RUN) > 30.0
+		return absf(v + side * Layout.QUAY_RUN) > 90.0
 
 	## Its name, as the HUD shows it.
 	func title(map: MapData) -> String:
@@ -194,7 +194,7 @@ class Route:
 
 
 var map_seed := 0
-var half_size := 460.0
+var half_size := 1380.0
 var islands: Array[Island] = []
 var routes: Array[Route] = []
 var marinas: Array[Marina] = []

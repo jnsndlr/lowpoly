@@ -16,8 +16,8 @@ enum State { UNDER, ROLL, BREACH, SPYHOP, FLUKE }
 
 const MAX_PER_KIND := 32
 const MAX_PUFFS := 64
-# Below this (and the water's opaque) they're out of sight; the sea floor is at -5.5.
-const DIVE_Y := -5.0
+# Below this (and the water's opaque) they're out of sight; the sea floor is at -16.5.
+const DIVE_Y := -15.0
 # How long after going under an animal can still be clicked (real ms).
 const CLICK_GRACE := 1500
 const MUD := Color(0.47, 0.42, 0.32, 0.55)
@@ -294,7 +294,7 @@ func _tick_animal(o: Animal, p: Pod, dt: float, ending: bool) -> void:
 	var v := o.visit
 	var k := o.kind
 	var L := o.length
-	var under_y := maxf(-0.42 * L, DIVE_Y + 0.4)
+	var under_y := maxf(-0.42 * L, DIVE_Y + 1.2)
 	# Swim: hold the slot, nudged back toward the group's track if the shallows are ahead.
 	var fwd := Vector3(sin(v.heading), 0.0, cos(v.heading))
 	var slot := (o.mother.pos + Basis(Vector3.UP, o.mother.yaw) * o.offset) if o.mother \
@@ -308,14 +308,14 @@ func _tick_animal(o: Animal, p: Pod, dt: float, ending: bool) -> void:
 	var want := fwd * v.speed + (slot - o.pos) * 0.35
 	want.y = 0.0
 	if want.length_squared() > 0.01:
-		var ahead := o.pos + want.normalized() * maxf(6.0, L * 0.6)
-		if terrain.height_at(ahead.x, ahead.z) > v.species.depth + 0.6:
+		var ahead := o.pos + want.normalized() * maxf(18.0, L * 0.6)
+		if terrain.height_at(ahead.x, ahead.z) > v.species.depth + 1.8:
 			var back := v.pos - o.pos
 			back.y = 0.0
 			want += back.normalized() * v.speed * 1.5
 	if o.state == State.SPYHOP:
 		want = Vector3.ZERO
-	o.vel = o.vel.move_toward(want.limit_length(v.speed * 1.7 + 1.0), 2.5 * dt)
+	o.vel = o.vel.move_toward(want.limit_length(v.speed * 1.7 + 3.0), 7.5 * dt)
 	if _shoaling(o, o.vel, dt):
 		# Never on into the shallows: slide off along the shore, turning back
 		# toward open water if need be, or (boxed in) stop.
@@ -328,13 +328,13 @@ func _tick_animal(o: Animal, p: Pod, dt: float, ending: bool) -> void:
 				break
 	o.pos += o.vel * dt
 	var spd := Vector2(o.vel.x, o.vel.z).length()
-	if spd > 0.3:
+	if spd > 0.9:
 		var ny := atan2(o.vel.x, o.vel.z)
 		var turn := angle_difference(o.yaw, ny)
 		o.yaw = lerp_angle(o.yaw, ny, 1.0 - exp(-dt * 2.0))
 		if o.state == State.UNDER or o.state == State.ROLL:
 			o.bank = lerpf(o.bank, clampf(-turn * 0.8, -0.4, 0.4), 1.0 - exp(-dt * 2.0))
-	o.tail += dt * TAU * (0.45 + spd * 0.12) * (8.0 / maxf(L, 2.0)) ** 0.5
+	o.tail += dt * TAU * (0.45 + spd * 0.04) * (8.0 / maxf(L, 2.0)) ** 0.5
 	o.tail_amp = move_toward(o.tail_amp, 0.0 if o.state == State.FLUKE else k.tail, dt * 0.1)
 
 	match o.state:
@@ -389,7 +389,7 @@ func _tick_animal(o: Animal, p: Pod, dt: float, ending: bool) -> void:
 			if s >= 1.0:
 				_breathed(o, under_y)
 	# A rooster tail of spray off a porpoise going flat out at the surface.
-	if k.spray and spd > 6.0 and o.y > -0.15 * L:
+	if k.spray and spd > 18.0 and o.y > -0.15 * L:
 		o.spray_t -= dt
 		if o.spray_t <= 0.0:
 			o.spray_t = 0.18
@@ -413,7 +413,7 @@ func _shoaling(o: Animal, vel: Vector3, dt: float) -> bool:
 		return true
 	# The nose may go a little shallower than the body.
 	var n := terrain.height_at(q.x + ahead.x, q.z + ahead.z)
-	return n > depth + 1.5 and n > terrain.height_at(o.pos.x + ahead.x, o.pos.z + ahead.z)
+	return n > depth + 4.5 and n > terrain.height_at(o.pos.x + ahead.x, o.pos.z + ahead.z)
 
 
 func _advance(o: Animal, dt: float) -> float:

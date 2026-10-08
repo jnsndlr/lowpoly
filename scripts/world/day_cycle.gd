@@ -26,31 +26,31 @@ const KEYS := [
 		"top": Color(0.012, 0.025, 0.07), "horizon": Color(0.05, 0.08, 0.16),
 		"ambient": Color(0.2, 0.26, 0.44), "ambient_energy": 0.45,
 		"fog": Color(0.05, 0.08, 0.14), "exposure": 1.0,
-		"haze": 0.00006, "glow": 0.35, "saturation": 1.0, "sun_glow": 20.0},
+		"haze": 0.00002, "glow": 0.35, "saturation": 1.0, "sun_glow": 20.0},
 	{"elev": 0.0, # twilight: sun just gone, sky still burning
 		"light": Color(1.0, 0.36, 0.2), "energy": 0.0,
 		"top": Color(0.12, 0.13, 0.34), "horizon": Color(1.0, 0.42, 0.26),
 		"ambient": Color(0.4, 0.4, 0.66), "ambient_energy": 0.5,
 		"fog": Color(0.7, 0.38, 0.4), "exposure": 1.05,
-		"haze": 0.00012, "glow": 0.6, "saturation": 1.25, "sun_glow": 70.0},
+		"haze": 0.00004, "glow": 0.6, "saturation": 1.25, "sun_glow": 70.0},
 	{"elev": 4.0, # sunset: low, deep orange, long shadows
 		"light": Color(1.0, 0.46, 0.2), "energy": 1.9,
 		"top": Color(0.2, 0.24, 0.52), "horizon": Color(1.0, 0.5, 0.26),
 		"ambient": Color(0.42, 0.5, 0.75), "ambient_energy": 0.55,
 		"fog": Color(0.98, 0.56, 0.38), "exposure": 1.05,
-		"haze": 0.00014, "glow": 0.65, "saturation": 1.3, "sun_glow": 60.0},
+		"haze": 0.000046667, "glow": 0.65, "saturation": 1.3, "sun_glow": 60.0},
 	{"elev": 14.0, # golden hour
 		"light": Color(1.0, 0.7, 0.42), "energy": 1.7,
 		"top": Color(0.3, 0.44, 0.72), "horizon": Color(0.98, 0.74, 0.54),
 		"ambient": Color(0.42, 0.52, 0.86), "ambient_energy": 0.52,
 		"fog": Color(0.92, 0.76, 0.64), "exposure": 1.0,
-		"haze": 0.00009, "glow": 0.4, "saturation": 1.18, "sun_glow": 40.0},
+		"haze": 0.00003, "glow": 0.4, "saturation": 1.18, "sun_glow": 40.0},
 	{"elev": 30.0, # day
 		"light": Color(1.0, 0.92, 0.8), "energy": 1.45,
 		"top": Color(0.36, 0.56, 0.8), "horizon": Color(0.74, 0.83, 0.9),
 		"ambient": Color(0.48, 0.62, 0.9), "ambient_energy": 0.52,
 		"fog": Color(0.74, 0.82, 0.88), "exposure": 1.0,
-		"haze": 0.00004, "glow": 0.25, "saturation": 1.12, "sun_glow": 30.0},
+		"haze": 0.000013333, "glow": 0.25, "saturation": 1.12, "sun_glow": 30.0},
 ]
 
 var sim: Simulation

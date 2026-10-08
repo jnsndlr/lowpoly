@@ -4,7 +4,7 @@ extends Node3D
 ## back when it arrives. Terminals and ferries decide where it goes next.
 
 var path := PackedVector3Array()
-var speed := 8.0
+var speed := 24.0
 var delay := 0.0
 var is_truck := false
 var lane_v := 0.0          # lateral lane position while queued at a terminal
@@ -14,6 +14,8 @@ var _on_arrive := Callable()
 
 func setup(mesh: Mesh, truck: bool) -> void:
 	is_truck = truck
+	# (Its lights, drawn by NightLights from its transform, scale with it.)
+	scale = Vector3.ONE * Models.LEGACY_SCALE
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	add_child(mi)

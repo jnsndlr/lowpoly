@@ -17,13 +17,13 @@ extends WharfBoat
 
 enum State { ALONGSIDE, LEAVING, OUTBOUND, STANDING_BY, CLOSING, WORKING, SHEERING, RETURNING, WAITING, ARRIVING }
 
-const GOAL_R := 14.0
-const HOLD_R := 10.0
-const STANDOFF := 40.0         # off the ship's track, standing by
-const CLOSE_FROM := 170.0      # starts closing in from this far from its station
+const GOAL_R := 42.0
+const HOLD_R := 30.0
+const STANDOFF := 120.0         # off the ship's track, standing by
+const CLOSE_FROM := 510.0      # starts closing in from this far from its station
 const PURSUE_GAIN := 0.35      # closing speed (m/s) per metre off station
-const MATCHED := 0.6           # this near its station, its course and speed matched, it holds there
-const HARBOUR_CLEAR := 110.0
+const MATCHED := 1.8           # this near its station, its course and speed matched, it holds there
+const HARBOUR_CLEAR := 330.0
 const ALIGNED := 0.04          # (rad) it only closes the last of the gap once its course is the ship's
 
 var state := State.ALONGSIDE
@@ -48,11 +48,11 @@ func _station(_g: float) -> Vector2:
 
 ## How far off the ship's side it closes in to, and works at.
 func _working_gap() -> float:
-	return 0.4
+	return 1.2
 
 
 func _closing_gap() -> float:
-	return 16.0
+	return 48.0
 
 
 ## Whether it holds its station once matched with the ship (rather than keeping
@@ -80,9 +80,9 @@ func _finished() -> void:
 ## ship. By default it drops back along the ship's side, easing out a little,
 ## until it is astern of it (in its wake: deep water).
 func _sheer(delta: float) -> bool:
-	_along -= 1.6 * delta
-	_gap = move_toward(_gap, 2.5, 0.5 * delta)
-	return _station(_gap).x + _along < -(ship.half_seg + ship.hull_radius + spec.half_length + 6.0)
+	_along -= 4.8 * delta
+	_gap = move_toward(_gap, 7.5, 1.5 * delta)
+	return _station(_gap).x + _along < -(ship.half_seg + ship.hull_radius + spec.half_length + 18.0)
 
 
 # --- Jobs -----------------------------------------------------------------------------
@@ -142,20 +142,20 @@ func _set_out(_meet: Vector2) -> void:
 ## as far ahead as it can get to before the ship does, in open water deep enough
 ## for it (further in towards the track, or further along, if not).
 func _standby_point() -> Vector2:
-	var lead := clampf(pos2().distance_to(ship.pos2()) * ship.speed / maxf(cruise, 0.1), 60.0, 400.0)
-	var shoal := -spec.draft - 1.0
-	for more: float in [0.0, 80.0, 160.0, -40.0]:
-		var at := clampf(ship.s + lead + more, ship.s + 40.0, ship.path.length)
+	var lead := clampf(pos2().distance_to(ship.pos2()) * ship.speed / maxf(cruise, 0.3), 180.0, 1200.0)
+	var shoal := -spec.draft - 3.0
+	for more: float in [0.0, 240.0, 480.0, -120.0]:
+		var at := clampf(ship.s + lead + more, ship.s + 120.0, ship.path.length)
 		var p := ship.path.sample(at)
-		var t := ship.path.tangent(at, 10.0)
+		var t := ship.path.tangent(at, 30.0)
 		var right := Vector2(-t.y, t.x)
 		var off := STANDOFF + ship.hull_radius
-		while off >= ship.hull_radius + hull_radius + 12.0:
+		while off >= ship.hull_radius + hull_radius + 36.0:
 			var q := p + right * side * off
 			if traffic.nav.open_at(q, false) and traffic.sim.terrain.height_at(q.x, q.y) < shoal:
 				return q
-			off -= 6.0
-	return ship.ahead(lead) + Vector2(-ship.heading2().y, ship.heading2().x) * side * (ship.hull_radius + 20.0)
+			off -= 18.0
+	return ship.ahead(lead) + Vector2(-ship.heading2().y, ship.heading2().x) * side * (ship.hull_radius + 60.0)
 
 
 func _head_home() -> void:
@@ -195,7 +195,7 @@ func _process(delta: float) -> void:
 	var under_way := state != State.ALONGSIDE
 	var d := Vector3(sin(_yaw), 0.0, cos(_yaw))
 	wake.update(delta, global_position, d, speed * delta if under_way else 0.0,
-			clampf(speed / cruise, 0.0, 1.0) if under_way else 0.0, under_way and speed > 0.1)
+			clampf(speed / cruise, 0.0, 1.0) if under_way else 0.0, under_way and speed > 0.3)
 
 
 func _on_job() -> bool:
@@ -248,7 +248,7 @@ func _navigate(delta: float) -> void:
 		_holding = false
 	match state:
 		State.WAITING:
-			target = minf(target, 1.2)
+			target = minf(target, 3.6)
 			if _holding:
 				want_yaw = _yaw
 				target = 0.0
@@ -265,7 +265,7 @@ func _navigate(delta: float) -> void:
 ## The most it makes coming up to a spot `left` metres off, so that it can
 ## stop inside HOLD_R of it.
 func _approach_speed(left: float) -> float:
-	return 0.6 + sqrt(2.0 * spec.decel * maxf(left - HOLD_R * 0.5, 0.0)) * 0.8
+	return 1.8 + sqrt(2.0 * spec.decel * maxf(left - HOLD_R * 0.5, 0.0)) * 0.8
 
 
 ## Near enough its station, with open water straight there, and on the working
@@ -283,7 +283,7 @@ func _ready_to_close() -> bool:
 	var right := Vector2(-h.y, h.x)
 	var lat := rel.dot(right) * side
 	var along := rel.dot(h)
-	return lat > ship.hull_radius + hull_radius + 8.0 or along < -(ship.half_seg + ship.hull_radius + hull_radius + 10.0)
+	return lat > ship.hull_radius + hull_radius + 24.0 or along < -(ship.half_seg + ship.hull_radius + hull_radius + 30.0)
 
 
 func _start_closing() -> void:
@@ -329,10 +329,10 @@ func _keep_station(delta: float) -> void:
 		State.CLOSING:
 			var on_station := _locked and absf(angle_difference(_yaw, ship_yaw)) < ALIGNED
 			if not _lockable():
-				on_station = pos2().distance_to(_station_world(_gap)) < 5.0
+				on_station = pos2().distance_to(_station_world(_gap)) < 15.0
 			if on_station:
-				_gap = move_toward(_gap, _working_gap(), 0.6 * delta)
-				if _gap <= _working_gap() + 0.01:
+				_gap = move_toward(_gap, _working_gap(), 1.8 * delta)
+				if _gap <= _working_gap() + 0.03:
 					state = State.WORKING
 					_start_work()
 		State.WORKING:
@@ -345,14 +345,14 @@ func _keep_station(delta: float) -> void:
 				return
 	var st := _station_world(_gap)
 	if _locked:
-		if not _hull_afloat(st, ship_yaw) or traffic.hull_gap(self, st, h) < 0.3:
+		if not _hull_afloat(st, ship_yaw) or traffic.hull_gap(self, st, h) < 0.9:
 			if state == State.SHEERING:
 				_finished()
 				_head_home()
 			else:
 				_break_off()
 			return
-		var p := pos2().move_toward(st, (ship.speed + 1.5) * delta)
+		var p := pos2().move_toward(st, (ship.speed + 4.5) * delta)
 		position = Vector3(p.x, position.y, p.y)
 		_yaw = rotate_toward(_yaw, ship_yaw, 0.6 * delta)
 		speed = ship.speed
@@ -360,56 +360,56 @@ func _keep_station(delta: float) -> void:
 		# Coming up from astern, it swings wide of the ship's quarter first.
 		var rel := pos2() - ship.pos2()
 		var right := Vector2(-h.y, h.x)
-		var wide := ship.hull_radius + hull_radius + 6.0
+		var wide := ship.hull_radius + hull_radius + 18.0
 		var along_now := rel.dot(h)
 		var lat_now := rel.dot(right) * side
 		if lat_now < wide and along_now < -ship.half_seg:
-			st = ship.pos2() - h * (ship.half_seg + ship.hull_radius + 10.0) + right * side * (wide + 8.0)
+			st = ship.pos2() - h * (ship.half_seg + ship.hull_radius + 30.0) + right * side * (wide + 24.0)
 		# Ahead of the ship's bow and close to its track: straight out to the side
 		# first, never across its bow.
-		elif lat_now < wide + 2.0 and along_now > ship.half_seg:
-			st = ship.pos2() + h * along_now + right * side * (wide + 10.0)
+		elif lat_now < wide + 6.0 and along_now > ship.half_seg:
+			st = ship.pos2() + h * along_now + right * side * (wide + 30.0)
 		# One that keeps station off the ship (rather than alongside it) passes
 		# well wide of it while it is abreast of it.
-		elif not _lockable() and absf(rel.dot(h)) < ship.half_seg + ship.hull_radius + 8.0:
+		elif not _lockable() and absf(rel.dot(h)) < ship.half_seg + ship.hull_radius + 24.0:
 			var lat := (st - ship.pos2()).dot(right) * side
-			if lat < wide + 6.0:
-				st += right * side * (wide + 6.0 - lat)
+			if lat < wide + 18.0:
+				st += right * side * (wide + 18.0 - lat)
 		var off := st - pos2()
-		var v := h * ship.speed + off.limit_length(60.0) * PURSUE_GAIN
+		var v := h * ship.speed + off.limit_length(180.0) * PURSUE_GAIN
 		# Near the ship it never turns back against the ship's way: to drop back
 		# it eases off and lets the ship draw ahead.
-		if absf(rel.dot(h)) < ship.half_seg + ship.hull_radius + 25.0 and absf(rel.dot(right)) < wide + 25.0:
+		if absf(rel.dot(h)) < ship.half_seg + ship.hull_radius + 75.0 and absf(rel.dot(right)) < wide + 75.0:
 			var va := maxf(v.dot(h), ship.speed * 0.35)
 			v = h * va + (v - h * v.dot(h))
 		var want := v.length()
-		var want_yaw := atan2(v.x, v.y) if want > 0.3 else ship_yaw
+		var want_yaw := atan2(v.x, v.y) if want > 0.9 else ship_yaw
 		# Close in, steer as the ship steers.
-		if off.length() < 6.0:
-			want_yaw = lerp_angle(ship_yaw, want_yaw, clampf(off.length() / 6.0, 0.0, 1.0))
+		if off.length() < 18.0:
+			want_yaw = lerp_angle(ship_yaw, want_yaw, clampf(off.length() / 18.0, 0.0, 1.0))
 		# (Braking for any other hull in its way.)
 		var target := minf(minf(want, cruise), yield_speed())
 		# Land in the way of the straight run in: round it under the helm, then
 		# try again.
-		if not _water_line(pos2(), pos2() + Vector2(sin(want_yaw), cos(want_yaw)) * (8.0 + speed * 4.0)):
+		if not _water_line(pos2(), pos2() + Vector2(sin(want_yaw), cos(want_yaw)) * (24.0 + speed * 4.0)):
 			_break_off()
 			return
 		var yaw := rotate_toward(_yaw, want_yaw, spec.turn * 1.5 * delta)
 		speed = move_toward(speed, target, (spec.accel if target > speed else spec.decel) * 1.5 * delta)
 		var d := Vector2(sin(yaw), cos(yaw))
 		var p := pos2() + d * speed * delta
-		# Never closer in against the ship than a metre (its station is further
+		# Never closer in against the ship than three metres (its station is further
 		# out than that until it has its course): parallel to it instead, easing out.
 		var ship_now := _ship_gap(pos2(), _yaw)
 		var ship_new := _ship_gap(p, yaw)
 		# (More room forward of the ship's beam, where it is coming on.)
-		var room := 1.0 + (ship.speed if along_now > 0.0 else 0.0)
-		if ship_new < room and ship_new <= ship_now + 0.01:
+		var room := 3.0 + (ship.speed if along_now > 0.0 else 0.0)
+		if ship_new < room and ship_new <= ship_now + 0.03:
 			yaw = rotate_toward(_yaw, ship_yaw, spec.turn * delta)
 			speed = ship.speed
 			d = Vector2(sin(yaw), cos(yaw))
-			p = pos2() + h * ship.speed * delta + right * side * (0.6 if ship_new > 0.5 else 1.5) * delta
-			if _ship_gap(p, yaw) < minf(0.3, ship_now):
+			p = pos2() + h * ship.speed * delta + right * side * (1.8 if ship_new > 1.5 else 4.5) * delta
+			if _ship_gap(p, yaw) < minf(0.9, ship_now):
 				p = pos2() + h * ship.speed * delta
 		# Never into another hull, even swinging its stern round.
 		var now_gap := traffic.hull_gap(self, pos2(), Vector2(sin(_yaw), cos(_yaw)))
@@ -418,10 +418,10 @@ func _keep_station(delta: float) -> void:
 			position = Vector3(p.x, position.y, p.y)
 		else:
 			speed = 0.0
-		if _lockable() and off.length() < MATCHED and absf(speed - ship.speed) < 0.4 \
+		if _lockable() and off.length() < MATCHED and absf(speed - ship.speed) < 1.2 \
 				and absf(angle_difference(_yaw, ship_yaw)) < 0.15:
 			_locked = true
-	position.y = sin(_bob * 1.1) * 0.05
+	position.y = sin(_bob * 1.1) * 0.15
 	_pose(delta)
 
 
@@ -432,7 +432,7 @@ func _safe(p: Vector2, d: Vector2, lead: Vector2, now_gap: float) -> bool:
 		return false
 	if not is_instance_valid(ship):
 		return true
-	return _ship_gap(p, atan2(d.x, d.y)) >= minf(0.3, _ship_gap(pos2(), _yaw)) - 0.001
+	return _ship_gap(p, atan2(d.x, d.y)) >= minf(0.9, _ship_gap(pos2(), _yaw)) - 0.003
 
 
 ## The gap between its hull, were it at `p` heading `yaw`, and its ship's.
@@ -446,7 +446,7 @@ func _ship_gap(p: Vector2, yaw: float) -> float:
 ## Whether its hull would lie in water deep enough for it at `p`, heading `yaw`.
 func _hull_afloat(p: Vector2, yaw: float) -> bool:
 	var d := Vector2(sin(yaw), cos(yaw)) * spec.half_length
-	var shoal := -spec.draft - 0.2
+	var shoal := -spec.draft - 0.6
 	for q: Vector2 in [p, p + d, p - d]:
 		if traffic.sim.terrain.height_at(q.x, q.y) > shoal:
 			return false
@@ -455,8 +455,8 @@ func _hull_afloat(p: Vector2, yaw: float) -> bool:
 
 ## Whether the straight line a → b keeps to water deep enough for it.
 func _water_line(a: Vector2, b: Vector2) -> bool:
-	var n := ceili(a.distance_to(b) / 3.0)
-	var shoal := -spec.draft - 0.4
+	var n := ceili(a.distance_to(b) / 9.0)
+	var shoal := -spec.draft - 1.2
 	for k in range(1, n + 1):
 		var q := a.lerp(b, float(k) / n)
 		if traffic.sim.terrain.height_at(q.x, q.y) > shoal:
@@ -468,7 +468,7 @@ func _water_line(a: Vector2, b: Vector2) -> bool:
 ## the ship's (so its ends can't swing in against the ship's side).
 func _station_world(g: float) -> Vector2:
 	var h := ship.heading2()
-	var swing := half_seg * absf(sin(angle_difference(_yaw, atan2(h.x, h.y)))) + 0.15
+	var swing := half_seg * absf(sin(angle_difference(_yaw, atan2(h.x, h.y)))) + 0.45
 	var st := _station(g + swing)
 	var right := Vector2(-h.y, h.x)
 	return ship.pos2() + h * (st.x + _along) + right * side * st.y
@@ -478,12 +478,12 @@ func _station_world(g: float) -> Vector2:
 ## shoal where it would lie alongside over the stretch of its track from s0 to s1.
 func _pick_side(sh: CargoShip, prefer: float, s0: float, s1: float) -> float:
 	var bad := [0, 0]
-	var lat := sh.hull_radius + hull_radius + 1.0
-	var shoal := -spec.draft - 0.5
+	var lat := sh.hull_radius + hull_radius + 3.0
+	var shoal := -spec.draft - 1.5
 	var d := maxf(s0, 0.0)
 	while d <= minf(s1, sh.path.length):
 		var p := sh.path.sample(d)
-		var t := sh.path.tangent(d, 10.0)
+		var t := sh.path.tangent(d, 30.0)
 		var right := Vector2(-t.y, t.x)
 		for k in 2:
 			var sd := prefer if k == 0 else -prefer
@@ -491,7 +491,7 @@ func _pick_side(sh: CargoShip, prefer: float, s0: float, s1: float) -> float:
 				var q := p + right * sd * lat + t * o
 				if traffic.sim.terrain.height_at(q.x, q.y) > shoal:
 					bad[k] += 1
-		d += 8.0
+		d += 24.0
 	return prefer if bad[0] <= bad[1] else -prefer
 
 
@@ -540,5 +540,5 @@ func ahead(d: float) -> Vector2:
 
 func path_left() -> float:
 	if working():
-		return 60.0
+		return 180.0
 	return super()

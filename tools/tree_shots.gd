@@ -9,7 +9,7 @@ var out := "user://"
 var shots := 0
 var spot := Vector3.ZERO
 # [distance, pitch, yaw offset]
-const VIEWS := [[40.0, 0.3, 0.0], [60.0, 0.65, 1.2], [120.0, 0.55, 2.0], [260.0, 0.75, 0.5], [450.0, 0.85, 0.5]]
+const VIEWS := [[120.0, 0.3, 0.0], [180.0, 0.65, 1.2], [360.0, 0.55, 2.0], [780.0, 0.75, 0.5], [1350.0, 0.85, 0.5]]
 
 
 func _initialize() -> void:

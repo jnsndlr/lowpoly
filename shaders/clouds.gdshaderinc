@@ -8,8 +8,8 @@ global uniform vec2 cloud_wind;
 global uniform float cloud_shadow_strength;
 global uniform vec3 sun_direction;
 
-const float CLOUD_ALTITUDE = 170.0;
-const float CLOUD_SCALE = 0.0045;
+const float CLOUD_ALTITUDE = 510.0;
+const float CLOUD_SCALE = 0.0015;
 
 // Random unit gradient per lattice cell (hash22 + normalise; no sin/cos).
 vec2 cl_grad(vec2 i) {

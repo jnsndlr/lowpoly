@@ -18,12 +18,12 @@ enum Road { MOORED, MANOEUVRING, RESTRICTED, FISHING, SAIL, POWER, SHIP }
 var vessel_name := ""
 var spec: VesselSpec      # its type (ferries don't have one)
 var speed := 0.0
-var cruise := 1.0
-var yield_decel := 1.0    # braking used to stop short of a conflict
+var cruise := 3.0
+var yield_decel := 3.0    # braking used to stop short of a conflict
 var rank := 0             # higher ranks keep their course; lower ones give way
-var half_seg := 1.0
-var hull_radius := 1.0
-var claim_step := 2.0     # spacing of the points MarineTraffic samples ahead
+var half_seg := 3.0
+var hull_radius := 3.0
+var claim_step := 6.0     # spacing of the points MarineTraffic samples ahead
 var hold := INF           # how far it means to go for now (short of a channel or berth it is waiting for)
 var lights: MeshInstance3D
 var wake: WakeTrail       # its trail on the water, if it leaves one
@@ -69,7 +69,7 @@ func heading2() -> Vector2:
 
 ## How far ahead it checks for conflicts: always enough to stop from cruise.
 func self_look() -> float:
-	return cruise * cruise / (2.0 * yield_decel) + half_seg + 4.0
+	return cruise * cruise / (2.0 * yield_decel) + half_seg + 12.0
 
 
 ## How much of its path ahead it shows others (who must stay out of it if they
@@ -77,13 +77,13 @@ func self_look() -> float:
 ## but no further than it may actually go now (so a vessel that is itself held
 ## up doesn't hold up the one it is waiting for).
 func shown_look() -> float:
-	var look := maxf(speed * 6.0 + speed * speed / (2.0 * yield_decel) + half_seg + 3.0, self_look())
+	var look := maxf(speed * 6.0 + speed * speed / (2.0 * yield_decel) + half_seg + 9.0, self_look())
 	return minf(look, minf(clear, hold))
 
 
 ## Fastest it may go and still stop within `clear`.
 func yield_speed() -> float:
-	return sqrt(2.0 * yield_decel * maxf(clear - 0.5, 0.0))
+	return sqrt(2.0 * yield_decel * maxf(clear - 1.5, 0.0))
 
 
 ## Whether it is held up waiting on `v`, directly (its hull or path, or something
@@ -149,7 +149,7 @@ func wake_hull() -> Vector4:
 func wake_shape() -> Vector4:
 	if spec:
 		return spec.shape
-	return Vector4((half_seg + hull_radius) * 0.4, 0.2, 1.0, 0.8)
+	return Vector4((half_seg + hull_radius) * 0.4, 0.2, 3.0, 0.8)
 
 
 ## Reverse thrust thrown out ahead of the bow, 0..1.
@@ -202,7 +202,7 @@ func apply_spec(s: VesselSpec, variant := 0) -> MeshInstance3D:
 	yield_decel = s.decel
 	half_seg = s.half_seg()
 	hull_radius = s.radius()
-	claim_step = clampf(s.half_length, 2.0, 5.0)
+	claim_step = clampf(s.half_length, 6.0, 15.0)
 	wake = s.make_wake()
 	var hull := MeshInstance3D.new()
 	hull.mesh = s.model.call(variant)
@@ -232,6 +232,6 @@ func status_text() -> String:
 
 ## The blocking vessel's name for status lines, if it is holding for one.
 func holding_text() -> String:
-	if wants_to_move() and speed < 0.2 and clear < 2.0 and is_instance_valid(blocker):
+	if wants_to_move() and speed < 0.6 and clear < 6.0 and is_instance_valid(blocker):
 		return "Holding for " + blocker.vessel_name
 	return ""

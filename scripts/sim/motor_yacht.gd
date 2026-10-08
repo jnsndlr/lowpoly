@@ -28,19 +28,19 @@ const DWELL := Vector2(120.0, 400.0)       # in a berth after a trip
 # Chance it goes out on a given day, by season (spring, summer, autumn, winter).
 const OUTINGS := [0.55, 0.9, 0.5, 0.2]
 const OVERNIGHT := [0.12, 0.3, 0.1, 0.0]
-const GOAL_R := 12.0
-const HOLD_R := 8.0
-const CLEAR_OF_MARINA := 22.0
-const SCOPE := 5.0             # how far it lies back from its anchor
-const APPROACH := 28.0         # lines up this far downwind of its spot
-const ANCHOR_SPEED := 0.8
-const SET_SPEED := 0.35
+const GOAL_R := 36.0
+const HOLD_R := 24.0
+const CLEAR_OF_MARINA := 66.0
+const SCOPE := 15.0             # how far it lies back from its anchor
+const APPROACH := 84.0         # lines up this far downwind of its spot
+const ANCHOR_SPEED := 2.4
+const SET_SPEED := 1.05
 const WEIGH_TIME := 20.0
 # Where it comes off the plane: near harbours, near anything lying at a berth or
 # at anchor, and in coves.
-const NO_WAKE_HARBOUR := 75.0
-const NO_WAKE_MOORED := 45.0
-const NO_WAKE_COVE := 70.0
+const NO_WAKE_HARBOUR := 225.0
+const NO_WAKE_MOORED := 135.0
+const NO_WAKE_COVE := 210.0
 
 var state := State.MOORED
 var trip := Trip.COVE
@@ -113,7 +113,7 @@ func _process(delta: float) -> void:
 	var under_way := state in [State.CRUISING, State.ANCHORING, State.WAITING, State.ARRIVING]
 	var d := Vector3(sin(_yaw), 0.0, cos(_yaw))
 	wake.update(delta, global_position, d, speed * delta if under_way else 0.0,
-			clampf(speed / cruise, 0.0, 1.0) if under_way else 0.0, under_way and speed > 0.1)
+			clampf(speed / cruise, 0.0, 1.0) if under_way else 0.0, under_way and speed > 0.3)
 
 
 func _now() -> float:
@@ -188,10 +188,10 @@ func depart() -> void:
 ## Somewhere out on open water for a run.
 func _waypoint(from: Vector2) -> Vector2:
 	var nav := traffic.nav
-	var lim := traffic.sim.map.half_size - 40.0
+	var lim := traffic.sim.map.half_size - 120.0
 	for k in 16:
 		var a := traffic.rng.randf() * TAU
-		var p := from + Vector2(cos(a), sin(a)) * traffic.rng.randf_range(120.0, 300.0)
+		var p := from + Vector2(cos(a), sin(a)) * traffic.rng.randf_range(360.0, 900.0)
 		if absf(p.x) < lim and absf(p.y) < lim and nav.open_at(p, false) and not nav.find_path(from, p, false).is_empty():
 			return p
 	return Vector2.INF
@@ -243,7 +243,7 @@ func _navigate(delta: float) -> void:
 					state = State.WAITING
 					traffic.queue_for(dest, self)
 		State.ANCHORING:
-			if pos2().distance_to(spot.pos) < 1.5:
+			if pos2().distance_to(spot.pos) < 4.5:
 				_let_go_anchor()
 				return
 		State.WAITING:
@@ -255,14 +255,14 @@ func _navigate(delta: float) -> void:
 	var target := helm.want_speed
 	match state:
 		State.WAITING:
-			target = minf(target, 0.9)
+			target = minf(target, 2.7)
 			if helm.distance_left() < HOLD_R and helm.give_way_to == null:
 				want_yaw = _wind_yaw()
 				target = 0.0
 		State.ANCHORING:
 			# Up to the spot slowly, head to wind, to stop over it.
 			var left := pos2().distance_to(spot.pos)
-			target = minf(target, minf(ANCHOR_SPEED, 0.15 + sqrt(2.0 * 0.25 * left)))
+			target = minf(target, minf(ANCHOR_SPEED, 0.45 + sqrt(2.0 * 0.75 * left)))
 	_make_way(delta, want_yaw, target, spec.turn if speed > spec.motor_speed * 1.5 else spec.motor_turn)
 	_pose(delta)
 
@@ -271,7 +271,7 @@ func _navigate(delta: float) -> void:
 ## itself, if that is foul).
 func _approach_point() -> Vector2:
 	var p := spot.pos - traffic.sim.wind_from() * APPROACH
-	if traffic.nav.open_at(p, false) and traffic.sim.terrain.height_at(p.x, p.y) < -spec.draft - 0.6:
+	if traffic.nav.open_at(p, false) and traffic.sim.terrain.height_at(p.x, p.y) < -spec.draft - 1.8:
 		return p
 	return spot.pos
 
@@ -304,7 +304,7 @@ func _set_anchor(delta: float) -> void:
 	_yaw = rotate_toward(_yaw, a, 0.25 * delta)
 	var back := minf(_timer, SCOPE)
 	var p := spot.pos - Vector2(sin(_yaw), cos(_yaw)) * back
-	position = Vector3(p.x, sin(_bob * 1.3) * 0.04, p.y)
+	position = Vector3(p.x, sin(_bob * 1.3) * 0.12, p.y)
 	_pose(delta)
 	if _timer >= SCOPE:
 		_anchored()
@@ -332,7 +332,7 @@ func _morning() -> float:
 func _lie_at_anchor(delta: float) -> void:
 	_yaw = rotate_toward(_yaw, _swing_yaw(), 0.08 * delta)
 	var p := spot.pos - Vector2(sin(_yaw), cos(_yaw)) * SCOPE
-	position = Vector3(p.x, sin(_bob * 1.3) * 0.04, p.y)
+	position = Vector3(p.x, sin(_bob * 1.3) * 0.12, p.y)
 	basis = Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, sin(_bob * 0.9) * 0.012) \
 			* Basis(Vector3.BACK, sin(_bob * 1.1) * 0.025)
 	if delta <= 0.0:
@@ -353,7 +353,7 @@ func _weigh(delta: float) -> void:
 	_timer += delta
 	var f := clampf(_timer / WEIGH_TIME, 0.0, 1.0)
 	var p := spot.pos - Vector2(sin(_yaw), cos(_yaw)) * SCOPE * (1.0 - f)
-	position = Vector3(p.x, sin(_bob * 1.3) * 0.04, p.y)
+	position = Vector3(p.x, sin(_bob * 1.3) * 0.12, p.y)
 	_pose(delta)
 	if f < 1.0:
 		return
@@ -378,7 +378,7 @@ func _wind_yaw() -> float:
 ## coves: looked for a little ahead, so it is down to speed by the time it gets
 ## there.
 func _in_no_wake_zone() -> bool:
-	var p := pos2() + Vector2(sin(_yaw), cos(_yaw)) * clampf(speed * 4.0, 0.0, 25.0)
+	var p := pos2() + Vector2(sin(_yaw), cos(_yaw)) * clampf(speed * 4.0, 0.0, 75.0)
 	if traffic.near_harbour(p, NO_WAKE_HARBOUR):
 		return true
 	for a in traffic.anchorages:
@@ -416,7 +416,7 @@ func _pose(delta: float) -> void:
 	var rate := angle_difference(_last_yaw, _yaw) / maxf(delta, 1e-3)
 	_last_yaw = _yaw
 	_roll = move_toward(_roll, clampf(rate * f * 0.25, -0.12, 0.12), 0.3 * delta)
-	position.y = sin(_bob * 1.4) * 0.04 + 0.08 * smoothstep(0.55, 0.9, f)
+	position.y = sin(_bob * 1.4) * 0.12 + 0.24 * smoothstep(0.55, 0.9, f)
 	basis = Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, -_trim + sin(_bob * 1.1) * 0.01) \
 			* Basis(Vector3.BACK, _roll + sin(_bob * 0.9) * 0.02)
 

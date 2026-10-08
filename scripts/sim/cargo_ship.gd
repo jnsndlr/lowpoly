@@ -12,8 +12,8 @@ extends Vessel
 ## a tug escorting it through.
 
 const STUCK_REPLAN := 10.0
-const BOARD_SPEED := 2.6       # with the pilot boat alongside
-const INSIDE := 70.0           # the boarding and landing grounds lie this far inside the map
+const BOARD_SPEED := 7.8       # with the pilot boat alongside
+const INSIDE := 210.0           # the boarding and landing grounds lie this far inside the map
 const SLOW_FOR := 120.0        # (s) it eases down for the pilot boat at most this long before it is alongside
 
 var traffic: MarineTraffic
@@ -41,8 +41,8 @@ func setup(t: MarineTraffic, nm: String, sp: VesselSpec, p: NavPath, start: floa
 	s = start
 	_find_grounds()
 	# Already well in when the map opens: the pilot is aboard.
-	pilot_aboard = s > board_s - 40.0
-	speed = cruise if start > 0.0 else minf(2.0, cruise)
+	pilot_aboard = s > board_s - 120.0
+	speed = cruise if start > 0.0 else minf(6.0, cruise)
 	_bob = t.rng.randf() * TAU
 	_place()
 
@@ -61,14 +61,14 @@ func _process(delta: float) -> void:
 		return
 	_place()
 	var h := heading2()
-	wake.update(delta, global_position, Vector3(h.x, 0.0, h.y), speed * delta, speed / cruise, speed > 0.1)
+	wake.update(delta, global_position, Vector3(h.x, 0.0, h.y), speed * delta, speed / cruise, speed > 0.3)
 	_check_stuck(delta)
 
 
 func _place() -> void:
 	var p := path.sample(s)
 	var t := path.tangent(s, spec.half_length * 0.4)
-	position = Vector3(p.x, sin(_bob * 0.6) * 0.08, p.y)
+	position = Vector3(p.x, sin(_bob * 0.6) * 0.24, p.y)
 	basis = Basis(Vector3.UP, atan2(t.x, t.y)) * Basis(Vector3.BACK, sin(_bob * 0.45) * 0.012)
 
 
@@ -78,7 +78,7 @@ func _place() -> void:
 ## Each pose along the new way is checked like any other, so it only swings
 ## onto it if that is clear.
 func _check_stuck(delta: float) -> void:
-	if speed < 0.05 and clear < 1.0 and blocked_by_hull and is_instance_valid(blocker) \
+	if speed < 0.15 and clear < 3.0 and blocked_by_hull and is_instance_valid(blocker) \
 			and (blocker.waits_for(self) or not blocker.wants_to_move()):
 		_stuck += delta
 	else:
@@ -86,13 +86,13 @@ func _check_stuck(delta: float) -> void:
 	if _stuck < STUCK_REPLAN:
 		return
 	_stuck = 0.0
-	var rejoin_s := path.length - 160.0
-	if rejoin_s - s < 120.0:
+	var rejoin_s := path.length - 480.0
+	if rejoin_s - s < 360.0:
 		return
-	var main := traffic.nav.find_path(pos2(), path.sample(rejoin_s), true, traffic.avoid_circles(blocker, 10.0))
+	var main := traffic.nav.find_path(pos2(), path.sample(rejoin_s), true, traffic.avoid_circles(blocker, 30.0))
 	if main.size() < 2:
 		return
-	main = traffic.nav.finish(main, 10.0, 14.0, 3, spec.half_beam + 2.0)
+	main = traffic.nav.finish(main, 30.0, 42.0, 3, spec.half_beam + 6.0)
 	main.append(path.pts[path.pts.size() - 1])
 	path = NavPath.new(main)
 	s = 0.0
@@ -115,7 +115,7 @@ func _find_grounds() -> void:
 				board_s = d
 				first = false
 			land_s = d
-		d += 10.0
+		d += 30.0
 
 
 ## The side the pilot's ladder goes over (+1 starboard): its lee, away from
@@ -131,7 +131,7 @@ func needs_escort() -> bool:
 
 ## The escort's job is done once it is out past where it drops its pilot.
 func escort_done() -> bool:
-	return s >= land_s - 30.0
+	return s >= land_s - 90.0
 
 
 ## Slow while the pilot boat is alongside, and easing down for it to come
@@ -145,7 +145,7 @@ func _pilot_speed() -> float:
 	# (Not for ever: the boat is quick enough to catch it up.)
 	if _slowed > SLOW_FOR:
 		return INF
-	if pilot_boat.pos2().distance_to(pos2()) < 260.0:
+	if pilot_boat.pos2().distance_to(pos2()) < 780.0:
 		return BOARD_SPEED * 1.2
 	if not pilot_aboard and s > board_s:
 		return cruise * 0.6

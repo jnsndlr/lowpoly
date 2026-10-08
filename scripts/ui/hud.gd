@@ -257,7 +257,7 @@ func _on_sidebar(id: String) -> void:
 			routes_forced = not routes_forced
 			show_toast("ROUTES", "Route overlay always on." if routes_forced else "Route overlay shows when zoomed out.")
 		"map":
-			rig.focus_on(Vector3.ZERO, 560.0)
+			rig.focus_on(Vector3.ZERO, 1680.0)
 		_:
 			show_toast(id.to_upper(), "Coming soon: this screen is a placeholder in the preview.")
 
@@ -306,7 +306,7 @@ func _update_labels() -> void:
 		if not _labels.has(isl.id):
 			continue
 		var p: PanelContainer = _labels[isl.id]
-		var off := cam.is_position_behind(isl.label_pos) or (rig.distance < 45.0 and isl != selected_island)
+		var off := cam.is_position_behind(isl.label_pos) or (rig.distance < 135.0 and isl != selected_island)
 		p.visible = not off
 		if off:
 			continue
@@ -324,14 +324,14 @@ func _on_ground_clicked(screen_pos: Vector2) -> void:
 			show_toast(visit.species.plural.to_upper(), "Already photographed this %s." % _group_word(visit), 3.0)
 		return
 	var best: Vessel = null
-	var best_d := clampf(3000.0 / rig.distance, 24.0, 220.0)
+	var best_d := clampf(9000.0 / rig.distance, 24.0, 220.0)
 	for v in sim.marine.vessels:
-		var wp := v.global_position + Vector3(0, 3, 0)
+		var wp := v.global_position + Vector3(0, 9, 0)
 		if cam.is_position_behind(wp):
 			continue
 		var d := cam.unproject_position(wp).distance_to(screen_pos)
 		# Small boats only when actually clicked on, so they don't steal ferry clicks.
-		if v.spec and v.spec.half_length < 3.5:
+		if v.spec and v.spec.half_length < 10.5:
 			d *= 2.0
 		if d < best_d:
 			best_d = d
@@ -347,7 +347,7 @@ func _on_ground_clicked(screen_pos: Vector2) -> void:
 		clear_selection()
 		return
 	var hp: Vector3 = hit
-	if hp.y < 0.2:
+	if hp.y < 0.6:
 		clear_selection()
 		return
 	var nearest: MapData.Island = null
@@ -371,7 +371,7 @@ func select_island(isl: MapData.Island, focus: bool) -> void:
 	selected_vessel = null
 	rig.follow = null
 	if focus:
-		rig.focus_on(isl.town_center, 130.0)
+		rig.focus_on(isl.town_center, 390.0)
 	_refresh_panels()
 
 
@@ -380,8 +380,8 @@ func select_ferry(f: Ferry) -> void:
 	selected_island = null
 	selected_vessel = null
 	rig.follow = f
-	if rig.target_dist > 180.0:
-		rig.target_dist = 110.0
+	if rig.target_dist > 540.0:
+		rig.target_dist = 330.0
 	_refresh_panels()
 
 
@@ -392,7 +392,7 @@ func select_vessel(v: Vessel) -> void:
 	selected_island = null
 	selected_ferry = null
 	rig.follow = v
-	var near := clampf(40.0 + v.spec.half_length * 5.0, 55.0, 140.0) if v.spec else 140.0
+	var near := clampf(120.0 + v.spec.half_length * 5.0, 165.0, 420.0) if v.spec else 420.0
 	if rig.target_dist > near * 1.6:
 		rig.target_dist = near
 	_refresh_panels()
@@ -473,7 +473,7 @@ func _on_info_button() -> void:
 	elif selected_vessel:
 		rig.follow = null if rig.follow == selected_vessel else selected_vessel
 	elif selected_island:
-		rig.focus_on(selected_island.town_center, 130.0)
+		rig.focus_on(selected_island.town_center, 390.0)
 	_refresh_panels()
 
 
@@ -511,7 +511,7 @@ func _refresh_panels() -> void:
 			["Status", f.status_text()],
 			["Class", f.fc.label],
 			["Vehicles aboard", "%d / %d" % [f.load_count(), f.fc.capacity]],
-			["Speed", "%.1f kn" % (f.speed * 1.6)],
+			["Speed", "%.1f kn" % Units.knots(f.speed)],
 			["Crossing time", "~%d min" % roundi(f.crossing_minutes())],
 			["Crossings", str(f.trips)],
 		])
@@ -519,7 +519,7 @@ func _refresh_panels() -> void:
 	elif selected_vessel:
 		var v := selected_vessel
 		_info_title.text = v.vessel_name.to_upper()
-		var rows := [["Status", v.status_text()], ["Speed", "%.1f kn" % (v.speed * 1.6)]]
+		var rows := [["Status", v.status_text()], ["Speed", "%.1f kn" % Units.knots(v.speed)]]
 		if v is Sailboat:
 			_info_sub.text = "%s · out of %s" % [v.type_text(), (v as Sailboat).marina_name((v as Sailboat).marina)]
 			rows.append(["Passages", str((v as Sailboat).trips)])
@@ -846,9 +846,9 @@ func _build_minimap(env: Environment) -> void:
 	var cam := Camera3D.new()
 	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
 	cam.size = map.half_size * 2.0
-	cam.near = 1.0
-	cam.far = 1000.0
-	cam.position = Vector3(0, 400, 0)
+	cam.near = 3.0
+	cam.far = 3000.0
+	cam.position = Vector3(0, 1200, 0)
 	cam.rotation_degrees = Vector3(-90, 0, 0)
 	cam.cull_mask = 1 # skip the visible cloud layer
 	var mini_env := env.duplicate() as Environment
@@ -912,12 +912,12 @@ func _draw_minimap() -> void:
 		if v is Ferry:
 			continue
 		# Small craft lying at a berth or at anchor are left off.
-		var small := v.spec != null and v.spec.half_length < 3.5
+		var small := v.spec != null and v.spec.half_length < 10.5
 		if small and not v.wants_to_move() and v != selected_vessel:
 			continue
 		var at := _to_minimap(v.global_position)
 		var vc := ACCENT if v == selected_vessel else (Color(0.85, 0.9, 0.95, 0.8) if small else Color(0.95, 0.6, 0.35))
-		var r := 1.5 if small else (2.2 if v.spec and v.spec.half_length < 12.0 else 3.0)
+		var r := 1.5 if small else (2.2 if v.spec and v.spec.half_length < 36.0 else 3.0)
 		o.draw_circle(at, r, vc)
 	for f in sim.ferries:
 		var col := ACCENT if f == selected_ferry else Color(1, 1, 1)

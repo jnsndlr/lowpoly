@@ -13,18 +13,18 @@ extends RefCounted
 ## generators, so it never reshuffles the map itself.
 
 ## How far out the land goes (the backdrop's outer edge, square).
-const FAR := 9000.0
+const FAR := 27000.0
 ## Elevation per metre inland; 0.27 is the waterline (see Terrain._height_of).
-const SHORE_SLOPE := 0.012
+const SHORE_SLOPE := 0.004
 const SHORE_E := 0.27
 ## Nearest the shores come to the map's edge alongside it.
-const SHORE_CLEAR := 180.0
+const SHORE_CLEAR := 540.0
 
 ## 0: the channel runs east-west (along X), so open water lies E and W; 1: north-south.
 var axis := 0
 var half: float
 ## Height (m) above which faces facing the sky are snow.
-var snowline := 560.0
+var snowline := 1680.0
 
 var _width := PackedFloat32Array([0.0, 0.0])  # shore distance on the +v / -v side
 var _close := PackedFloat32Array([0.0, 0.0])  # how far the +u / -u reaches close up (1: shut)
@@ -44,28 +44,28 @@ func _init(map_seed: int, half_size: float) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = map_seed * 7919 + 13
 	axis = rng.randi_range(0, 1)
-	_width[0] = rng.randf_range(half + 260.0, half + 520.0)
-	_width[1] = rng.randf_range(half + 260.0, half + 520.0)
+	_width[0] = rng.randf_range(half + 780.0, half + 1560.0)
+	_width[1] = rng.randf_range(half + 780.0, half + 1560.0)
 	# One end of the passage closes off; the other narrows round a bend.
 	var shut := rng.randi_range(0, 1)
 	_close[shut] = rng.randf_range(1.0, 1.15)
 	_close[1 - shut] = rng.randf_range(0.45, 0.7)
-	_meander = rng.randf_range(500.0, 900.0) * (1.0 if rng.randf() < 0.5 else -1.0)
+	_meander = rng.randf_range(1500.0, 2700.0) * (1.0 if rng.randf() < 0.5 else -1.0)
 	_phase = rng.randf() * TAU
-	snowline = rng.randf_range(520.0, 600.0)
+	snowline = rng.randf_range(1560.0, 1800.0)
 
 	_shore.seed = map_seed + 101
-	_shore.frequency = 0.0016
+	_shore.frequency = 0.00053333
 	_shore.fractal_octaves = 3
 	_hills.seed = map_seed + 102
-	_hills.frequency = 0.003
+	_hills.frequency = 0.001
 	_hills.fractal_octaves = 2
 	_ridges.seed = map_seed + 103
-	_ridges.frequency = 0.0008
+	_ridges.frequency = 0.00026667
 	_ridges.fractal_type = FastNoiseLite.FRACTAL_RIDGED
 	_ridges.fractal_octaves = 2
 	_warp.seed = map_seed + 104
-	_warp.frequency = 0.008
+	_warp.frequency = 0.0026667
 	_warp.fractal_octaves = 2
 
 	# Far islands out in the channel, clear of the map and of the shores.
@@ -73,14 +73,14 @@ func _init(map_seed: int, half_size: float) -> void:
 	for attempt in 80:
 		if _islands.size() >= want:
 			break
-		var u := rng.randf_range(half + 350.0, 4500.0) * (1.0 if rng.randf() < 0.5 else -1.0)
-		var r := rng.randf_range(90.0, 260.0)
-		var xz := _from_uv(u, _centre_v(u) + rng.randf_range(-700.0, 700.0))
+		var u := rng.randf_range(half + 1050.0, 13500.0) * (1.0 if rng.randf() < 0.5 else -1.0)
+		var r := rng.randf_range(270.0, 780.0)
+		var xz := _from_uv(u, _centre_v(u) + rng.randf_range(-2100.0, 2100.0))
 		if inland(xz.x, xz.y) > -r * 1.4:
 			continue
 		var clash := false
 		for o in _islands:
-			if Vector2(o.x, o.y).distance_to(xz) < r + o.z + 150.0:
+			if Vector2(o.x, o.y).distance_to(xz) < r + o.z + 450.0:
 				clash = true
 		if not clash:
 			_islands.append(Vector4(xz.x, xz.y, r, rng.randf_range(2.0, 6.0)))
@@ -89,14 +89,14 @@ func _init(map_seed: int, half_size: float) -> void:
 	# alone on one side.
 	for sgn: float in [1.0, -1.0]:
 		for k in rng.randi_range(5, 8):
-			var xz := _from_uv(rng.randf_range(-6500.0, 6500.0), sgn * rng.randf_range(4800.0, 7400.0))
-			_peaks.append(Vector4(xz.x, xz.y, rng.randf_range(1300.0, 2300.0), rng.randf_range(650.0, 1050.0)))
+			var xz := _from_uv(rng.randf_range(-19500.0, 19500.0), sgn * rng.randf_range(14400.0, 22200.0))
+			_peaks.append(Vector4(xz.x, xz.y, rng.randf_range(3900.0, 6900.0), rng.randf_range(1950.0, 3150.0)))
 	for k in rng.randi_range(2, 3):
-		var xz := _from_uv((1.0 if shut == 0 else -1.0) * rng.randf_range(6000.0, 7400.0), rng.randf_range(-3500.0, 3500.0))
-		_peaks.append(Vector4(xz.x, xz.y, rng.randf_range(1300.0, 2300.0), rng.randf_range(650.0, 1000.0)))
+		var xz := _from_uv((1.0 if shut == 0 else -1.0) * rng.randf_range(18000.0, 22200.0), rng.randf_range(-10500.0, 10500.0))
+		_peaks.append(Vector4(xz.x, xz.y, rng.randf_range(3900.0, 6900.0), rng.randf_range(1950.0, 3000.0)))
 	var vs := 1.0 if rng.randf() < 0.5 else -1.0
-	var vxz := _from_uv(rng.randf_range(-3500.0, 3500.0), vs * rng.randf_range(6000.0, 7000.0))
-	_volcano = Vector4(vxz.x, vxz.y, rng.randf_range(3000.0, 3500.0), rng.randf_range(1250.0, 1450.0))
+	var vxz := _from_uv(rng.randf_range(-10500.0, 10500.0), vs * rng.randf_range(18000.0, 21000.0))
+	_volcano = Vector4(vxz.x, vxz.y, rng.randf_range(9000.0, 10500.0), rng.randf_range(3750.0, 4350.0))
 
 
 ## Along-channel (u) and across-channel (v) coordinates.
@@ -110,7 +110,7 @@ func _from_uv(u: float, v: float) -> Vector2:
 
 ## The channel's centreline: straight past the map, bending further out.
 func _centre_v(u: float) -> float:
-	return _meander * smoothstep(half + 300.0, half + 3000.0, absf(u)) * sin(u / 3200.0 + _phase)
+	return _meander * smoothstep(half + 900.0, half + 9000.0, absf(u)) * sin(u / 9600.0 + _phase)
 
 
 ## Signed distance (m) inland from the channel's shore; negative out in the channel.
@@ -118,10 +118,10 @@ func inland(x: float, z: float) -> float:
 	var uv := _to_uv(x, z)
 	var v := uv.y - _centre_v(uv.x)
 	var side := 0 if v >= 0.0 else 1
-	var w := _width[side] + _shore.get_noise_1d(uv.x + side * 5000.0) * 220.0
+	var w := _width[side] + _shore.get_noise_1d(uv.x + side * 15000.0) * 660.0
 	# Alongside the map the shore stays well clear of the ships' lanes past its edge.
 	w = maxf(w, half + SHORE_CLEAR)
-	w *= 1.0 - smoothstep(2600.0, 6200.0, absf(uv.x)) * _close[0 if uv.x >= 0.0 else 1]
+	w *= 1.0 - smoothstep(7800.0, 18600.0, absf(uv.x)) * _close[0 if uv.x >= 0.0 else 1]
 	return absf(v) - w
 
 
@@ -144,14 +144,14 @@ func relief(x: float, z: float, inl: float, e: float) -> float:
 	var out := sq - half
 	if out <= 0.0 or e < 0.3 or inl < 0.0:
 		return 0.0
-	var g := smoothstep(0.0, 80.0, out) * smoothstep(0.3, 0.7, e) * (1.0 - smoothstep(FAR * 0.9, FAR, sq))
+	var g := smoothstep(0.0, 240.0, out) * smoothstep(0.3, 0.7, e) * (1.0 - smoothstep(FAR * 0.9, FAR, sq))
 	# Low forested hills along the shore...
-	var h := smoothstep(20.0, 700.0, inl) * (20.0 + 110.0 * (_hills.get_noise_2d(x, z) * 0.5 + 0.5))
+	var h := smoothstep(60.0, 2100.0, inl) * (60.0 + 330.0 * (_hills.get_noise_2d(x, z) * 0.5 + 0.5))
 	# ...then a layer of blue ridges, kept below the snow...
 	var ridge := _ridges.get_noise_2d(x, z) * 0.5 + 0.5
-	h += smoothstep(900.0, 2600.0, inl) * (90.0 + 250.0 * ridge)
+	h += smoothstep(2700.0, 7800.0, inl) * (270.0 + 750.0 * ridge)
 	# ...and the snowy peaks far behind.
-	if inl > 600.0:
+	if inl > 1800.0:
 		for p in _peaks:
 			var d := Vector2(x - p.x, z - p.y).length()
 			if d < p.z:

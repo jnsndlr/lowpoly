@@ -9,7 +9,7 @@ extends HelmVessel
 ## the wharf's lock (MarineTraffic.try_lock), and an arriving boat waits its turn
 ## off the wharf (MarineTraffic.wait_spot). Out on the water a Helm steers it.
 
-const CRAB_SPEED := 0.6
+const CRAB_SPEED := 1.8
 
 var wharf: MapData.Wharf
 var berth := 0
@@ -83,7 +83,7 @@ func _lie_alongside() -> void:
 
 func _pose_alongside() -> void:
 	var p := _berth_pos(berth)
-	position = Vector3(p.x, sin(_bob * 1.1) * 0.05, p.y)
+	position = Vector3(p.x, sin(_bob * 1.1) * 0.15, p.y)
 	basis = Basis(Vector3.UP, _yaw + sin(_bob * 0.29) * 0.008) * Basis(Vector3.BACK, sin(_bob * 0.9) * 0.012)
 
 
@@ -110,7 +110,7 @@ func _come_in() -> void:
 	if main.is_empty():
 		main = PackedVector2Array([pos2(), a])
 	main.append(b)
-	main = traffic.nav.finish(main, 0.0, 10.0, 2, hull_radius + 1.0)
+	main = traffic.nav.finish(main, 0.0, 30.0, 2, hull_radius + 3.0)
 	main[main.size() - 1] = b
 	_legs = [[NavPath.new(PackedVector2Array([b, _berth_pos(berth)])), true]]
 	_start_leg(NavPath.new(main), false)
@@ -129,7 +129,7 @@ func _follow_path(delta: float) -> void:
 	# It stops at the end of each leg but the last one out, which runs on into
 	# the open water.
 	if _crab or _coming_in or not _legs.is_empty():
-		target = minf(top, 0.15 + sqrt(2.0 * 0.2 * left))
+		target = minf(top, 0.45 + sqrt(2.0 * 0.6 * left))
 	target = minf(target, yield_speed())
 	speed = move_toward(speed, target, (spec.accel if target > speed else spec.decel) * delta)
 	s = minf(s + speed * delta, path.length)
@@ -137,9 +137,9 @@ func _follow_path(delta: float) -> void:
 		var t := path.tangent(s)
 		_yaw = rotate_toward(_yaw, atan2(t.x, t.y), spec.motor_turn * delta)
 	var p := path.sample(s)
-	position = Vector3(p.x, sin(_bob * 1.1) * 0.05, p.y)
+	position = Vector3(p.x, sin(_bob * 1.1) * 0.15, p.y)
 	_pose(delta)
-	if left > 0.05:
+	if left > 0.15:
 		return
 	if not _legs.is_empty():
 		var next: Array = _legs.pop_front()
@@ -184,5 +184,5 @@ func path_left() -> float:
 	if path != null:
 		return path.length - s
 	if helm != null:
-		return helm.distance_left() + 10.0
+		return helm.distance_left() + 30.0
 	return 0.0

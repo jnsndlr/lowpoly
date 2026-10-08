@@ -6,8 +6,8 @@ extends RefCounted
 
 const TURN := 0.07
 
-var half_length := 15.0
-var spacing := 8.0
+var half_length := 45.0
+var spacing := 24.0
 var life := 24.0
 var max_crumbs := 46
 var odometer := 0.0
@@ -47,7 +47,7 @@ func update(delta: float, pos: Vector3, dir: Vector3, travel: float, frac: float
 	# (A double-ended ferry's stern jumps a hull length when it reverses.)
 	odometer += maxf(travel, swept) if dropping and swept < half_length else travel
 	var gap := INF if _crumbs.is_empty() else odometer - _crumbs[0].z
-	var turned := heading.angle_to(_crumb_heading) >= TURN and gap >= minf(1.5, spacing * 0.5)
+	var turned := heading.angle_to(_crumb_heading) >= TURN and gap >= minf(4.5, spacing * 0.5)
 	if dropping and (gap >= spacing or turned):
 		_crumb_heading = heading
 		_crumbs.push_front(Vector4(stern_now.x, stern_now.z, odometer, _clock))
@@ -109,7 +109,7 @@ func pack(pos: Vector3, pts: PackedVector4Array, spd: PackedFloat32Array, at: in
 			break
 		var c := _crumbs[i]
 		# The newest crumb can sit right at the stern; skip it to avoid a zero-length segment.
-		if odometer - c.z < 1.0:
+		if odometer - c.z < 3.0:
 			continue
 		pts[at + n] = Vector4(c.x, c.y, c.z, _clock - c.w)
 		spd[at + n] = _crumb_speed[i]

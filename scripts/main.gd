@@ -131,7 +131,7 @@ func _setup_environment() -> void:
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
 	env.ssao_enabled = true
-	env.ssao_radius = 2.5
+	env.ssao_radius = 7.5
 	env.ssao_intensity = 1.6
 	env.glow_enabled = true
 	env.glow_intensity = 0.25
@@ -139,13 +139,13 @@ func _setup_environment() -> void:
 	env.fog_mode = Environment.FOG_MODE_DEPTH
 	env.fog_light_color = Color(0.74, 0.82, 0.88)
 	env.fog_density = 0.85
-	env.fog_depth_begin = 600.0
-	env.fog_depth_end = 1600.0
+	env.fog_depth_begin = 1800.0
+	env.fog_depth_end = 4800.0
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.12
 	# Thin volumetric haze so sunlight scatters and cloud shadows read as shafts.
 	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.0012
+	env.volumetric_fog_density = 0.0004
 	env.volumetric_fog_anisotropy = 0.6
 	env.volumetric_fog_ambient_inject = 0.1
 	env.volumetric_fog_sky_affect = 0.15
@@ -161,7 +161,7 @@ func _setup_environment() -> void:
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.5
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	sun.directional_shadow_max_distance = 400.0
+	sun.directional_shadow_max_distance = 1200.0
 	add_child(sun)
 
 
@@ -176,11 +176,11 @@ func _notification(what: int) -> void:
 
 func _process(_delta: float) -> void:
 	# Keep shadows crisp and fog sensible at every zoom level.
-	sun.directional_shadow_max_distance = clampf(rig.distance * 2.6, 120.0, 1200.0)
-	env.fog_depth_begin = rig.distance * 1.6 + 200.0
-	env.fog_depth_end = rig.distance * 4.0 + 700.0
+	sun.directional_shadow_max_distance = clampf(rig.distance * 2.6, 360.0, 3600.0)
+	env.fog_depth_begin = rig.distance * 1.6 + 600.0
+	env.fog_depth_end = rig.distance * 4.0 + 2100.0
 	RenderingServer.global_shader_parameter_set("fog_range", Vector2(env.fog_depth_begin, env.fog_depth_end))
-	env.volumetric_fog_length = clampf(rig.distance * 2.4, 250.0, 1600.0)
+	env.volumetric_fog_length = clampf(rig.distance * 2.4, 750.0, 4800.0)
 	_update_dof()
 
 
@@ -247,7 +247,7 @@ func _apply_debug_args() -> void:
 		var v := sim.wildlife.start_visit(sp) if sp else null
 		if v:
 			hud.follow_visit(v)
-			rig.target_dist = 70.0
+			rig.target_dist = 210.0
 			rig.target_pitch = 0.55
 			rig.snap()
 	if _args.has("vessel"):

@@ -19,13 +19,13 @@ const SAIL_HOURS := Vector2(2.5, 4.5)       # when it casts off (hours of the da
 const HOME_BY := Vector2(13.0, 16.0)        # heads home by then even with room in the hold
 const DAY_OFF := 0.12                       # chance it stays in harbour on a given day
 const LANDING := Vector2(35.0, 60.0)        # game minutes landing the catch
-const TOW_SPEED := 1.4
-const SHOOT_SPEED := 0.9
+const TOW_SPEED := 4.2
+const SHOOT_SPEED := 2.7
 const HAUL_TIME := Vector2(40.0, 70.0)      # game minutes
 const SHOOT_TIME := Vector2(10.0, 20.0)
 const CATCH := Vector2(0.24, 0.4)           # of a full hold, per haul (on an average ground)
-const GOAL_R := 16.0
-const HOLD_R := 12.0
+const GOAL_R := 48.0
+const HOLD_R := 36.0
 const SWELL_ROLL := 0.025
 
 var state := State.ALONGSIDE
@@ -89,7 +89,7 @@ func _process(delta: float) -> void:
 	var under_way := state != State.ALONGSIDE
 	var d := Vector3(sin(_yaw), 0.0, cos(_yaw))
 	wake.update(delta, global_position, d, speed * delta if under_way else 0.0, _load() if under_way else 0.0,
-			under_way and speed > 0.1)
+			under_way and speed > 0.3)
 
 
 func _now() -> float:
@@ -160,7 +160,7 @@ func start_at_sea() -> bool:
 	_tow_end = 1.0 if traffic.rng.randf() < 0.5 else -1.0
 	_tow_across = traffic.rng.randf_range(-FishingGround.HALF_WIDTH, FishingGround.HALF_WIDTH)
 	var p := g.at(traffic.rng.randf_range(-0.6, 0.6) * _tow_end, _tow_across)
-	if not traffic.is_clear(p, 25.0, self):
+	if not traffic.is_clear(p, 75.0, self):
 		traffic.release_ground(g, self)
 		return false
 	ground = g
@@ -240,7 +240,7 @@ func _navigate(delta: float) -> void:
 	var target := helm.want_speed
 	match state:
 		State.WAITING:
-			target = minf(target, 1.2)
+			target = minf(target, 3.6)
 			if helm.distance_left() < HOLD_R and helm.give_way_to == null:
 				want_yaw = _yaw
 				target = 0.0
@@ -251,7 +251,7 @@ func _navigate(delta: float) -> void:
 				want_yaw = _yaw
 				target = 0.0
 	_make_way(delta, want_yaw, target, spec.turn)
-	position.y = sin(_bob * 1.1) * 0.06
+	position.y = sin(_bob * 1.1) * 0.18
 	_pose(delta)
 
 
