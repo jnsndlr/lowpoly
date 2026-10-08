@@ -47,11 +47,6 @@ def smooth(e0, e1, x):
     return t * t * (3 - 2 * t)
 
 
-coll = bpy.data.collections.get("Cargo") or bpy.data.collections.new("Cargo")
-if coll.name not in bpy.context.scene.collection.children:
-    bpy.context.scene.collection.children.link(coll)
-for o in list(coll.objects):
-    bpy.data.objects.remove(o, do_unlink=True)
 mat = bpy.data.materials.get("VertexColour") or bpy.data.materials.new("VertexColour")
 mat.use_nodes = True
 _nt = mat.node_tree
@@ -507,7 +502,7 @@ def rail(path, h=1.0, key="steel", every=1.6):
     cyl(path[-1], path[-1] + V(0, h, 0), 0.025, 0.025, 4, key)
 
 
-def deck_rails():
+def deck_rails(bins=True):
     zs = [-20.0, -14.0, -8.0, -2.0, 4.0, 10.0, 14.0, 16.5, 18.5, 20.5, 22.5, FC_Z - 0.2]
     for sx in (1, -1):
         rail([deck_edge(z, 0.08, sx) for z in zs])
@@ -525,8 +520,8 @@ def deck_rails():
     # The forecastle's after bulkhead: doors, a store's hatch.
     for sx in (1, -1):
         box(V(sx * 1.6, DECK + 0.95, FC_Z - 0.03), (0.8, 1.9, 0.05), "door")
-    # Cross-deck walkways between the hatches, lashing-gear bins.
-    for z in (-6.63, 6.63):
+    # Lashing-gear bins between the hatches.
+    for z in ((-6.63, 6.63) if bins else ()):
         for sx in (1, -1):
             box(V(sx * 3.0, DECK + 0.3, z), (0.9, 0.6, 0.6), "yellow")
 
@@ -1062,29 +1057,38 @@ const BRIDGE_SILL := {BRIDGE["sill"]}
     with open(path, "w") as f: f.write(src)
 
 
-def build():
+def export(name, builders, data=None):
+    """Builds the parts `builders` make (in the collection `name`) and exports them to
+    assets/models/<name>.glb; `data` writes the GDScript that goes with them."""
+    coll = bpy.data.collections.get(name) or bpy.data.collections.new(name)
+    if coll.name not in bpy.context.scene.collection.children:
+        bpy.context.scene.collection.children.link(coll)
+    for o in list(coll.objects):
+        bpy.data.objects.remove(o, do_unlink=True)
     for bm in BMS.values(): bm.free()
     BMS.clear()
-    hull(); bulb(); stern_gear(); anchors(); hull_marks()
-    forecastle(); hatches(); deck_rails(); house(); poop()
-    containers(); glyphs()
+    for b in builders: b()
     obs = []
     for role, bm in BMS.items():
         bmesh.ops.triangulate(bm, faces=list(bm.faces))
-        old = bpy.data.meshes.get("cargo_" + role)
+        old = bpy.data.meshes.get(name + "_" + role)
         if old: bpy.data.meshes.remove(old)
-        me = bpy.data.meshes.new("cargo_" + role); bm.to_mesh(me); bm.free()
+        me = bpy.data.meshes.new(name + "_" + role); bm.to_mesh(me); bm.free()
         me.materials.append(mat)
         me.color_attributes.active_color_name = "Col"; me.color_attributes.render_color_index = 0
         ob = bpy.data.objects.new(role, me); coll.objects.link(ob); obs.append(ob)
     BMS.clear()
-    return obs
+    if data: data()
+    glb = os.path.normpath(os.path.join(ART, "..", "assets", "models", name + ".glb"))
+    for o in bpy.data.objects: o.select_set(o in obs)
+    bpy.ops.export_scene.gltf(filepath=glb, export_format="GLB", use_selection=True,
+                              export_normals=True, export_vertex_color="ACTIVE", export_materials="NONE", export_yup=True)
+    return {o.name: len(o.data.polygons) for o in obs}
 
 
-built = build()
-write_data()
-_glb = os.path.normpath(os.path.join(ART, "..", "assets", "models", "cargo_mid.glb"))
-for o in bpy.data.objects: o.select_set(o in built)
-bpy.ops.export_scene.gltf(filepath=_glb, export_format="GLB", use_selection=True,
-                          export_normals=True, export_vertex_color="ACTIVE", export_materials="NONE", export_yup=True)
-result = {o.name: len(o.data.polygons) for o in built}
+# The shared ship, everything but the cargo deck: tanker_mid.py and bulker_mid.py run
+# this file with CARGO_BASE_ONLY set and build their own decks on it.
+BASE = [hull, bulb, stern_gear, anchors, hull_marks, forecastle, house, poop]
+
+if not globals().get("CARGO_BASE_ONLY"):
+    result = export("cargo_mid", BASE + [hatches, deck_rails, containers, glyphs], write_data)

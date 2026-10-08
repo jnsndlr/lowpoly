@@ -1242,10 +1242,25 @@ const TANKER_DECKS := [Color(0.3, 0.42, 0.3), Color(0.3, 0.42, 0.3), Color(0.5, 
 const TANKER_FUNNELS := [Color(0.85, 0.15, 0.12), Color(0.92, 0.92, 0.9), Color(0.9, 0.72, 0.18)]
 
 
+## Tankers and bulk carriers use mid-poly models on the container ship's hull too
+## (art/tanker_mid.py and art/bulker_mid.py build them on art/cargo_mid.py), so they
+## share its lights and its name's place on the bows; the code-built ones below are
+## the fallbacks, as for the container ship.
+const MID_TANKER_GLB := "res://assets/models/tanker_mid.glb"
+const MID_BULKER_GLB := "res://assets/models/bulker_mid.glb"
+# The band on the mid-poly ships' white funnels.
+const MID_TANKER_FUNNELS := [Color(0.8, 0.14, 0.12), Color(0.12, 0.3, 0.55), Color(0.9, 0.72, 0.18)]
+
+
 ## A tanker on the same hull as the container ship: a flat deck with its cargo
 ## lines and the catwalk running fore and aft, the manifold and its hose crane
 ## amidships.
 static func tanker(variant: int) -> ArrayMesh:
+	if mid_tanker:
+		return _cached("tanker_mid_%d" % variant, func(): return _mid_cargo_ship(MID_TANKER_GLB, {
+			"hull": TANKER_TOPSIDES[variant % TANKER_TOPSIDES.size()],
+			"deck": TANKER_DECKS[variant % TANKER_DECKS.size()],
+			"funnel": MID_TANKER_FUNNELS[variant % MID_TANKER_FUNNELS.size()]}).commit())
 	return _cached("tanker_%d" % variant, func():
 		var mb := MeshBuilder.new()
 		var deck: Color = TANKER_DECKS[variant % TANKER_DECKS.size()]
@@ -1293,11 +1308,21 @@ const BULKER_TOPSIDES := [Color(0.14, 0.22, 0.34), Color(0.2, 0.21, 0.22), Color
 const BULKER_HATCHES := [Color(0.55, 0.18, 0.14), Color(0.2, 0.42, 0.3), Color(0.18, 0.3, 0.5)]
 const BULKER_CRANES := [Color(0.9, 0.74, 0.2), Color(0.92, 0.92, 0.9), Color(0.9, 0.74, 0.2)]
 const BULKER_FUNNELS := [Color(0.15, 0.35, 0.65), Color(0.85, 0.55, 0.12), Color(0.94, 0.95, 0.94)]
+# The mid-poly bulkers' deck and coamings, and the band on their white funnels.
+const MID_BULKER_DECKS := [Color(0.32, 0.37, 0.34), Color(0.45, 0.2, 0.16), Color(0.36, 0.38, 0.38)]
+const MID_BULKER_FUNNELS := [Color(0.15, 0.35, 0.65), Color(0.85, 0.55, 0.12), Color(0.1, 0.1, 0.11)]
 
 
 ## A geared bulk carrier on the same hull: five big hatches under folding
 ## covers, and four deck cranes between them with their jibs stowed forward.
 static func bulk_carrier(variant: int) -> ArrayMesh:
+	if mid_bulker:
+		return _cached("bulker_mid_%d" % variant, func(): return _mid_cargo_ship(MID_BULKER_GLB, {
+			"hull": BULKER_TOPSIDES[variant % BULKER_TOPSIDES.size()],
+			"deck": MID_BULKER_DECKS[variant % MID_BULKER_DECKS.size()],
+			"hatch": BULKER_HATCHES[variant % BULKER_HATCHES.size()],
+			"crane": BULKER_CRANES[variant % BULKER_CRANES.size()],
+			"funnel": MID_BULKER_FUNNELS[variant % MID_BULKER_FUNNELS.size()]}).commit())
 	return _cached("bulker_%d" % variant, func():
 		var mb := MeshBuilder.new()
 		var topsides: Color = BULKER_TOPSIDES[variant % BULKER_TOPSIDES.size()]
@@ -1374,6 +1399,9 @@ static func _cargo_hull(mb: MeshBuilder, topsides: Color, deck: Color, funnel: C
 const MID_CARGO_GLB := "res://assets/models/cargo_mid.glb"
 static var mid_cargo := not "--classic-cargo" in OS.get_cmdline_user_args() \
 	and ResourceLoader.exists(MID_CARGO_GLB)
+# (After mid_cargo: static vars are set in the order they're declared.)
+static var mid_tanker := mid_cargo and ResourceLoader.exists(MID_TANKER_GLB)
+static var mid_bulker := mid_cargo and ResourceLoader.exists(MID_BULKER_GLB)
 const MID_CARGO_HULLS := [Color(0.12, 0.16, 0.24), Color(0.1, 0.1, 0.11), Color(0.42, 0.12, 0.1)]
 # How often each line's boxes turn up (CargoMidData.LINES order); the leasing boxes last.
 const MID_CARGO_LINE_WEIGHTS := [1.0, 1.0, 1.0, 1.0, 0.8, 0.8, 0.7, 0.7, 0.9, 0.6, 0.5]
@@ -1435,21 +1463,28 @@ static func _append_part(mb: MeshBuilder, part: MeshBuilder, xf: Transform3D, ti
 
 ## The mid-poly container ship in `variant`'s livery, loaded as the variant stows it.
 static func _mid_cargo(variant: int) -> MeshBuilder:
-	var lib := _gltf_library(MID_CARGO_GLB)
+	var mb := _mid_cargo_ship(MID_CARGO_GLB, {"hull": MID_CARGO_HULLS[variant % MID_CARGO_HULLS.size()],
+		"funnel": CARGO_FUNNELS[variant % CARGO_FUNNELS.size()]})
+	_stow_containers(mb, _gltf_library(MID_CARGO_GLB), variant)
+	return mb
+
+
+## One of the mid-poly ships on the container ship's hull (the feeder, tanker or bulk
+## carrier, from `glb`): its fixed parts, the livery's parts each painted as `paint`
+## has them, the glass, and the lanterns and sidelights where CargoMidData has them.
+static func _mid_cargo_ship(glb: String, paint: Dictionary) -> MeshBuilder:
+	var lib := _gltf_library(glb)
 	var mb := MeshBuilder.new()
 	var one := Transform3D.IDENTITY
 	_append_part(mb, lib["fixed"], one)
-	var paint := {"hull": MID_CARGO_HULLS[variant % MID_CARGO_HULLS.size()],
-		"funnel": CARGO_FUNNELS[variant % CARGO_FUNNELS.size()], "glass": WINDOW_LIT, "window": WINDOW,
-		"lens": lamp_glass(GlowBuilder.LED)}
-	for part: String in paint:
-		_append_part(mb, lib[part], one, Color.WHITE, paint[part])
+	var parts := paint.merged({"glass": WINDOW_LIT, "window": WINDOW, "lens": lamp_glass(GlowBuilder.LED)})
+	for part: String in parts:
+		_append_part(mb, lib[part], one, Color.WHITE, parts[part])
 	add_lantern(mb, CargoMidData.FORE_MAST, GlowBuilder.LED, CARGO_LANTERN)
 	add_lantern(mb, CargoMidData.AFT_MAST, GlowBuilder.LED, CARGO_LANTERN)
 	for sx: float in [-1.0, 1.0]:
 		var sl := CargoMidData.SIDELIGHT
 		add_sidelight(mb, Vector3(sx * sl.x, sl.y, sl.z), sx, 1.0, MID_CARGO_SIDELIGHT_SCALE)
-	_stow_containers(mb, lib, variant)
 	return mb
 
 

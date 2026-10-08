@@ -123,8 +123,9 @@ static func _tanker(container: VesselSpec) -> VesselSpec:
 	s.accel = 0.3
 	s.wash = 1.5
 	s.model = func(v: int) -> ArrayMesh: return Models.tanker(v)
-	s.name_plate = Callable()
-	s.lights = func(_v: int) -> ArrayMesh: return Models.cargo_ship_lights(false)
+	if not Models.mid_tanker:
+		s.name_plate = Callable()
+	s.lights = func(_v: int) -> ArrayMesh: return Models.cargo_ship_lights(Models.mid_tanker)
 	s.weight = 0.7
 	return s
 
@@ -136,8 +137,9 @@ static func _bulk_carrier(container: VesselSpec) -> VesselSpec:
 	s.accel = 0.3
 	s.wash = 1.4
 	s.model = func(v: int) -> ArrayMesh: return Models.bulk_carrier(v)
-	s.name_plate = Callable()
-	s.lights = func(_v: int) -> ArrayMesh: return Models.cargo_ship_lights(false)
+	if not Models.mid_bulker:
+		s.name_plate = Callable()
+	s.lights = func(_v: int) -> ArrayMesh: return Models.cargo_ship_lights(Models.mid_bulker)
 	s.weight = 0.7
 	return s
 

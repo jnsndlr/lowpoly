@@ -30,6 +30,12 @@ var shots := [
 	["boxship_bow", "boxship", 2.5, 0.22, 150.0, 13.0],
 	["boxship_quarter", "boxship", -0.6, 0.3, 165.0, 13.0],
 	["boxship_night", "boxship", 1.1, 0.35, 255.0, 22.5],
+	["tanker", "tanker", 0.9, 0.35, 285.0, 13.0],
+	["tanker_bow", "tanker", 2.5, 0.22, 150.0, 13.0],
+	["tanker_night", "tanker", 1.1, 0.35, 255.0, 22.5],
+	["bulker", "bulker", 0.9, 0.35, 285.0, 13.0],
+	["bulker_quarter", "bulker", -0.6, 0.3, 165.0, 13.0],
+	["bulker_night", "bulker", 1.1, 0.35, 255.0, 22.5],
 	["station", "station", 0.6, 0.55, 225.0, 11.0],
 	["station_night", "station", 0.6, 0.5, 225.0, 22.0],
 ]
@@ -139,6 +145,10 @@ func _find(what: String) -> Vessel:
 		"boxship":
 			for c in m.cargo_ships:
 				if c.spec.id in ["container", "feeder"] and c.speed > 0.5 * c.cruise:
+					return c
+		"tanker", "bulker":
+			for c in m.cargo_ships:
+				if c.spec.id == ("tanker" if what == "tanker" else "bulk_carrier") and c.speed > 0.5 * c.cruise:
 					return c
 		"tug_escort":
 			for t in m.pilotage.tugs:
