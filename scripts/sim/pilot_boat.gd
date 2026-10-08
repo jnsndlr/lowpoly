@@ -37,7 +37,7 @@ func setup(t: MarineTraffic, nm: String, sp: VesselSpec, st: MapData.PilotStatio
 	wharf = st
 	berth = b
 	# (Handier alongside than a trawler: thrusters, or twin screws.)
-	crab_speed = 1.1
+	crab_speed = 3.3
 	_bob = t.rng.randf() * TAU
 	_tie_up()
 
@@ -46,9 +46,9 @@ func setup(t: MarineTraffic, nm: String, sp: VesselSpec, st: MapData.PilotStatio
 ## lee side unless that is the shoal side where they will meet.
 func assign_job(sh: CargoShip, j: Job, meet: Vector2) -> void:
 	job = j
-	var s0 := maxf(sh.s, sh.board_s) if j == Job.BOARD else sh.land_s - 300.0
+	var s0 := maxf(sh.s, sh.board_s) if j == Job.BOARD else sh.land_s - 900.0
 	var lee := sh.lee_side(traffic.sim.wind_from())
-	assign(sh, meet, _pick_side(sh, lee, s0, s0 + 400.0))
+	assign(sh, meet, _pick_side(sh, lee, s0, s0 + 1200.0))
 	sh.pilot_boat = self
 
 
@@ -58,11 +58,11 @@ func _station(g: float) -> Vector2:
 
 
 func _working_gap() -> float:
-	return 0.4
+	return 1.2
 
 
 func _closing_gap() -> float:
-	return 14.0
+	return 42.0
 
 
 func _start_work() -> void:
@@ -70,7 +70,8 @@ func _start_work() -> void:
 	# The ship's ladder, over its side by the boat (which side of the boat that is).
 	var out := (hull_radius + _working_gap()) * side
 	var ship_deck := 3.2 * ship.spec.scale
-	_ladder.mesh = Models.pilot_ladder(absf(out), ship_deck)
+	# (In the hull's frame, which is drawn spec.scale times its built size.)
+	_ladder.mesh = Models.pilot_ladder(absf(out) / spec.scale, ship_deck / spec.scale)
 	_ladder.rotation = Vector3(0, 0 if side > 0.0 else PI, 0)
 	_ladder.visible = true
 

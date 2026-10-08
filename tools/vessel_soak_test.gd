@@ -65,7 +65,7 @@ func _process(delta: float) -> bool:
 		for j in range(i + 1, vs.size()):
 			var b := vs[j]
 			var pb := b.pos2()
-			if pa.distance_to(pb) > a.half_seg + b.half_seg + a.hull_radius + b.hull_radius + 2.0:
+			if pa.distance_to(pb) > a.half_seg + b.half_seg + a.hull_radius + b.hull_radius + 6.0:
 				continue
 			var hb := b.heading2() * b.half_seg
 			var gap := MarineTraffic._seg_dist(pa - ha, pa + ha, pb - hb, pb + hb) - a.hull_radius - b.hull_radius
@@ -90,7 +90,7 @@ func _process(delta: float) -> bool:
 							t._locked, t._gap, t.speed, sh.speed])
 		if not (a is Ferry):
 			for e in [pa - ha, pa + ha, pa]:
-				if sim.terrain.height_at(e.x, e.y) > -0.6 and not aground.has(a.vessel_name):
+				if sim.terrain.height_at(e.x, e.y) > -1.8 and not aground.has(a.vessel_name):
 					aground[a.vessel_name] = true
 					print("AGROUND %s at %s: %s" % [a.vessel_name, e, a.status_text()])
 		if a is FishingBoat:
@@ -105,7 +105,7 @@ func _process(delta: float) -> bool:
 					if sim.terrain.height_at(e.x, e.y) > -f.spec.draft and not shoal.has(f.vessel_name):
 						shoal[f.vessel_name] = true
 						print("SHOAL %s at %s (%.2f m): %s" % [f.vessel_name, e, sim.terrain.height_at(e.x, e.y), f.status_text()])
-				var stopped: bool = f.speed < 0.2
+				var stopped: bool = f.speed < 0.6
 				var steaming: bool = f.state == FishingBoat.State.STEAMING or f.state == FishingBoat.State.HOMEWARD
 				if stopped and steaming and not _was_stopped.get(f, true):
 					fish_stops += 1
@@ -118,16 +118,16 @@ func _process(delta: float) -> bool:
 				atan2(a.heading2().x, a.heading2().y), a.speed, a.clear, a.status_text()])
 		# A sailboat brought to a stop out on the water.
 		if a is Sailboat and a.state == Sailboat.State.SAILING:
-			var stopped: bool = a.speed < 0.2
+			var stopped: bool = a.speed < 0.6
 			if stopped and not _was_stopped.get(a, false):
 				sail_stops += 1
 				var st: String = a.status_text().split(" ·")[0]
 				stop_why[st] = stop_why.get(st, 0) + 1
 			_was_stopped[a] = stopped
-		if a is ShipTender and a.state in [ShipTender.State.STANDING_BY, ShipTender.State.WAITING] and a.speed > 1.5:
+		if a is ShipTender and a.state in [ShipTender.State.STANDING_BY, ShipTender.State.WAITING] and a.speed > 4.5:
 			tender_loiter += delta
 		# (A trawler hauling its net, say, lies stopped on purpose.)
-		if a.wants_to_move() and a.speed < 0.05 and not a.resting():
+		if a.wants_to_move() and a.speed < 0.15 and not a.resting():
 			stall[a] = stall.get(a, 0.0) + delta
 			# (Waiting its turn to go in to a berth can take a while.)
 			var limit := STALL * (4.0 if a.status_text().begins_with("Waiting") else 1.0)
@@ -144,14 +144,14 @@ func _process(delta: float) -> bool:
 						sim.terrain.height_at(pa.x, pa.y)]
 				print("STALL %s (%s) at %s: %s%s" % [a.vessel_name, a.kind_text(), pa, a.status_text(), extra])
 				for o in vs:
-					if o != a and o.pos2().distance_to(pa) < 45.0:
+					if o != a and o.pos2().distance_to(pa) < 135.0:
 						print("    near: %s (%s) at %s %.1f m/s: %s" % [o.vessel_name, o.kind_text(), o.pos2(), o.speed, o.status_text()])
 		else:
 			stall[a] = 0.0
 			reported.erase(a)
 	for f in sim.ferries:
-		if f.state == Ferry.State.SAILING and f.speed < 0.2:
-			if f.traveled < 0.5:
+		if f.state == Ferry.State.SAILING and f.speed < 0.6:
+			if f.traveled < 1.5:
 				ferry_held_in += delta
 			else:
 				ferry_stopped += delta

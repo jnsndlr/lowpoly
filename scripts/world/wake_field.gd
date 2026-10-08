@@ -8,9 +8,11 @@ const MAX_SLOTS := 16
 const MAX_POINTS := 48
 # Must match the shader's Kelvin wedge, so the bounds cover the whole wake.
 const KELVIN_SPREAD := 0.354
-const KELVIN_REACH := 180.0
+const KELVIN_REACH := 540.0
 # Furthest the shader's reverse-thrust wash reaches from the bow (with its spread).
-const FRONT_WASH_REACH := 24.0
+const FRONT_WASH_REACH := 72.0
+# The water shader's unit (water.gdshader's UNIT): everything goes over in it.
+const UNIT := 3.0
 
 var sim: Simulation
 var water_mat: ShaderMaterial
@@ -67,7 +69,7 @@ func _process(_delta: float) -> void:
 			var p := _pts[at + i]
 			var along := tr.odometer - p.z
 			var wk := hull.x + clampf(along + hull.y, 0.0, reach) * KELVIN_SPREAD
-			var r := wk * 1.1 + 4.0
+			var r := wk * 1.1 + 12.0
 			lo = lo.min(Vector2(p.x - r, p.y - r))
 			hi = hi.max(Vector2(p.x + r, p.y + r))
 		var thrust := v.front_thrust()
@@ -76,10 +78,14 @@ func _process(_delta: float) -> void:
 			var bow := Vector2(_pts[at].x, _pts[at].y)
 			lo = lo.min(bow - Vector2.ONE * FRONT_WASH_REACH)
 			hi = hi.max(bow + Vector2.ONE * FRONT_WASH_REACH)
-		_box[count] = Vector4(lo.x, lo.y, hi.x, hi.y)
-		_info[count] = Vector4(tr.odometer, n, tr.life, thrust)
-		_hull[count] = hull
-		_shape[count] = v.wake_shape()
+		_box[count] = Vector4(lo.x, lo.y, hi.x, hi.y) / UNIT
+		_info[count] = Vector4(tr.odometer / UNIT, n, tr.life, thrust)
+		_hull[count] = Vector4(hull.x / UNIT, hull.y / UNIT, hull.z, hull.w)
+		var shape := v.wake_shape()
+		_shape[count] = Vector4(shape.x / UNIT, shape.y, shape.z / UNIT, shape.w)
+		for i in n:
+			var q := _pts[at + i]
+			_pts[at + i] = Vector4(q.x / UNIT, q.y / UNIT, q.z / UNIT, q.w)
 		count += 1
 	# Speeds go four to a vec4, which keeps the shader's uniforms compact.
 	for i in _spd4.size():

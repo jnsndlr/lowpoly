@@ -7,21 +7,21 @@ extends Node3D
 
 signal ground_clicked(screen_pos: Vector2)
 
-const MIN_DIST := 14.0
-const MAX_DIST := 620.0
+const MIN_DIST := 42.0
+const MAX_DIST := 1860.0
 const MIN_PITCH := 0.06   # ~3.5°: down near the water, looking up the passage
 ## The camera never goes lower than this above the water or ground.
-const MIN_EYE := 2.5
+const MIN_EYE := 7.5
 const MAX_PITCH := 1.50   # ~86°
 
 var camera: Camera3D
 var terrain: Terrain
-var bounds := 260.0
+var bounds := 780.0
 var follow: Node3D = null
 
 var yaw := -0.6
 var pitch := 0.95
-var distance := 380.0
+var distance := 1140.0
 var target_yaw := yaw
 var target_pitch := pitch
 var target_dist := distance
@@ -39,8 +39,8 @@ var _follow_pan := Vector2.ZERO   # swipe accumulated while following, before it
 func _ready() -> void:
 	camera = Camera3D.new()
 	camera.fov = 42.0
-	camera.near = 0.5
-	camera.far = 15000.0 # the mainland's far peaks, seen across the map
+	camera.near = 1.5
+	camera.far = 45000.0 # the mainland's far peaks, seen across the map
 	add_child(camera)
 	_last_ticks = Time.get_ticks_usec()
 	_update_camera()
@@ -127,7 +127,7 @@ func pick_terrain(screen: Vector2) -> Variant:
 	var d := camera.project_ray_normal(screen)
 	if d.y > -0.001 or terrain == null:
 		return ground_at(screen)
-	var t_end := (o.y + 1.0) / -d.y
+	var t_end := (o.y + 3.0) / -d.y
 	var steps := 500
 	for i in range(1, steps + 1):
 		var p := o + d * (t_end * i / steps)

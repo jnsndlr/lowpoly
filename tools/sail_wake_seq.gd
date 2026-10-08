@@ -29,7 +29,7 @@ func _process(_delta: float) -> bool:
 	if boat == null or not is_instance_valid(boat) or boat.state != Sailboat.State.SAILING:
 		boat = null
 		for b in main.sim.marine.sailboats:
-			if b.state == Sailboat.State.SAILING and not b.motoring and b.path_left() > 120.0:
+			if b.state == Sailboat.State.SAILING and not b.motoring and b.path_left() > 360.0:
 				boat = b
 				break
 		if boat == null:
@@ -37,8 +37,8 @@ func _process(_delta: float) -> bool:
 			return frames > 6000
 		Engine.time_scale = 1.0
 		main.rig.follow = boat
-		main.rig.target_dist = 45.0
-		main.rig.distance = 45.0
+		main.rig.target_dist = 135.0
+		main.rig.distance = 135.0
 		main.rig.target_pitch = 1.3
 		main.rig.pitch = 1.3
 		next_at = frames + 90

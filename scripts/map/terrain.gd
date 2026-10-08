@@ -4,8 +4,8 @@ extends RefCounted
 ## into rocky shores and rolling hills, then flattened where terminals need level ground.
 ## height_at() matches the rendered triangles exactly, so props sit on the surface.
 
-const CELL := 2.5
-const SEA_FLOOR := -5.5
+const CELL := 7.5
+const SEA_FLOOR := -16.5
 
 var half_size: float
 var n: int  # cells per side
@@ -26,10 +26,10 @@ func _init(map_seed: int, half: float) -> void:
 	e_grid.resize((n + 1) * (n + 1))
 	e_grid.fill(0.0)
 	warp.seed = map_seed
-	warp.frequency = 0.014
+	warp.frequency = 0.0046667
 	warp.fractal_octaves = 3
 	detail.seed = map_seed + 17
-	detail.frequency = 0.05
+	detail.frequency = 0.0166667
 	mainland = Mainland.new(map_seed, half)
 
 
@@ -74,7 +74,7 @@ func finalize() -> void:
 ## A steep rocky shoreline, then gentle hills.
 func _height_of(e: float, x: float, z: float) -> float:
 	var land := smoothstep(0.2, 0.32, e)
-	return SEA_FLOOR + land * 6.2 + e * 7.0 + detail.get_noise_2d(x, z) * 1.8 * land
+	return SEA_FLOOR + land * 18.6 + e * 21.0 + detail.get_noise_2d(x, z) * 5.4 * land
 
 
 ## Height past the grid: the mainland's shores, hills and mountains, and the parts
@@ -85,7 +85,7 @@ func outer_height(x: float, z: float) -> float:
 	# Out in the open channel, stamps sink away just past the edge so they leave
 	# the shipping lanes clear; near the shores they run on into the mainland.
 	var out := maxf(absf(x), absf(z)) - half_size
-	var keep := 1.0 - smoothstep(0.0, 60.0, out) * (1.0 - smoothstep(-220.0, -60.0, inl))
+	var keep := 1.0 - smoothstep(0.0, 180.0, out) * (1.0 - smoothstep(-660.0, -180.0, inl))
 	if keep > 0.0:
 		for s in _edge_stamps:
 			e = maxf(e, _stamp_e(Vector2(s.x, s.y), s.z, s.w, x, z) * keep)
@@ -132,7 +132,7 @@ func apply_flats() -> void:
 ## down to `front` out to sea, `half_w` either side, blending into the banks.
 func carve_beach(origin: Vector3, dir: Vector3, half_w: float, back: float, front: float) -> void:
 	var td := Vector3.UP.cross(dir)
-	var reach := half_w + back + front + 4.0
+	var reach := half_w + back + front + 12.0
 	for j in range(_index_of(origin.z - reach), _index_of(origin.z + reach) + 1):
 		for i in range(_index_of(origin.x - reach), _index_of(origin.x + reach) + 1):
 			var p := Vector3(-half_size + i * CELL, 0.0, -half_size + j * CELL) - origin
@@ -142,14 +142,14 @@ func carve_beach(origin: Vector3, dir: Vector3, half_w: float, back: float, fron
 			if across >= 1.0:
 				continue
 			var u_back := -back * (1.0 - 0.45 * across * across)
-			var w := (1.0 - smoothstep(0.55, 1.0, across)) * smoothstep(u_back - 4.0, u_back, u) \
-				* (1.0 - smoothstep(front - 3.0, front + 3.0, u))
+			var w := (1.0 - smoothstep(0.55, 1.0, across)) * smoothstep(u_back - 12.0, u_back, u) \
+				* (1.0 - smoothstep(front - 9.0, front + 9.0, u))
 			if w <= 0.0:
 				continue
 			var s := clampf((u - u_back) / (front - u_back), 0.0, 1.0)
 			var k := j * (n + 1) + i
 			# Only ever cut down: no spits built out into deep water off a point.
-			h_grid[k] = minf(h_grid[k], lerpf(h_grid[k], lerpf(1.5, -2.6, pow(s, 0.85)), w))
+			h_grid[k] = minf(h_grid[k], lerpf(h_grid[k], lerpf(4.5, -7.8, pow(s, 0.85)), w))
 
 
 func h_index(i: int, j: int) -> float:

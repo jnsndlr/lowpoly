@@ -11,27 +11,27 @@ var out := "user://"
 var only: PackedStringArray = []
 # [name, what to wait for, yaw (from astern, or the station's seaward side), pitch, distance, hour to show it at (-1: as it is)]
 var shots := [
-	["yacht_plane", "planing", 0.9, 0.3, 26.0, -1.0],
-	["yacht_plane_side", "planing", 1.7, 0.18, 22.0, -1.0],
-	["yacht_anchor", "anchored", 0.8, 0.35, 28.0, -1.0],
-	["cove", "anchored", 0.6, 0.85, 140.0, -1.0],
-	["yacht_anchor_night", "anchored", 0.8, 0.35, 30.0, 22.5],
-	["pilot_out", "pilot_running", 0.8, 0.3, 30.0, -1.0],
-	["pilot_closing", "pilot_closing", 2.0, 0.45, 70.0, -1.0],
-	["pilot_alongside", "pilot_alongside", 1.7, 0.4, 45.0, -1.0],
-	["pilot_alongside_b", "pilot_alongside", -1.7, 0.4, 45.0, -1.0],
-	["pilot_ladder", "pilot_alongside", -1.45, 0.3, 20.0, -1.0],
-	["pilot_ladder_b", "pilot_alongside", 1.45, 0.3, 20.0, -1.0],
-	["pilot_alongside_high", "pilot_alongside", 1.2, 0.95, 90.0, -1.0],
-	["pilot_night", "pilot_alongside", 1.9, 0.4, 50.0, 23.0],
-	["tug_escort", "tug_escort", 0.5, 0.55, 120.0, -1.0],
-	["tug_close", "tug_escort", 1.0, 0.3, 40.0, -1.0],
-	["boxship", "boxship", 0.9, 0.35, 95.0, 13.0],
-	["boxship_bow", "boxship", 2.5, 0.22, 50.0, 13.0],
-	["boxship_quarter", "boxship", -0.6, 0.3, 55.0, 13.0],
-	["boxship_night", "boxship", 1.1, 0.35, 85.0, 22.5],
-	["station", "station", 0.6, 0.55, 75.0, 11.0],
-	["station_night", "station", 0.6, 0.5, 75.0, 22.0],
+	["yacht_plane", "planing", 0.9, 0.3, 78.0, -1.0],
+	["yacht_plane_side", "planing", 1.7, 0.18, 66.0, -1.0],
+	["yacht_anchor", "anchored", 0.8, 0.35, 84.0, -1.0],
+	["cove", "anchored", 0.6, 0.85, 420.0, -1.0],
+	["yacht_anchor_night", "anchored", 0.8, 0.35, 90.0, 22.5],
+	["pilot_out", "pilot_running", 0.8, 0.3, 90.0, -1.0],
+	["pilot_closing", "pilot_closing", 2.0, 0.45, 210.0, -1.0],
+	["pilot_alongside", "pilot_alongside", 1.7, 0.4, 135.0, -1.0],
+	["pilot_alongside_b", "pilot_alongside", -1.7, 0.4, 135.0, -1.0],
+	["pilot_ladder", "pilot_alongside", -1.45, 0.3, 60.0, -1.0],
+	["pilot_ladder_b", "pilot_alongside", 1.45, 0.3, 60.0, -1.0],
+	["pilot_alongside_high", "pilot_alongside", 1.2, 0.95, 270.0, -1.0],
+	["pilot_night", "pilot_alongside", 1.9, 0.4, 150.0, 23.0],
+	["tug_escort", "tug_escort", 0.5, 0.55, 360.0, -1.0],
+	["tug_close", "tug_escort", 1.0, 0.3, 120.0, -1.0],
+	["boxship", "boxship", 0.9, 0.35, 285.0, 13.0],
+	["boxship_bow", "boxship", 2.5, 0.22, 150.0, 13.0],
+	["boxship_quarter", "boxship", -0.6, 0.3, 165.0, 13.0],
+	["boxship_night", "boxship", 1.1, 0.35, 255.0, 22.5],
+	["station", "station", 0.6, 0.55, 225.0, 11.0],
+	["station_night", "station", 0.6, 0.5, 225.0, 22.0],
 ]
 const WARM_UP := 300
 const GIVE_UP := 40000
@@ -89,7 +89,7 @@ func _process(_delta: float) -> bool:
 		else:
 			# Framing the ship and its tender together for the wide shots.
 			var target: Vessel = _v
-			if s[1] == "tug_escort" and s[4] > 80.0:
+			if s[1] == "tug_escort" and s[4] > 240.0:
 				target = (_v as Tug).ship
 			rig.follow = target
 			var h := _v.heading2()

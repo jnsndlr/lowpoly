@@ -62,9 +62,10 @@ float hash13(vec3 p) {
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	local_z = VERTEX.z;
-	// Instance origin (or room_seed), wall (normal) and storey: the same for a whole window.
+	// Instance origin (or room_seed), wall (normal) and storey (in metres, however big
+	// the mesh is drawn): the same for a whole window.
 	vec3 origin = room_seed != 0.0 ? vec3(room_seed, room_seed * 1.7, room_seed * 2.3) : MODEL_MATRIX[3].xyz;
-	room_key = origin + round(NORMAL * 2.0) * 17.0 + floor(VERTEX.y / 2.5) * 5.3;
+	room_key = origin + round(NORMAL * 2.0) * 17.0 + floor(VERTEX.y * length(MODEL_MATRIX[1].xyz) / 7.5) * 5.3;
 	upright = step(abs(NORMAL.y), 0.5);
 }
 

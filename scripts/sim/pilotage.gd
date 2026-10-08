@@ -14,8 +14,8 @@ const PILOT_NAMES := ["Pacific Pilot", "Salish Pilot", "Haro Pilot", "Strait Pil
 const TUG_NAMES := ["Sea Bear", "Tenacious", "Saturna", "Kodiak", "Valiant", "Ocean Ranger"]
 const RANK_TENDER := 1600
 const LAND_LEAD := 45.0        # seconds early a boat aims to be for a pilot coming off
-const REACH := 620.0
-const SHORT_PASSAGE := 350.0
+const REACH := 1860.0
+const SHORT_PASSAGE := 1050.0
 
 var traffic: MarineTraffic
 var station: MapData.PilotStation
@@ -99,13 +99,13 @@ func _first_sight(ship: CargoShip) -> void:
 func _board(ship: CargoShip) -> void:
 	if ship.pilot_aboard or _has_boat(ship):
 		return
-	if ship.s > ship.land_s - 250.0:
+	if ship.s > ship.land_s - 750.0:
 		if not _missed.has(ship):
 			_missed[ship] = true
 			missed += 1
 
 		return
-	var meet := ship.path.sample(clampf(ship.s + 200.0, ship.board_s, ship.land_s))
+	var meet := ship.path.sample(clampf(ship.s + 600.0, ship.board_s, ship.land_s))
 	var boat := _nearest(meet)
 	if boat:
 		boat.assign_job(ship, PilotBoat.Job.BOARD, meet)
@@ -120,7 +120,7 @@ func _land(ship: CargoShip) -> void:
 	var boat := _nearest(meet)
 	if boat == null:
 		return
-	var ship_eta := (ship.land_s - ship.s) / maxf(ship.speed, 1.0)
+	var ship_eta := (ship.land_s - ship.s) / maxf(ship.speed, 3.0)
 	if ship_eta <= boat.eta(meet) + LAND_LEAD:
 		boat.assign_job(ship, PilotBoat.Job.LAND, meet)
 
@@ -129,11 +129,11 @@ func _land(ship: CargoShip) -> void:
 func _escort(ship: CargoShip) -> void:
 	if not ship.needs_escort() or ship.escorted or (ship.escort != null and is_instance_valid(ship.escort)):
 		return
-	if ship.s > ship.land_s - 350.0:
+	if ship.s > ship.land_s - 1050.0:
 		return
 	for tug in tugs:
 		if tug.available():
-			tug.escort(ship, ship.path.sample(clampf(ship.s + 250.0, ship.board_s, ship.land_s)))
+			tug.escort(ship, ship.path.sample(clampf(ship.s + 750.0, ship.board_s, ship.land_s)))
 			return
 
 

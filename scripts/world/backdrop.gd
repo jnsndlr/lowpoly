@@ -27,11 +27,11 @@ const SNOW := Color(0.94, 0.95, 0.98)
 
 ## Modelled trees where the mainland touches the map; flat cards (tree_card.gdshader)
 ## on the far shores, thinning out with distance.
-const TREE_BAND := 120.0
-const TREE_TILE := 128.0
+const TREE_BAND := 360.0
+const TREE_TILE := 384.0
 const CARD_SHADER := "res://shaders/tree_card.gdshader"
-const CARD_FAR := 1000.0
-const CARD_TILE := 256.0
+const CARD_FAR := 3000.0
+const CARD_TILE := 768.0
 
 var terrain: Terrain
 var _rng := RandomNumberGenerator.new()
@@ -64,8 +64,8 @@ func _build_land() -> void:
 	var mb := MeshBuilder.new()
 
 	var inner := _edge_ring()
-	# 5 m rings for the near shore, then 10 m samples on rings growing ~2% each.
-	var d := 8.0
+	# 15 m rings for the near shore, then 30 m samples on rings growing ~2% each.
+	var d := 24.0
 	var level := 1
 	while true:
 		var s := 1.0 + d / hs
@@ -74,8 +74,8 @@ func _build_land() -> void:
 		var outer := _ring(s, n >> level)
 		_stitch(mb, inner, outer)
 		inner = outer
-		if d < 140.0:
-			d += 5.0
+		if d < 420.0:
+			d += 15.0
 		else:
 			level = 2
 			d = (s * 1.022 - 1.0) * hs
@@ -162,7 +162,7 @@ func _stitch(mb: MeshBuilder, a: PackedVector3Array, b: PackedVector3Array) -> v
 
 
 func _tri(mb: MeshBuilder, a: Vector3, b: Vector3, c: Vector3) -> void:
-	if a.y < -5.2 and b.y < -5.2 and c.y < -5.2:
+	if a.y < -15.6 and b.y < -15.6 and c.y < -15.6:
 		return
 	var nrm := (b - a).cross(c - a)
 	if nrm.length_squared() < 1e-10:
@@ -174,11 +174,11 @@ func _tri(mb: MeshBuilder, a: Vector3, b: Vector3, c: Vector3) -> void:
 	mb.tri(a, b, c, _color(p, nrm.y), Vector3.UP)
 	# Forest on gentle ground near the map gets real trees, as on the islands.
 	var out := maxf(absf(p.x), absf(p.z)) - terrain.half_size
-	if out < CARD_FAR and p.y > 1.6 and nrm.y > 0.72 and p.y < _treeline(p) - 60.0:
+	if out < CARD_FAR and p.y > 4.8 and nrm.y > 0.72 and p.y < _treeline(p) - 180.0:
 		var area := (b - a).cross(c - a).length() * 0.5
-		if out >= TREE_BAND - 10.0:
-			_scatter_cards(a, b, c, area / 42.0 * (1.0 - smoothstep(350.0, CARD_FAR, out)))
-		var want := area / 9.0 * (1.0 - smoothstep(TREE_BAND - 30.0, TREE_BAND, out))
+		if out >= TREE_BAND - 30.0:
+			_scatter_cards(a, b, c, area / 378.0 * (1.0 - smoothstep(1050.0, CARD_FAR, out)))
+		var want := area / 81.0 * (1.0 - smoothstep(TREE_BAND - 90.0, TREE_BAND, out))
 		while want > 0.0:
 			if _rng.randf() < want:
 				var u := _rng.randf()
@@ -188,8 +188,8 @@ func _tri(mb: MeshBuilder, a: Vector3, b: Vector3, c: Vector3) -> void:
 					v = 1.0 - v
 				var at := a + (b - a) * u + (c - a) * v
 				var s := _rng.randf_range(0.8, 1.45)
-				var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(s, s * _rng.randf_range(0.9, 1.25), s))
-				_trees.append(Transform3D(basis, at - Vector3(0, 0.1, 0)))
+				var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(s, s * _rng.randf_range(0.9, 1.25), s) * Models.LEGACY_SCALE)
+				_trees.append(Transform3D(basis, at - Vector3(0, 0.3, 0)))
 				_tree_cols.append(Color(_rng.randf_range(0.75, 0.95), _rng.randf_range(0.8, 0.95), _rng.randf_range(0.8, 0.95)))
 			want -= 1.0
 
@@ -202,19 +202,19 @@ func _color(p: Vector3, ny: float) -> Color:
 	var snow := _snowline(p)
 	var treeline := _treeline(p)
 	var col: Color
-	if h < -0.3:
-		col = SAND.darkened(clampf(-h * 0.07, 0.0, 0.45))
-	elif h < 1.15 and ny >= 0.72:
+	if h < -0.9:
+		col = SAND.darkened(clampf(-h * 0.023333, 0.0, 0.45))
+	elif h < 3.45 and ny >= 0.72:
 		col = SAND
 	elif h > snow and ny > 0.42:
 		col = SNOW
 	elif h > treeline:
 		col = ALPINE.lerp(ALPINE_LIGHT, r * 0.5)
-	elif ny < 0.72 and h < 25.0:
+	elif ny < 0.72 and h < 75.0:
 		col = CLIFF.lerp(CLIFF_LIGHT, r)
 	elif ny < 0.72:
 		# Steep forest: darker, and bare rock showing through high up.
-		col = FOREST_DARK.lerp(ALPINE, smoothstep(treeline - 200.0, treeline, h) * r)
+		col = FOREST_DARK.lerp(ALPINE, smoothstep(treeline - 600.0, treeline, h) * r)
 	else:
 		col = FOREST.lerp(FOREST_LIGHT, r)
 	return col.darkened(r * 0.06)
@@ -228,9 +228,9 @@ func _scatter_cards(a: Vector3, b: Vector3, c: Vector3, want: float) -> void:
 			if u + v > 1.0:
 				u = 1.0 - u
 				v = 1.0 - v
-			var h := _rng.randf_range(7.0, 11.0)
+			var h := _rng.randf_range(21.0, 33.0)
 			var basis := Basis.from_scale(Vector3(h * _rng.randf_range(0.5, 0.62), h, 1.0))
-			_cards.append(Transform3D(basis, a + (b - a) * u + (c - a) * v - Vector3(0, 0.3, 0)))
+			_cards.append(Transform3D(basis, a + (b - a) * u + (c - a) * v - Vector3(0, 0.9, 0)))
 			var k := _rng.randf_range(0.8, 1.15)
 			_card_cols.append(Color(k * _rng.randf_range(0.9, 1.05), k, k * _rng.randf_range(0.9, 1.05)))
 		want -= 1.0
@@ -238,11 +238,11 @@ func _scatter_cards(a: Vector3, b: Vector3, c: Vector3, want: float) -> void:
 
 ## Snowline and treeline wander smoothly along the ranges (no per-facet speckle).
 func _snowline(p: Vector3) -> float:
-	return terrain.mainland.snowline + sin(p.x * 0.0031 + 1.7) * sin(p.z * 0.0027 + 0.4) * 90.0
+	return terrain.mainland.snowline + sin(p.x * 0.0010333 + 1.7) * sin(p.z * 0.0009 + 0.4) * 270.0
 
 
 func _treeline(p: Vector3) -> float:
-	return _snowline(p) - 220.0 + sin(p.x * 0.007 + p.z * 0.005) * 40.0
+	return _snowline(p) - 660.0 + sin(p.x * 0.0023333 + p.z * 0.0016667) * 120.0
 
 
 ## Tiled like WorldBuilder's forests so the camera culls what it can't see.
@@ -304,7 +304,7 @@ func _build_trees() -> void:
 		mmi.multimesh = mm
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		# The cards turn to face the camera, past the quad's flat bounds.
-		mmi.extra_cull_margin = 8.0
+		mmi.extra_cull_margin = 24.0
 		mmi.name = "TreeCards_%d_%d" % [key.x, key.y]
 		add_child(mmi)
 	print("Backdrop: %d mainland trees, %d tree cards" % [_trees.size(), _cards.size()])
@@ -326,18 +326,18 @@ func _build_clouds(weather: String) -> void:
 	var count: int = CLOUD_COUNT.get(weather, 22)
 	for c in count:
 		var ang := rng.randf() * TAU
-		var dist := rng.randf_range(5500.0, 10500.0)
+		var dist := rng.randf_range(16500.0, 31500.0)
 		var centre := Vector2(cos(ang), sin(ang)) * dist
 		var along := Vector2(-sin(ang), cos(ang))
-		var base := rng.randf_range(1100.0, 1800.0)
-		var width := rng.randf_range(900.0, 2600.0)
-		var puffs := int(width / 220.0) + rng.randi_range(0, 3)
+		var base := rng.randf_range(3300.0, 5400.0)
+		var width := rng.randf_range(2700.0, 7800.0)
+		var puffs := int(width / 660.0) + rng.randi_range(0, 3)
 		var tint := rng.randf()
 		for k in puffs:
 			var t := rng.randf_range(-1.0, 1.0)
 			var big := 1.0 - absf(t) * 0.55
-			var rad := rng.randf_range(200.0, 420.0) * big * (width / 1900.0 + 0.5)
-			var p := centre + along * t * width * 0.5 + Vector2(cos(ang), sin(ang)) * rng.randf_range(-280.0, 280.0)
+			var rad := rng.randf_range(600.0, 1260.0) * big * (width / 5700.0 + 0.5)
+			var p := centre + along * t * width * 0.5 + Vector2(cos(ang), sin(ang)) * rng.randf_range(-840.0, 840.0)
 			var lift := rad * rng.randf_range(0.2, 0.75) * big
 			_puff(ico, Vector3(p.x, base + lift, p.y), Vector3(rad, rad * rng.randf_range(0.7, 0.9), rad), base,
 				base + rad * 1.6, tint)

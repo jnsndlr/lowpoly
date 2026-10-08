@@ -54,20 +54,20 @@ func _process(_delta: float) -> bool:
 				w._tick(v, DT)
 				cet._tick_pod(p, DT)
 				steps += 1
-				if t.height_at(v.pos.x, v.pos.z) > sp.depth + 0.4:
+				if t.height_at(v.pos.x, v.pos.z) > sp.depth + 1.2:
 					shallow += 1
 				for o in p.animals:
 					var h := t.height_at(o.pos.x, o.pos.z)
 					var f := o.pos + Vector3(sin(o.yaw), 0.0, cos(o.yaw)) * o.length * 0.5
 					var hn := t.height_at(f.x, f.z)
 					worst = maxf(worst, maxf(h, hn))
-					if h > -0.3:
+					if h > -0.9:
 						aground += 1
 						if not was_bad:
 							was_bad = true
 							print("  %s visit %d at %s: %s over land (h %.1f) phase %s" % [sp.id, i, v.target.name,
 								Vector2(o.pos.x, o.pos.z), h, Wildlife.Phase.keys()[v.phase]])
-					elif hn > -0.3:
+					elif hn > -0.9:
 						nose += 1
 		print("%s: %d visits, %d steps; centre in shallows %d, animal over land %d, nose over land %d, highest ground under one %.2f" % [
 			sp.id, visits, steps, shallow, aground, nose, worst])

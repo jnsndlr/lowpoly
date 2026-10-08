@@ -12,17 +12,17 @@ var weight := 1.0               # how often it turns up among its class
 
 # The hull itself, and the clearance kept round it (the capsule other vessels keep
 # out of stands `pad` proud of it).
-var half_length := 1.8
-var half_beam := 0.62
+var half_length := 5.4
+var half_beam := 1.86
 var pad := 0.0
-var draft := 1.0                # depth of water it floats in
+var draft := 3.0                # depth of water it floats in
 
 # Handling. A sailboat's `cruise` is on a beam reach in a moderate breeze; it
 # motors at `motor_speed`.
-var cruise := 3.0
-var motor_speed := 2.0
-var accel := 0.35
-var decel := 0.6
+var cruise := 9.0
+var motor_speed := 6.0
+var accel := 1.05
+var decel := 1.8
 var turn := 0.45                # rad/s (under sail, for a sailboat)
 var motor_turn := 0.8
 
@@ -30,12 +30,12 @@ var motor_turn := 0.8
 # seconds (at most `wake_crumbs`), how hard its props churn the water (1 = a
 # ferry's), the size of its Kelvin waves (1 = a ferry's), and its outline (see
 # Vessel.wake_shape).
-var wake_spacing := 2.0
+var wake_spacing := 6.0
 var wake_life := 14.0
 var wake_crumbs := 44
 var wash := 0.3
 var kelvin := 0.28
-var shape := Vector4(1.4, 0.0, 0.3, 0.9)
+var shape := Vector4(4.2, 0.0, 0.9, 0.9)
 
 # Drawing: model builders (each takes a variant number and returns an ArrayMesh)
 # drawn `scale` times their built size. `model_alt` is a sailboat's look with

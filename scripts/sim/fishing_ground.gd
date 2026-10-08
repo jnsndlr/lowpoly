@@ -5,17 +5,17 @@ extends RefCounted
 ## aren't shown to the player; the boats just go there.
 
 const COUNT := 6
-const HALF_LENGTH := Vector2(85.0, 120.0)
-const HALF_WIDTH := 16.0        # how far either side of its line the tows are spread
-const OFFSHORE := Vector2(40.0, 75.0)   # its line from the shore
-const DEPTH := -3.6             # the shallowest water anywhere on it
-const KEEP_FROM_ROUTES := 55.0
-const KEEP_FROM_HARBOURS := 75.0   # (their approaches, and the ferry terminals)
-const KEEP_FROM_GROUNDS := 170.0
+const HALF_LENGTH := Vector2(255.0, 360.0)
+const HALF_WIDTH := 48.0        # how far either side of its line the tows are spread
+const OFFSHORE := Vector2(120.0, 225.0)   # its line from the shore
+const DEPTH := -10.8             # the shallowest water anywhere on it
+const KEEP_FROM_ROUTES := 165.0
+const KEEP_FROM_HARBOURS := 225.0   # (their approaches, and the ferry terminals)
+const KEEP_FROM_GROUNDS := 510.0
 
 var center := Vector2.ZERO
 var axis := Vector2.RIGHT       # along its line (unit)
-var half_length := 100.0
+var half_length := 300.0
 var richness := 1.0             # how well the fishing goes here
 var worked_by: Vessel = null
 
@@ -59,10 +59,10 @@ static func find_all(t: MarineTraffic) -> Array[FishingGround]:
 		var d := 0.0
 		while d < isl.radius * 2.0:
 			var p := isl.center + dir * d
-			if t.sim.terrain.height_at(p.x, p.y) < -1.0:
+			if t.sim.terrain.height_at(p.x, p.y) < -3.0:
 				shore = d
 				break
-			d += 2.0
+			d += 6.0
 		if shore < 0.0:
 			continue
 		var g := FishingGround.new()
@@ -76,13 +76,13 @@ static func find_all(t: MarineTraffic) -> Array[FishingGround]:
 
 
 func _fits(t: MarineTraffic, others: Array[FishingGround], avoid: Array[Vector2], route_pts: PackedVector2Array) -> bool:
-	var lim := t.sim.map.half_size - 30.0
+	var lim := t.sim.map.half_size - 90.0
 	for o in others:
 		if o.center.distance_to(center) < KEEP_FROM_GROUNDS:
 			return false
 	var along := -1.0
 	while along <= 1.001:
-		for across: float in [-HALF_WIDTH - 8.0, 0.0, HALF_WIDTH + 8.0]:
+		for across: float in [-HALF_WIDTH - 24.0, 0.0, HALF_WIDTH + 24.0]:
 			var p := at(along, across)
 			if absf(p.x) > lim or absf(p.y) > lim:
 				return false

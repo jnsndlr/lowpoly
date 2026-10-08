@@ -31,7 +31,7 @@ extends RefCounted
 const DECIDE_EVERY := 0.25
 const HORIZON := 30.0
 const STEP_T := 1.5
-const SCAN := 140.0
+const SCAN := 420.0
 const REPLAN_EVERY := 8.0
 # Headings tried either side of each course, and the speeds tried when no
 # heading at full speed keeps clear.
@@ -40,16 +40,16 @@ const SLOWER := [0.55, 0.2, 0.0]
 const ESCAPES := 12
 # Clear water kept: from small boats and from ships (more ahead of their bows).
 # Wildlife sets its own (Wildlife.Visit.keep).
-const KEEP_SMALL := 6.0
-const KEEP_SHIP := 14.0
-const KEEP_AHEAD_OF_SHIP := 16.0
-const KEEP_MOORED := 4.0       # from boats lying at a berth or at anchor
-const WILDLIFE_RADIUS := 15.0
+const KEEP_SMALL := 18.0
+const KEEP_SHIP := 42.0
+const KEEP_AHEAD_OF_SHIP := 48.0
+const KEEP_MOORED := 12.0       # from boats lying at a berth or at anchor
+const WILDLIFE_RADIUS := 45.0
 # A stand-on vessel only acts once a pass is this close and this soon.
-const STAND_ON_KEEP := 2.0
+const STAND_ON_KEEP := 6.0
 const STAND_ON_SOON := 8.0
 # Water kept under the keel.
-const UNDER_KEEL := 0.3
+const UNDER_KEEL := 0.9
 
 var v: Vessel
 var traffic: MarineTraffic
@@ -107,7 +107,7 @@ func _plan(avoid: Array[Vector3] = []) -> bool:
 
 ## Call every frame; re-decides every DECIDE_EVERY seconds.
 func update(delta: float) -> void:
-	_slow = _slow + delta if v.speed < 0.3 else 0.0
+	_slow = _slow + delta if v.speed < 0.9 else 0.0
 	_replan -= delta
 	if _replan <= 0.0:
 		_plan()
@@ -123,7 +123,7 @@ func update(delta: float) -> void:
 func _advance() -> void:
 	var p := v.pos2()
 	var nav := traffic.nav
-	while wp < route.size() - 1 and (p.distance_to(route[wp]) < 12.0 or nav.clear_line(p, route[wp + 1], big)):
+	while wp < route.size() - 1 and (p.distance_to(route[wp]) < 36.0 or nav.clear_line(p, route[wp + 1], big)):
 		wp += 1
 	if wp < route.size() - 1 and not nav.clear_line(p, route[wp], big) and _replan < REPLAN_EVERY - 2.0:
 		_plan()
@@ -176,7 +176,7 @@ func _decide() -> void:
 	# (MarineTraffic: no nearer than it is); and if that one is waiting for it to
 	# get out of the way, sitting still settles nothing.
 	var now_gap := traffic.hull_gap(v, p, v.heading2())
-	var pinned := now_gap < 2.0
+	var pinned := now_gap < 6.0
 	var deadlock := v.blocked_by_hull and is_instance_valid(v.blocker) and v.blocker.waits_for(v)
 	for round in 2:
 		var factors := [1.0] if round == 0 else SLOWER
@@ -187,7 +187,7 @@ func _decide() -> void:
 			var land := _land_cost(p, h, top)
 			if pinned:
 				var d := Vector2(sin(h), cos(h))
-				if traffic.hull_gap(v, p + d, d) < minf(0.3, now_gap) - 0.001:
+				if traffic.hull_gap(v, p + d * 3.0, d) < minf(0.9, now_gap) - 0.001:
 					land += 20.0
 			for f: float in factors:
 				var sp := top * f
@@ -195,7 +195,7 @@ func _decide() -> void:
 				cost += absf(angle_difference(h, _last)) * 0.5
 				# Barely making way (in irons, say) is no way to get anywhere, and
 				# the longer it goes on the more it is worth a big turn to get going.
-				if sp < 0.4:
+				if sp < 1.2:
 					cost += 1.5 + minf(_slow * 0.15, 4.0) + (6.0 if deadlock else 0.0)
 				var worst := 0.0
 				var worst_t: Threat = null
@@ -256,9 +256,9 @@ func _threats(p: Vector2) -> Array[Threat]:
 		var t := Threat.new()
 		t.what = o
 		t.why = v.helm_role(o)
-		var ship := o.half_seg > 6.0
+		var ship := o.half_seg > 18.0
 		t.keep = KEEP_SHIP if ship else KEEP_SMALL
-		t.ahead_keep = KEEP_AHEAD_OF_SHIP if ship and o.speed > 0.3 else 0.0
+		t.ahead_keep = KEEP_AHEAD_OF_SHIP if ship and o.speed > 0.9 else 0.0
 		t.radius = o.hull_radius
 		if o.road() == Vessel.Road.MOORED:
 			t.moored = true
@@ -272,7 +272,7 @@ func _threats(p: Vector2) -> Array[Threat]:
 			var c := o.ahead(d) if moving else q
 			var f := o.heading2()
 			if moving and not o.crabbing():
-				var g := o.ahead(d + 1.0) - o.ahead(maxf(d - 1.0, 0.0))
+				var g := o.ahead(d + 3.0) - o.ahead(maxf(d - 3.0, 0.0))
 				if g.length_squared() > 1e-6:
 					f = g.normalized() * signf(g.normalized().dot(f) + 1e-3)
 			t.a.append(c - f * o.half_seg)
@@ -336,15 +336,15 @@ func _pass_cost(p: Vector2, yaw: float, h: float, sp: float, my_r: float, t: Thr
 ## How much land (or the edge of the map) closes the way ahead on heading `h`.
 func _land_cost(p: Vector2, h: float, sp: float) -> float:
 	var d := Vector2(sin(h), cos(h))
-	var look := 10.0 + maxf(sp, 1.0) * 7.0
+	var look := 30.0 + maxf(sp, 3.0) * 7.0
 	var nav := traffic.nav
 	var here := nav.cell(p)
 	# (Its routes may run a little way off the edge of the map, round an island.)
 	var bound := traffic.nav.ext - NavGrid.CELL * 2.0
 	# Measured from just behind the bow, however long the hull.
-	var lead := maxf(v.spec.half_length - 2.0, 0.0)
+	var lead := maxf(v.spec.half_length - 6.0, 0.0)
 	var shoal := -v.spec.draft - UNDER_KEEL
-	var s := 2.0
+	var s := 6.0
 	while s <= look:
 		var q := p + d * (s + lead)
 		var blocked := absf(q.x) > bound or absf(q.y) > bound
@@ -355,6 +355,6 @@ func _land_cost(p: Vector2, h: float, sp: float) -> float:
 			blocked = nav.terrain.height_at(q.x, q.y) > shoal
 		if blocked:
 			# Right ahead, it's out of the question.
-			return 4.0 * (1.0 - s / (look + 3.0)) + 0.5 + (30.0 if s <= 6.0 else 0.0)
-		s += 2.0
+			return 4.0 * (1.0 - s / (look + 9.0)) + 0.5 + (30.0 if s <= 18.0 else 0.0)
+		s += 6.0
 	return 0.0

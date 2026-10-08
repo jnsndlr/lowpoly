@@ -21,8 +21,13 @@ render_mode blend_mix, cull_back, specular_schlick_ggx;
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 uniform sampler2D depth_texture : hint_depth_texture, filter_linear;
 
+// The surface detail (waves, foam, wakes) is laid out in units of UNIT metres:
+// the scale it was first tuned at. Lengths in and out of it convert here and in
+// WakeField / Pinnipeds, which hand over the wakes and seals in those units.
+const float UNIT = 3.0;
+
 group_uniforms waves;
-// Crest spacing of the longest octave (world units); each next octave is ~half.
+// Crest spacing of the longest octave (UNITs); each next octave is ~half.
 uniform float wave_length = 6.0;
 // Height of the longest octave; each next octave is ~half, so slopes stay similar
 // at every scale and ripples read up close.
@@ -31,7 +36,7 @@ uniform float wave_amp = 0.13;
 uniform float choppiness = 3.5;
 uniform float wave_speed = 0.42;
 uniform float normal_strength = 1.0;
-// Gust patches: size (world units) and how much they swing the roughness.
+// Gust patches: size (UNITs) and how much they swing the roughness.
 uniform float gust_size = 180.0;
 uniform float gust_strength = 0.55;
 
@@ -654,7 +659,7 @@ float swell(vec2 p, float t) {
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float edge = max(abs(world_pos.x), abs(world_pos.z));
-	float h = swell(world_pos.xz, TIME) * swell_height * (1.0 - smoothstep(swell_extent - 80.0, swell_extent - 10.0, edge));
+	float h = swell(world_pos.xz / UNIT, TIME) * swell_height * UNIT * (1.0 - smoothstep(swell_extent - 240.0, swell_extent - 30.0, edge));
 	VERTEX.y += h;
 	world_pos.y += h;
 }
@@ -665,9 +670,9 @@ vec3 view_to_world(vec2 uv, float raw_depth, mat4 inv_proj, mat4 inv_view) {
 }
 
 void fragment() {
-	vec2 p = world_pos.xz;
+	vec2 p = world_pos.xz / UNIT;
 	float t = TIME;
-	float dist = length(VERTEX);
+	float dist = length(VERTEX) / UNIT;
 	// Orthographic views (the minimap) get flat, calm water.
 	float ortho = step(0.5, PROJECTION_MATRIX[3][3]);
 	vec2 wind = normalize(cloud_wind + vec2(1e-4, 0.0));
@@ -693,7 +698,7 @@ void fragment() {
 	// What lies under the water here: vertical depth for foam, and the path length
 	// the light crosses for absorption.
 	vec3 floor_pos = view_to_world(SCREEN_UV, texture(depth_texture, SCREEN_UV).r, INV_PROJECTION_MATRIX, INV_VIEW_MATRIX);
-	float depth = max(world_pos.y - floor_pos.y, 0.0);
+	float depth = max(world_pos.y - floor_pos.y, 0.0) / UNIT;
 
 	// Refract the view of the floor by the ripples (less with distance, none where
 	// the water is too thin to bend anything). If the bent ray lands on something
@@ -701,11 +706,11 @@ void fragment() {
 	vec2 bend = (NORMAL.xy - flat_normal.xy) * refraction * clamp(depth, 0.0, 2.0) * (30.0 / (30.0 + dist));
 	vec2 ruv = SCREEN_UV + bend;
 	vec3 rpos = view_to_world(ruv, texture(depth_texture, ruv).r, INV_PROJECTION_MATRIX, INV_VIEW_MATRIX);
-	if (rpos.y > world_pos.y - 0.02) {
+	if (rpos.y > world_pos.y - 0.02 * UNIT) {
 		ruv = SCREEN_UV;
 		rpos = floor_pos;
 	}
-	float path = min(distance(rpos, world_pos), 500.0);
+	float path = min(distance(rpos, world_pos) / UNIT, 500.0);
 	vec3 trans = exp(-absorption * path);
 	float scatter = 1.0 - exp(-turbidity * path);
 	vec3 floor_col = textureLod(screen_texture, ruv, 0.0).rgb;

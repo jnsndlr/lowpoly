@@ -14,10 +14,10 @@ var _route_samples := PackedVector3Array()
 var _slip_zones: Array = []   # [shore, dock_dir, lateral, slip offset, route id, lateral min, lateral max]
 
 const DOCK_MIN_ANGLE := deg_to_rad(35.0)   # no two docks face within this of each other
-const ISLAND_GAP := 120.0
-const QUAY_DEPTH := -2.9      # the shallowest water a fish quay's boats come and go through
+const ISLAND_GAP := 360.0
+const QUAY_DEPTH := -8.7      # the shallowest water a fish quay's boats come and go through
 const MAX_SPREAD := deg_to_rad(160.0)  # widest arc of neighbours one terminal serves
-const MIN_CROSSING := 90.0    # dock to dock, so a ferry has room to line up both ends
+const MIN_CROSSING := 270.0    # dock to dock, so a ferry has room to line up both ends
 const MAX_DETOUR := 1.45      # route length over the dock-to-dock distance
 const MAX_TURN := deg_to_rad(200.0)    # total heading change along a route
 
@@ -62,24 +62,24 @@ func _place_mainland() -> void:
 	var start := rng.randf() * TAU
 	for k in count:
 		var ang := start + TAU * k / count + rng.randf_range(-0.25, 0.25)
-		var dist := rng.randf_range(map.half_size + 40.0, map.half_size + 90.0)
-		var isl := _new_island(Vector2(cos(ang), sin(ang)) * dist, rng.randf_range(120.0, 160.0), 1.3, false)
+		var dist := rng.randf_range(map.half_size + 120.0, map.half_size + 270.0)
+		var isl := _new_island(Vector2(cos(ang), sin(ang)) * dist, rng.randf_range(360.0, 480.0), 1.3, false)
 		isl.is_mainland = true
 
 
 func _place_islands() -> void:
 	var target := rng.randi_range(8, 11)
-	var limit := map.half_size - 110.0
+	var limit := map.half_size - 330.0
 	var placed := 0
 	for attempt in 5000:
 		if placed >= target:
 			break
-		var r := rng.randf_range(46.0, 70.0)
+		var r := rng.randf_range(138.0, 210.0)
 		var c := Vector2(rng.randf_range(-limit, limit), rng.randf_range(-limit, limit))
 		var ok := true
 		for o in map.islands:
 			var reach := o.radius * (0.72 if o.is_mainland else 1.0)
-			if c.distance_to(o.center) < r + reach + (85.0 if o.is_mainland else ISLAND_GAP):
+			if c.distance_to(o.center) < r + reach + (255.0 if o.is_mainland else ISLAND_GAP):
 				ok = false
 				break
 		if ok:
@@ -131,7 +131,7 @@ func _try_routes(mains: Array[MapData.Island], banned: Dictionary) -> Array:
 	for i in mains.size():
 		for j in range(i + 1, mains.size()):
 			var d := mains[i].center.distance_to(mains[j].center)
-			if d < 430.0 and not banned.has(Vector2i(i, j)):
+			if d < 1290.0 and not banned.has(Vector2i(i, j)):
 				edges.append([d, i, j])
 	edges.sort_custom(func(a, b): return a[0] < b[0])
 
@@ -155,7 +155,7 @@ func _try_routes(mains: Array[MapData.Island], banned: Dictionary) -> Array:
 	for e in edges:
 		var a: int = e[1]
 		var b: int = e[2]
-		if chosen.has(e) or e[0] > 260.0 or degree[a] >= 2 or degree[b] >= 2 or not _fits_terminal(mains, bearings, a, b):
+		if chosen.has(e) or e[0] > 780.0 or degree[a] >= 2 or degree[b] >= 2 or not _fits_terminal(mains, bearings, a, b):
 			continue
 		if rng.randf() < 0.6:
 			_link(mains, bearings, degree, chosen, e)
@@ -173,7 +173,7 @@ func _try_routes(mains: Array[MapData.Island], banned: Dictionary) -> Array:
 		if desired.has(isl.id):
 			var dir: Vector2 = desired[isl.id]
 			if dir.length() < 0.1:
-				dir = -isl.center if isl.center.length() > 1.0 else Vector2.RIGHT
+				dir = -isl.center if isl.center.length() > 3.0 else Vector2.RIGHT
 			isl.has_terminal = _find_dock(isl, dir, taken)
 			if isl.has_terminal:
 				taken.append(isl.dock_dir)
@@ -207,7 +207,7 @@ func _try_routes(mains: Array[MapData.Island], banned: Dictionary) -> Array:
 			continue
 		var lat := isl.lateral()
 		isl.slips.sort_custom(func(ra, rb): return _departure_lateral(isl, ra, lat) < _departure_lateral(isl, rb, lat))
-		isl.lot_half_width = maxf(12.0, (isl.slips.size() - 1) * Layout.SLIP_SPACING * 0.5 + 5.0)
+		isl.lot_half_width = maxf(36.0, (isl.slips.size() - 1) * Layout.SLIP_SPACING * 0.5 + 15.0)
 		var last := isl.slips.size() - 1
 		for i in isl.slips.size():
 			# Slips butt up against each other; the end ones reach out past their
@@ -286,7 +286,7 @@ func _route_sensible(c: Curve3D) -> bool:
 func _departure_lateral(isl: MapData.Island, route_id: int, lat: Vector3) -> float:
 	var r := map.routes[route_id]
 	var length := r.curve.get_baked_length()
-	var s := minf(RUN_IN + 60.0, length * 0.5)
+	var s := minf(RUN_IN + 180.0, length * 0.5)
 	var p := r.curve.sample_baked(s if r.a == isl.id else length - s)
 	return (p - isl.shore).dot(lat)
 
@@ -311,24 +311,24 @@ func _find_dock(isl: MapData.Island, desired: Vector2, taken: Array[Vector3]) ->
 		var r := 0.0
 		while r < isl.radius * 1.8:
 			var p := isl.center + dir * r
-			if terrain.height_at(p.x, p.y) < 0.3:
+			if terrain.height_at(p.x, p.y) < 0.9:
 				shore = r
 				break
-			r += 0.5
-		if shore < 8.0:
+			r += 1.5
+		if shore < 24.0:
 			continue
 		var s3 := Vector3(isl.center.x + dir.x * shore, 0.0, isl.center.y + dir.y * shore)
 		var lat := Vector3.UP.cross(n3)
 		var land := 0
-		for u: float in [-6.0, -12.0, -18.0, -24.0, -30.0]:
-			if terrain.height_v(s3 + n3 * u) > 0.5:
+		for u: float in [-18.0, -36.0, -54.0, -72.0, -90.0]:
+			if terrain.height_v(s3 + n3 * u) > 1.5:
 				land += 1
 		if land < 4:
 			continue
 		var water_ok := true
-		for u in range(6, 52, 3):
-			for v: float in [-12.0, 0.0, 12.0]:
-				if terrain.height_v(s3 + n3 * float(u) + lat * v) > -1.0:
+		for u in range(18, 156, 9):
+			for v: float in [-36.0, 0.0, 36.0]:
+				if terrain.height_v(s3 + n3 * float(u) + lat * v) > -3.0:
 					water_ok = false
 					break
 			if not water_ok:
@@ -345,19 +345,19 @@ func _find_dock(isl: MapData.Island, desired: Vector2, taken: Array[Vector3]) ->
 # enough that the whole hull is lined up before the bow reaches the outer dolphins, and turn no tighter than TURN_RADIUS in between. Where
 # the coast or other slips leave no room, a shorter run-in and then a tighter turn
 # are tried, and a wide sweep only as a last resort.
-const RUN_IN := 30.0
-const SHORT_RUN_IN := 22.0
-const TURN_RADIUS := 32.0
-const TIGHT_RADIUS := 22.0
-const WIDE_RADIUS := 45.0
+const RUN_IN := 90.0
+const SHORT_RUN_IN := 66.0
+const TURN_RADIUS := 96.0
+const TIGHT_RADIUS := 66.0
+const WIDE_RADIUS := 135.0
 # Each slip's pier, guide walls and dolphins are off limits to other routes' hulls.
 const ZONE_U := Layout.DOLPHIN_OUTER.x + 4.0
-const HULL_HALF_BEAM := 4.5
+const HULL_HALF_BEAM := 13.5
 # Half the longest hull (FerryClass size 5).
-const HULL_HALF_LENGTH := 19.0
+const HULL_HALF_LENGTH := 57.0
 # Lateral reach of a terminal's outermost dolphins from its end slips, plus a
 # little sea room.
-const OUTER_DOLPHIN_CLEAR := Layout.DOLPHIN_OUTER.y + Layout.DOLPHIN_OUTER.z + 2.0
+const OUTER_DOLPHIN_CLEAR := Layout.DOLPHIN_OUTER.y + Layout.DOLPHIN_OUTER.z + 6.0
 
 
 ## Route from dock centre `pa` (facing out along `na`) to dock centre `pb`: straight
@@ -370,9 +370,9 @@ func _route_curve(pa: Vector3, na: Vector3, pb: Vector3, nb: Vector3, route_id :
 	# Every path for every option, scored by length plus a penalty for each
 	# compromise, so a short run-in or tight turn wins over looping round.
 	var candidates := []
-	for option: Vector3 in [Vector3(RUN_IN, TURN_RADIUS, 0.0), Vector3(SHORT_RUN_IN, TURN_RADIUS, 25.0),
-			Vector3(RUN_IN, TIGHT_RADIUS, 40.0), Vector3(SHORT_RUN_IN, TIGHT_RADIUS, 70.0),
-			Vector3(RUN_IN, WIDE_RADIUS, 120.0)]:
+	for option: Vector3 in [Vector3(RUN_IN, TURN_RADIUS, 0.0), Vector3(SHORT_RUN_IN, TURN_RADIUS, 75.0),
+			Vector3(RUN_IN, TIGHT_RADIUS, 120.0), Vector3(SHORT_RUN_IN, TIGHT_RADIUS, 210.0),
+			Vector3(RUN_IN, WIDE_RADIUS, 360.0)]:
 		var p0 := Vector2(pa.x, pa.z) + h0 * option.x
 		var p1 := Vector2(pb.x, pb.z) - h1 * option.x
 		for path in _turn_paths(p0, h0, p1, h1, option.y):
@@ -386,9 +386,9 @@ func _route_curve(pa: Vector3, na: Vector3, pb: Vector3, nb: Vector3, route_id :
 	# of either end and wider turns before giving up on the link.
 	if route_id >= 0:
 		var more := []
-		for ra: float in [SHORT_RUN_IN, RUN_IN, 45.0, 60.0, 80.0]:
-			for rb: float in [SHORT_RUN_IN, RUN_IN, 45.0, 60.0, 80.0]:
-				for radius: float in [TIGHT_RADIUS, TURN_RADIUS, WIDE_RADIUS, 60.0]:
+		for ra: float in [SHORT_RUN_IN, RUN_IN, 135.0, 180.0, 240.0]:
+			for rb: float in [SHORT_RUN_IN, RUN_IN, 135.0, 180.0, 240.0]:
+				for radius: float in [TIGHT_RADIUS, TURN_RADIUS, WIDE_RADIUS, 180.0]:
 					var p0 := Vector2(pa.x, pa.z) + h0 * ra
 					var p1 := Vector2(pb.x, pb.z) - h1 * rb
 					for path in _turn_paths(p0, h0, p1, h1, radius):
@@ -406,7 +406,7 @@ static func _left(v: Vector2) -> Vector2:
 
 
 ## The four turn–straight–turn paths from pose (p0, h0) to (p1, h1) at the given
-## turn radius, as [length, PackedVector2Array of points every ~2 m].
+## turn radius, as [length, PackedVector2Array of points every ~6 m].
 static func _turn_paths(p0: Vector2, h0: Vector2, p1: Vector2, h1: Vector2, radius: float) -> Array:
 	var out := []
 	for s0: float in [1.0, -1.0]:
@@ -427,7 +427,7 @@ static func _turn_paths(p0: Vector2, h0: Vector2, p1: Vector2, h1: Vector2, radi
 			_arc(pts, c0, h0, s0, radius, a0)
 			var q0 := c0 - _left(t) * s0 * radius
 			var q1 := c1 - _left(t) * s1 * radius
-			var steps := maxi(1, ceili(straight / 2.0))
+			var steps := maxi(1, ceili(straight / 6.0))
 			for i in steps:
 				pts.append(q0.lerp(q1, float(i) / steps))
 			_arc(pts, c1, t, s1, radius, a1)
@@ -437,7 +437,7 @@ static func _turn_paths(p0: Vector2, h0: Vector2, p1: Vector2, h1: Vector2, radi
 
 
 static func _arc(pts: PackedVector2Array, c: Vector2, h: Vector2, sgn: float, radius: float, angle: float) -> void:
-	var steps := ceili(radius * angle / 2.0)
+	var steps := ceili(radius * angle / 6.0)
 	for i in steps:
 		var hh := h.rotated(sgn * angle * i / steps)
 		pts.append(c - _left(hh) * sgn * radius)
@@ -447,16 +447,16 @@ static func _arc(pts: PackedVector2Array, c: Vector2, h: Vector2, sgn: float, ra
 ## `run_out` (the same as `run_in` if not given).
 func _curve_from(pa: Vector3, mid: PackedVector2Array, pb: Vector3, run_in: float, run_out := -1.0) -> Curve3D:
 	var c := Curve3D.new()
-	c.bake_interval = 1.0
+	c.bake_interval = 3.0
 	var a2 := Vector2(pa.x, pa.z)
 	var b2 := Vector2(pb.x, pb.z)
-	var steps := ceili(run_in / 2.0)
+	var steps := ceili(run_in / 6.0)
 	for i in steps:
 		var q := a2.lerp(mid[0], float(i) / steps)
 		c.add_point(Vector3(q.x, 0.0, q.y))
 	for q in mid:
 		c.add_point(Vector3(q.x, 0.0, q.y))
-	steps = ceili((run_in if run_out < 0.0 else run_out) / 2.0)
+	steps = ceili((run_in if run_out < 0.0 else run_out) / 6.0)
 	for i in range(1, steps + 1):
 		var q := mid[mid.size() - 1].lerp(b2, float(i) / steps)
 		c.add_point(Vector3(q.x, 0.0, q.y))
@@ -465,15 +465,15 @@ func _curve_from(pa: Vector3, mid: PackedVector2Array, pb: Vector3, run_in: floa
 
 func _route_clear(c: Curve3D) -> bool:
 	var length := c.get_baked_length()
-	var s := 12.0
-	while s < length - 12.0:
+	var s := 36.0
+	while s < length - 36.0:
 		var p := c.sample_baked(s)
-		var q := c.sample_baked(minf(s + 1.0, length))
-		var lat := Vector3.UP.cross((q - p).normalized()) * 6.0
+		var q := c.sample_baked(minf(s + 3.0, length))
+		var lat := Vector3.UP.cross((q - p).normalized()) * 18.0
 		for o: Vector3 in [Vector3.ZERO, lat, -lat]:
-			if terrain.height_v(p + o) > -1.2:
+			if terrain.height_v(p + o) > -3.6:
 				return false
-		s += 3.0
+		s += 9.0
 	return true
 
 
@@ -483,7 +483,7 @@ func _clear_of_slips(c: Curve3D, route_id: int) -> bool:
 	var s := 0.0
 	while s <= length:
 		var p := c.sample_baked(s)
-		var t := c.sample_baked(minf(s + 1.0, length)) - c.sample_baked(maxf(s - 1.0, 0.0))
+		var t := c.sample_baked(minf(s + 3.0, length)) - c.sample_baked(maxf(s - 3.0, 0.0))
 		t.y = 0.0
 		t = t.normalized()
 		var side := Vector3.UP.cross(t)
@@ -493,7 +493,7 @@ func _clear_of_slips(c: Curve3D, route_id: int) -> bool:
 			var rel: Vector3 = p - z[0]
 			# Cheap reject: nowhere near this terminal.
 			var u: float = rel.dot(z[1])
-			var reach := HULL_HALF_LENGTH + 2.0
+			var reach := HULL_HALF_LENGTH + 6.0
 			if u > ZONE_U + reach or u < Layout.LOT_FRONT - reach or absf(rel.dot(z[2]) - z[3]) > Layout.SLIP_SPACING + reach:
 				continue
 			for along: float in [-HULL_HALF_LENGTH, -HULL_HALF_LENGTH * 0.5, 0.0, HULL_HALF_LENGTH * 0.5, HULL_HALF_LENGTH]:
@@ -503,7 +503,7 @@ func _clear_of_slips(c: Curve3D, route_id: int) -> bool:
 					var qv: float = q.dot(z[2]) - z[3]
 					if qu < ZONE_U and qu > Layout.LOT_FRONT and qv > z[5] and qv < z[6]:
 						return false
-		s += 2.0
+		s += 6.0
 	return true
 
 
@@ -511,24 +511,24 @@ func _clear_of_slips(c: Curve3D, route_id: int) -> bool:
 func _place_islets() -> void:
 	var target := rng.randi_range(12, 20)
 	var placed := 0
-	var limit := map.half_size - 40.0
+	var limit := map.half_size - 120.0
 	for attempt in 1500:
 		if placed >= target:
 			break
-		var r := rng.randf_range(6.0, 13.0)
+		var r := rng.randf_range(18.0, 39.0)
 		var c := Vector2(rng.randf_range(-limit, limit), rng.randf_range(-limit, limit))
 		var ok := true
 		for o in map.islands:
 			var reach := o.radius * (0.72 if o.is_mainland else 1.0)
-			if c.distance_to(o.center) < r + reach + 10.0:
+			if c.distance_to(o.center) < r + reach + 30.0:
 				ok = false
 				break
-			if o.has_terminal and c.distance_to(Vector2(o.shore.x, o.shore.z)) < r + 50.0:
+			if o.has_terminal and c.distance_to(Vector2(o.shore.x, o.shore.z)) < r + 150.0:
 				ok = false
 				break
 		if ok:
 			for p in _route_samples:
-				if Vector2(p.x, p.z).distance_to(c) < r * 1.25 + 14.0:
+				if Vector2(p.x, p.z).distance_to(c) < r * 1.25 + 42.0:
 					ok = false
 					break
 		if ok:
@@ -572,35 +572,35 @@ func _marina_site(isl: MapData.Island, n3: Vector3) -> Variant:
 	var shore := -1.0
 	var rr := 0.0
 	while rr < isl.radius * 1.8:
-		if terrain.height_v(c + n3 * rr) < 0.3:
+		if terrain.height_v(c + n3 * rr) < 0.9:
 			shore = rr
 			break
-		rr += 0.5
-	if shore < 8.0:
+		rr += 1.5
+	if shore < 24.0:
 		return null
 	var s3 := c + n3 * shore
-	if _h(s3 - n3 * 4.0) < 0.3 or _h(s3 - n3 * 8.0) < 0.5:
+	if _h(s3 - n3 * 12.0) < 0.9 or _h(s3 - n3 * 24.0) < 1.5:
 		return null
 	var lat := Vector3.UP.cross(n3)
-	if _h(s3 + n3 * 6.0) > -0.3:
+	if _h(s3 + n3 * 18.0) > -0.9:
 		return null
-	for u in range(12, 50, 4):
-		for v: float in [-11.0, -5.0, 0.0, 5.0, 11.0]:
-			if _h(s3 + n3 * float(u) + lat * v) > -2.0:
+	for u in range(36, 150, 12):
+		for v: float in [-33.0, -15.0, 0.0, 15.0, 33.0]:
+			if _h(s3 + n3 * float(u) + lat * v) > -6.0:
 				return null
 	var reach := s3 + n3 * Layout.MARINA_APPROACH_U
 	for o in map.islands:
-		if o.has_terminal and (s3.distance_to(o.shore) < 80.0 or reach.distance_to(o.shore + o.dock_dir * 40.0) < 80.0):
+		if o.has_terminal and (s3.distance_to(o.shore) < 240.0 or reach.distance_to(o.shore + o.dock_dir * 120.0) < 240.0):
 			return null
 	for m in map.marinas:
-		if s3.distance_to(m.shore) < 60.0:
+		if s3.distance_to(m.shore) < 180.0:
 			return null
-	for u: float in [0.0, 15.0, 30.0, 45.0]:
+	for u: float in [0.0, 45.0, 90.0, 135.0]:
 		var q := s3 + n3 * u
-		# Baked about a metre apart; every few is plenty at this distance.
+		# Baked about 3 m apart; every few is plenty at this distance.
 		for i in range(0, _route_samples.size(), 4):
 			var p := _route_samples[i]
-			if Vector2(p.x - q.x, p.z - q.z).length_squared() < 34.0 * 34.0:
+			if Vector2(p.x - q.x, p.z - q.z).length_squared() < 102.0 * 102.0:
 				return null
 	return [s3, n3]
 
@@ -644,51 +644,51 @@ func _place_quays(map_seed: int) -> void:
 
 ## [shore, dir] if a fish quay fits where the ray from the island's centre along
 ## `dir` meets the sea, else null.
-func _quay_site(isl: MapData.Island, n3: Vector3, marina_gap := 60.0) -> Variant:
+func _quay_site(isl: MapData.Island, n3: Vector3, marina_gap := 180.0) -> Variant:
 	var c := Vector3(isl.center.x, 0.0, isl.center.y)
 	var shore := -1.0
 	var rr := 0.0
 	while rr < isl.radius * 1.8:
-		if terrain.height_v(c + n3 * rr) < 0.3:
+		if terrain.height_v(c + n3 * rr) < 0.9:
 			shore = rr
 			break
-		rr += 0.5
-	if shore < 8.0:
+		rr += 1.5
+	if shore < 24.0:
 		return null
 	var s3 := c + n3 * shore
 	var lat := Vector3.UP.cross(n3)
-	for v: float in [-6.0, 0.0, 6.0]:
-		if _h(s3 - n3 * 5.0 + lat * v) < 0.4:
+	for v: float in [-18.0, 0.0, 18.0]:
+		if _h(s3 - n3 * 15.0 + lat * v) < 1.2:
 			return null
 	# The wharf stands over the water (or the foreshore), not dug into the hill.
 	var wv := -Layout.QUAY_HALF
 	while wv <= Layout.QUAY_HALF:
-		if _h(s3 + n3 * (Layout.QUAY_JETTY_END - 2.0) + lat * wv) > 0.6:
+		if _h(s3 + n3 * (Layout.QUAY_JETTY_END - 6.0) + lat * wv) > 1.8:
 			return null
-		wv += 4.0
+		wv += 12.0
 	# Deep enough for a trawler along the face, the lane and the runs either side.
-	for u in range(int(Layout.QUAY_FACE_U) + 2, int(Layout.QUAY_LANE_U) + 14, 4):
-		var v := -Layout.QUAY_RUN - 8.0
-		while v <= Layout.QUAY_RUN + 8.0:
+	for u in range(int(Layout.QUAY_FACE_U) + 6, int(Layout.QUAY_LANE_U) + 42, 12):
+		var v := -Layout.QUAY_RUN - 24.0
+		while v <= Layout.QUAY_RUN + 24.0:
 			if _h(s3 + n3 * float(u) + lat * v) > QUAY_DEPTH:
 				return null
-			v += 6.0
+			v += 18.0
 	var reach := s3 + n3 * Layout.QUAY_LANE_U
 	for o in map.islands:
-		if o.has_terminal and (s3.distance_to(o.shore) < 60.0 or reach.distance_to(o.shore + o.dock_dir * 40.0) < 65.0):
+		if o.has_terminal and (s3.distance_to(o.shore) < 180.0 or reach.distance_to(o.shore + o.dock_dir * 120.0) < 195.0):
 			return null
 	for m in map.marinas:
-		if s3.distance_to(m.shore) < marina_gap or reach.distance_to(m.at(Layout.MARINA_APPROACH_U, 0.0)) < marina_gap - 5.0:
+		if s3.distance_to(m.shore) < marina_gap or reach.distance_to(m.at(Layout.MARINA_APPROACH_U, 0.0)) < marina_gap - 15.0:
 			return null
 	for q in map.wharves():
-		if s3.distance_to(q.shore) < 160.0:
+		if s3.distance_to(q.shore) < 480.0:
 			return null
 	for u: float in [0.0, Layout.QUAY_LANE_U]:
 		for v: float in [-Layout.QUAY_RUN, 0.0, Layout.QUAY_RUN]:
 			var p := s3 + n3 * u + lat * v
 			for i in range(0, _route_samples.size(), 4):
 				var rp := _route_samples[i]
-				if Vector2(rp.x - p.x, rp.z - p.z).length_squared() < 34.0 * 34.0:
+				if Vector2(rp.x - p.x, rp.z - p.z).length_squared() < 102.0 * 102.0:
 					return null
 	return [s3, n3]
 
@@ -703,7 +703,7 @@ func _place_station(map_seed: int) -> void:
 	var best: Array = []
 	var best_score := -INF
 	# (Its boats come and go a lot: well away from the marinas, if it can be.)
-	for gap: float in [130.0, 90.0, 60.0]:
+	for gap: float in [390.0, 270.0, 180.0]:
 		if not best.is_empty():
 			break
 		for isl in _main_islands():
@@ -716,8 +716,8 @@ func _place_station(map_seed: int) -> void:
 				var reach: Vector3 = site[0] + site[1] * Layout.QUAY_LANE_U
 				# Out towards an edge, looking out to sea.
 				var out := maxf(absf(reach.x), absf(reach.z))
-				var score := out + 120.0 * Vector2(site[1].x, site[1].z).dot(Vector2(reach.x, reach.z).normalized()) \
-						+ r.randf() * 40.0
+				var score := out + 360.0 * Vector2(site[1].x, site[1].z).dot(Vector2(reach.x, reach.z).normalized()) \
+						+ r.randf() * 120.0
 				if score > best_score:
 					best_score = score
 					best = [isl, site]
@@ -737,8 +737,8 @@ func _flatten_terminals() -> void:
 		if not isl.has_terminal:
 			continue
 		var hw := isl.lot_half_width
-		terrain.add_flat(isl.shore, isl.dock_dir, Layout.LOT_BACK - 2.0, Layout.LOT_FRONT + 1.0,
-			-hw - 1.5, hw + 11.0, Layout.LOT_Y - 0.05, 7.0)
+		terrain.add_flat(isl.shore, isl.dock_dir, Layout.LOT_BACK - 6.0, Layout.LOT_FRONT + 3.0,
+			-hw - 4.5, hw + 33.0, Layout.LOT_Y - 0.15, 21.0)
 	terrain.apply_flats()
 
 
@@ -796,49 +796,49 @@ func _place_haul_outs(map_seed: int) -> void:
 					shore = rr
 					break
 				rr += 0.5
-			if shore < 3.0:
+			if shore < 9.0:
 				continue
 			var s3 := c + n3 * shore
 			var g := Vector3(_h(s3 + Vector3.RIGHT) - _h(s3 - Vector3.RIGHT), 0.0,
 				_h(s3 + Vector3.BACK) - _h(s3 - Vector3.BACK))
 			var out := -g.normalized() if g.length_squared() > 1e-4 else n3
-			if out.dot(n3) < 0.5 or not _haul_clear(s3, 70.0):
+			if out.dot(n3) < 0.5 or not _haul_clear(s3, 210.0):
 				continue
 			var lat := Vector3.UP.cross(out)
 			# Deep water off it to swim in from, and no other shore just across.
 			var open := true
-			for u: float in [8.0, 14.0, 22.0]:
-				for v: float in [-6.0, 0.0, 6.0]:
-					if _h(s3 + out * u + lat * v) > -2.0:
+			for u: float in [24.0, 42.0, 66.0]:
+				for v: float in [-18.0, 0.0, 18.0]:
+					if _h(s3 + out * u + lat * v) > -6.0:
 						open = false
 			if not open:
 				continue
 			var islet := not isl.inhabited
-			if not islet and _h(s3 - out * 10.0) > 1.0:
+			if not islet and _h(s3 - out * 30.0) > 3.0:
 				# A beach wants a bit of a bay: land running on out either side.
 				var bay := 0.0
 				for side: float in [-1.0, 1.0]:
-					var q := s3 + lat * side * 16.0
-					var rq := -6.0
-					while rq < 10.0 and _h(q + out * rq) > 0.0:
-						rq += 1.0
+					var q := s3 + lat * side * 48.0
+					var rq := -18.0
+					while rq < 30.0 and _h(q + out * rq) > 0.0:
+						rq += 3.0
 					bay += rq
-				beaches.append([bay + r.randf() * 6.0, isl, s3, out])
-			if _h(s3 - out * 3.0) > 1.2:
-				rocks.append([(30.0 if islet else 0.0) + r.randf() * 10.0, isl, s3, out])
+				beaches.append([bay + r.randf() * 18.0, isl, s3, out])
+			if _h(s3 - out * 9.0) > 3.6:
+				rocks.append([(90.0 if islet else 0.0) + r.randf() * 30.0, isl, s3, out])
 	beaches.sort_custom(func(a, b): return a[0] > b[0])
 	rocks.sort_custom(func(a, b): return a[0] > b[0])
 	var want_beaches := r.randi_range(2, 4)
 	for b: Array in beaches:
 		if want_beaches <= 0:
 			break
-		if _haul_clear(b[2], 70.0) and _beach_site(b[1], b[2], b[3], r):
+		if _haul_clear(b[2], 210.0) and _beach_site(b[1], b[2], b[3], r):
 			want_beaches -= 1
 	var want_rocks := r.randi_range(3, 5)
 	for b: Array in rocks:
 		if want_rocks <= 0:
 			break
-		if _haul_clear(b[2], 70.0):
+		if _haul_clear(b[2], 210.0):
 			_rock_site(b[1], b[2], b[3], r)
 			want_rocks -= 1
 	for m in map.marinas:
@@ -847,24 +847,24 @@ func _place_haul_outs(map_seed: int) -> void:
 
 ## Clear of the ferries, their lanes, the wharves, marinas and other haul-outs.
 func _haul_clear(p: Vector3, gap: float) -> bool:
-	var bound := map.half_size - 30.0
+	var bound := map.half_size - 90.0
 	if absf(p.x) > bound or absf(p.z) > bound:
 		return false
 	for o in map.islands:
-		if o.has_terminal and p.distance_to(o.shore) < 90.0:
+		if o.has_terminal and p.distance_to(o.shore) < 270.0:
 			return false
 	for m in map.marinas:
-		if p.distance_to(m.shore) < 45.0 or p.distance_to(m.at(Layout.MARINA_APPROACH_U, 0.0)) < 40.0:
+		if p.distance_to(m.shore) < 135.0 or p.distance_to(m.at(Layout.MARINA_APPROACH_U, 0.0)) < 120.0:
 			return false
 	for q in map.wharves():
-		if p.distance_to(q.shore) < 60.0 or p.distance_to(q.at(Layout.QUAY_LANE_U, 0.0)) < 70.0:
+		if p.distance_to(q.shore) < 180.0 or p.distance_to(q.at(Layout.QUAY_LANE_U, 0.0)) < 210.0:
 			return false
 	for h in map.haul_outs:
-		if p.distance_to(h.water) < gap + 20.0:
+		if p.distance_to(h.water) < gap + 60.0:
 			return false
 	for i in range(0, _route_samples.size(), 4):
 		var rp := _route_samples[i]
-		if Vector2(rp.x - p.x, rp.z - p.z).length_squared() < 40.0 * 40.0:
+		if Vector2(rp.x - p.x, rp.z - p.z).length_squared() < 120.0 * 120.0:
 			return false
 	return true
 
@@ -875,7 +875,7 @@ func _new_haul_out(kind: MapData.HaulOut.Kind, isl: MapData.Island, at: Vector3,
 	h.kind = kind
 	h.island = isl.id
 	h.out = out
-	h.water = Vector3(at.x, 0.0, at.z) + out * 16.0
+	h.water = Vector3(at.x, 0.0, at.z) + out * 48.0
 	var best := INF
 	for o in _main_islands():
 		var d := Vector2(at.x, at.z).distance_to(o.center) - o.radius
@@ -888,16 +888,16 @@ func _new_haul_out(kind: MapData.HaulOut.Kind, isl: MapData.Island, at: Vector3,
 ## Cuts a pocket beach at `s3` and lays out spots up it in rows; false if the
 ## slope didn't come out gentle enough to lie on.
 func _beach_site(isl: MapData.Island, s3: Vector3, out: Vector3, r: RandomNumberGenerator) -> bool:
-	var half_w := r.randf_range(9.0, 13.0)
-	terrain.carve_beach(s3, out, half_w, r.randf_range(7.0, 9.0), r.randf_range(9.0, 11.0))
+	var half_w := r.randf_range(27.0, 39.0)
+	terrain.carve_beach(s3, out, half_w, r.randf_range(21.0, 27.0), r.randf_range(27.0, 33.0))
 	var h := _new_haul_out(MapData.HaulOut.Kind.BEACH, isl, s3, out)
 	var lat := Vector3.UP.cross(out)
 	var v := -half_w * 0.5
 	while v <= half_w * 0.5:
 		# Where the water's edge is along this line, now.
 		var line := s3 + lat * v
-		var e := -10.0
-		while e < 12.0 and _h(line + out * e) > 0.0:
+		var e := -30.0
+		while e < 36.0 and _h(line + out * e) > 0.0:
 			e += 0.25
 		var edge := line + out * e
 		for row in 3:
@@ -954,13 +954,13 @@ func _dock_site(m: MapData.Marina) -> void:
 	var h := _new_haul_out(MapData.HaulOut.Kind.DOCK, isl, m.at(hu, 0.0), m.dir)
 	h.marina = m.id
 	h.top = 0.65
-	h.water = m.at(hu - 1.0, 0.0)
+	h.water = m.at(hu - 3.0, 0.0)
 	h.water.y = 0.0
 	for side: float in [-1.0, 1.0]:
-		var entry := m.at(hu, side * (hh + 2.5))
-		if _h(entry) > -1.2:
+		var entry := m.at(hu, side * (hh + 7.5))
+		if _h(entry) > -3.6:
 			continue
-		h.water = m.at(hu + 1.0, side * (hh + 6.0))
+		h.water = m.at(hu + 3.0, side * (hh + 18.0))
 		h.water.y = 0.0
 		# Innermost first, so those coming after needn't climb over the ones lying there.
 		for uv: Vector2 in [Vector2(-0.45, hh - 4.3), Vector2(0.45, hh - 2.9), Vector2(-0.45, hh - 1.5)]:
@@ -988,24 +988,24 @@ func _layout_towns() -> void:
 			var nd := isl.dock_dir
 			var t := isl.lateral()
 			var e := isl.shore + nd * Layout.LOT_BACK
-			var dist := 16.0
-			while dist > 4.0:
+			var dist := 48.0
+			while dist > 12.0:
 				var p := e - nd * dist
-				if _h(p) > 1.3 and _h(p - nd * 8.0) > 1.3:
+				if _h(p) > 3.9 and _h(p - nd * 24.0) > 3.9:
 					break
-				dist -= 2.0
+				dist -= 6.0
 			var tc := e - nd * dist
 			isl.road_main_a = _road_line(e, tc, t)
 			var far := 0.0
-			while far < 16.0 and _h(tc - nd * (far + 2.0)) > 1.3:
-				far += 2.0
-			if far >= 4.0:
+			while far < 48.0 and _h(tc - nd * (far + 6.0)) > 3.9:
+				far += 6.0
+			if far >= 12.0:
 				isl.road_main_b = _road_line(tc, tc - nd * far, t)
 			for side: float in [-1.0, 1.0]:
 				var length := 0.0
-				while length < 24.0 and _h(tc + t * side * (length + 2.0)) > 1.3:
-					length += 2.0
-				if length >= 6.0:
+				while length < 72.0 and _h(tc + t * side * (length + 6.0)) > 3.9:
+					length += 6.0
+				if length >= 18.0:
 					isl.road_cross.append(_road_line(tc, tc + t * side * length, nd))
 			isl.town_center = tc
 			isl.town_axis = t
@@ -1013,21 +1013,21 @@ func _layout_towns() -> void:
 			# Unconnected island: settle on the highest ground near the centre.
 			var best := Vector3(isl.center.x, 0.0, isl.center.y)
 			for k in 24:
-				var p := Vector3(isl.center.x + rng.randf_range(-15, 15), 0.0, isl.center.y + rng.randf_range(-15, 15))
+				var p := Vector3(isl.center.x + rng.randf_range(-45, 45), 0.0, isl.center.y + rng.randf_range(-45, 45))
 				if _h(p) > _h(best):
 					best = p
 			isl.town_center = best
 			var a := rng.randf() * TAU
 			isl.town_axis = Vector3(cos(a), 0.0, sin(a))
 		isl.town_center.y = _h(isl.town_center)
-		isl.label_pos = isl.town_center + Vector3(0, 16, 0)
+		isl.label_pos = isl.town_center + Vector3(0, 48, 0)
 
 
 func _road_line(a: Vector3, b: Vector3, lat: Vector3) -> PackedVector3Array:
 	var pts := PackedVector3Array()
-	var count := maxi(1, ceili(a.distance_to(b) / 2.0))
+	var count := maxi(1, ceili(a.distance_to(b) / 6.0))
 	for i in count + 1:
 		var p := a.lerp(b, float(i) / count)
-		p.y = maxf(_h(p), maxf(_h(p + lat * 1.7), _h(p - lat * 1.7))) + 0.22
+		p.y = maxf(_h(p), maxf(_h(p + lat * 5.1), _h(p - lat * 5.1))) + 0.66
 		pts.append(p)
 	return pts

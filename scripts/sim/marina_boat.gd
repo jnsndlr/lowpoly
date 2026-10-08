@@ -7,10 +7,10 @@ extends HelmVessel
 ## waits its turn off the marina (MarineTraffic.wait_spot). Its berth is held for
 ## it while it is away (MarineTraffic.reserve_berth).
 
-const REVERSE_SPEED := 0.7
+const REVERSE_SPEED := 2.1
 # The hull length the marina's berths are laid out for (Layout.MARINA_BERTH_U);
 # longer boats lie further out.
-const BERTH_HALF_LENGTH := 1.8
+const BERTH_HALF_LENGTH := 5.4
 
 var marina: MapData.Marina     # where it is moored, or where it last left from
 var berth := 0
@@ -77,7 +77,7 @@ func _make_fast() -> void:
 
 func _pose_moored() -> void:
 	var p := _berth_pos(marina, berth, Layout.MARINA_BERTH_U)
-	position = Vector3(p.x, sin(_bob * 1.4) * 0.04, p.y)
+	position = Vector3(p.x, sin(_bob * 1.4) * 0.12, p.y)
 	basis = Basis(Vector3.UP, _yaw + sin(_bob * 0.37) * 0.03) * Basis(Vector3.BACK, sin(_bob * 1.1) * 0.025)
 
 
@@ -93,14 +93,14 @@ func _start_backing_out() -> void:
 
 func _back_out(delta: float) -> void:
 	var left := path.length - s
-	var target := minf(REVERSE_SPEED, 0.2 + sqrt(2.0 * 0.4 * left))
+	var target := minf(REVERSE_SPEED, 0.6 + sqrt(2.0 * 1.2 * left))
 	target = minf(target, yield_speed())
 	speed = minf(target, speed + spec.accel * delta)
 	s = minf(s + speed * delta, path.length)
 	var p := path.sample(s)
-	position = Vector3(p.x, sin(_bob * 1.6) * 0.05, p.y)
+	position = Vector3(p.x, sin(_bob * 1.6) * 0.15, p.y)
 	_pose(delta)
-	if path.length - s < 0.05:
+	if path.length - s < 0.15:
 		path = null
 		_backed_out()
 
@@ -133,23 +133,23 @@ func _plan_berthing() -> NavPath:
 	var main := traffic.nav.find_path(pos2(), to, false)
 	if main.is_empty():
 		main = PackedVector2Array([pos2(), to])
-	main = traffic.nav.finish(main, 0.0, 6.0, 2, hull_radius + 1.0)
+	main = traffic.nav.finish(main, 0.0, 18.0, 2, hull_radius + 3.0)
 	main.append(_berth_pos(dest, dest_berth, Layout.MARINA_BERTH_U))
 	return NavPath.new(main)
 
 
 func _berth_in(delta: float) -> void:
 	var left := path.length - s
-	var target := minf(spec.motor_speed * 0.6, 0.3 + sqrt(2.0 * 0.3 * left))
+	var target := minf(spec.motor_speed * 0.6, 0.9 + sqrt(2.0 * 0.9 * left))
 	target = minf(target, yield_speed())
 	speed = minf(target, speed + spec.accel * delta)
 	s = minf(s + speed * delta, path.length)
 	var t := path.tangent(s)
 	_yaw = rotate_toward(_yaw, atan2(t.x, t.y), spec.motor_turn * delta)
 	var p := path.sample(s)
-	position = Vector3(p.x, sin(_bob * 1.6) * 0.05, p.y)
+	position = Vector3(p.x, sin(_bob * 1.6) * 0.15, p.y)
 	_pose(delta)
-	if path.length - s < 0.02:
+	if path.length - s < 0.06:
 		traffic.unlock(dest, self)
 		_arriving = false
 		marina = dest
@@ -185,5 +185,5 @@ func path_left() -> float:
 	if path != null:
 		return path.length - s
 	if helm != null:
-		return helm.distance_left() + 10.0
+		return helm.distance_left() + 30.0
 	return 0.0

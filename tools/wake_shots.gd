@@ -34,7 +34,7 @@ func _process(_delta: float) -> bool:
 		return false
 	Engine.time_scale = 1.0
 	var kinds := ["Cargo ship", "Sailboat", "Cargo ship", "Ferry"]
-	var dists := [140.0, 60.0, 75.0, 70.0]
+	var dists := [420.0, 180.0, 225.0, 210.0]
 	var yaws := [0.5, 1.4, 2.4, 2.4]
 	if shots >= kinds.size():
 		return true

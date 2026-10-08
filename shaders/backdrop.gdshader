@@ -11,8 +11,8 @@ render_mode cull_back, specular_disabled;
 
 // The visible cloud deck (and so its shadows) thins out past this radius
 // (keep in sync with clouds.gdshader).
-const float DECK_FADE_START = 900.0;
-const float DECK_FADE_END = 1600.0;
+const float DECK_FADE_START = 2700.0;
+const float DECK_FADE_END = 4800.0;
 
 const float WRAP = 0.3;
 

@@ -6,12 +6,12 @@ extends RefCounted
 ## crosses them rather than following them. Paths come back string-pulled, in
 ## world x, z; finish() shifts them to keep right and rounds their corners.
 
-const CELL := 6.0
+const CELL := 18.0
 # Centre of an open cell to the nearest land cell's centre (land is anything
 # shallower than LAND_DEPTH within a couple of metres of a cell's centre).
-const SMALL_CLEAR := 12.0
-const LARGE_CLEAR := 30.0
-const LAND_DEPTH := -1.6
+const SMALL_CLEAR := 36.0
+const LARGE_CLEAR := 90.0
+const LAND_DEPTH := -4.8
 const SMALL_LANE_COST := 3.0
 const LARGE_LANE_COST := 6.0
 
@@ -24,7 +24,7 @@ var large := AStarGrid2D.new()
 
 func _init(map: MapData, t: Terrain) -> void:
 	terrain = t
-	ext = map.half_size + 110.0
+	ext = map.half_size + 330.0
 	n = ceili(ext * 2.0 / CELL)
 	var land := PackedByteArray()
 	land.resize(n * n)
@@ -32,7 +32,7 @@ func _init(map: MapData, t: Terrain) -> void:
 		for i in n:
 			var c := center(Vector2i(i, j))
 			var h := terrain.height_at(c.x, c.y)
-			for o: Vector2 in [Vector2(-2.5, -2.5), Vector2(2.5, -2.5), Vector2(-2.5, 2.5), Vector2(2.5, 2.5)]:
+			for o: Vector2 in [Vector2(-7.5, -7.5), Vector2(7.5, -7.5), Vector2(-7.5, 7.5), Vector2(7.5, 7.5)]:
 				h = maxf(h, terrain.height_at(c.x + o.x, c.y + o.y))
 			land[j * n + i] = 1 if h > LAND_DEPTH else 0
 	var dist := _distance(land)
@@ -116,9 +116,9 @@ func _mark_lanes(map: MapData) -> void:
 		var pts := r.curve.get_baked_points()
 		for k in range(0, pts.size(), 4):
 			var p := Vector2(pts[k].x, pts[k].z)
-			for c in _cells_within(p, 14.0):
+			for c in _cells_within(p, 42.0):
 				small.set_point_weight_scale(c, SMALL_LANE_COST)
-			for c in _cells_within(p, 22.0):
+			for c in _cells_within(p, 66.0):
 				large.set_point_weight_scale(c, LARGE_LANE_COST)
 
 
@@ -127,17 +127,17 @@ func _close_terminals(map: MapData) -> void:
 	for isl in map.islands:
 		if not isl.has_terminal:
 			continue
-		var hw := isl.lot_half_width + 16.0
-		var u := -10.0
-		while u <= Layout.PIER_END + 54.0:
+		var hw := isl.lot_half_width + 48.0
+		var u := -30.0
+		while u <= Layout.PIER_END + 162.0:
 			var v := -hw
 			while v <= hw:
 				var p := isl.shore + isl.dock_dir * u + isl.lateral() * v
 				var c := cell(Vector2(p.x, p.z))
 				small.set_point_solid(c)
 				large.set_point_solid(c)
-				v += 3.0
-			u += 3.0
+				v += 9.0
+			u += 9.0
 
 
 ## The pier, T-head and berths, and the water either side of them in under the
@@ -145,33 +145,33 @@ func _close_terminals(map: MapData) -> void:
 ## ends of the berths).
 func _close_marinas(map: MapData) -> void:
 	for m in map.marinas:
-		var u := -2.0
-		while u <= 52.0:
-			var v := -26.0
-			while v <= 26.0:
+		var u := -6.0
+		while u <= 156.0:
+			var v := -78.0
+			while v <= 78.0:
 				var p := m.at(u, v)
 				var c := cell(Vector2(p.x, p.z))
 				large.set_point_solid(c)
-				if u <= Layout.MARINA_BERTH_U + 4.0 and absf(v) <= Layout.MARINA_HEAD_HALF + 10.0:
+				if u <= Layout.MARINA_BERTH_U + 12.0 and absf(v) <= Layout.MARINA_HEAD_HALF + 30.0:
 					small.set_point_solid(c)
-				v += 3.0
-			u += 3.0
+				v += 9.0
+			u += 9.0
 
 
 ## The jetty and wharf, and (for ships) the lane off it the boats based there use.
 func _close_quays(map: MapData) -> void:
 	for q in map.wharves():
-		var u := -2.0
-		while u <= Layout.QUAY_LANE_U + 16.0:
-			var v := -Layout.QUAY_RUN - 10.0
-			while v <= Layout.QUAY_RUN + 10.0:
+		var u := -6.0
+		while u <= Layout.QUAY_LANE_U + 48.0:
+			var v := -Layout.QUAY_RUN - 30.0
+			while v <= Layout.QUAY_RUN + 30.0:
 				var p := q.at(u, v)
 				var c := cell(Vector2(p.x, p.z))
 				large.set_point_solid(c)
-				if u <= Layout.QUAY_FACE_U + 2.0 and absf(v) <= Layout.QUAY_HALF + 2.0:
+				if u <= Layout.QUAY_FACE_U + 6.0 and absf(v) <= Layout.QUAY_HALF + 6.0:
 					small.set_point_solid(c)
-				v += 3.0
-			u += 3.0
+				v += 9.0
+			u += 9.0
 
 
 ## Nearest open cell to `c`, searching outward a few rings; (-1, -1) if none.
@@ -268,7 +268,7 @@ func _sight(g: AStarGrid2D, a: Vector2, b: Vector2) -> bool:
 ## land they avoid and rounding cuts in towards it, so the result is checked
 ## against the seabed `half_width` either side of the track, falling back to
 ## gentler versions and at worst the path as it was.
-func finish(pts: PackedVector2Array, keep: float, cut: float, iterations: int, half_width: float, taper := 25.0) -> PackedVector2Array:
+func finish(pts: PackedVector2Array, keep: float, cut: float, iterations: int, half_width: float, taper := 75.0) -> PackedVector2Array:
 	for f: float in [1.0, 0.5, 0.25]:
 		var out := smooth(keep_right(pts, keep * f, taper), iterations, cut * f)
 		if afloat(out, half_width):
@@ -282,19 +282,19 @@ func afloat(pts: PackedVector2Array, half_width: float) -> bool:
 	var s := 0.0
 	while s <= p.length:
 		var q := p.sample(s)
-		var t := p.tangent(s, 1.0)
+		var t := p.tangent(s, 3.0)
 		var side := Vector2(-t.y, t.x) * half_width
 		for o: Vector2 in [Vector2.ZERO, side, -side]:
 			if terrain.height_at(q.x + o.x, q.y + o.y) > LAND_DEPTH:
 				return false
-		s += 2.0
+		s += 6.0
 	return true
 
 
 ## Shifts a path `amount` to the right of travel (so boats on opposite courses pass
 ## each other), easing in and out over `taper` metres so the ends stay put (or
 ## shifting the ends too if `taper` is 0).
-static func keep_right(pts: PackedVector2Array, amount: float, taper := 25.0) -> PackedVector2Array:
+static func keep_right(pts: PackedVector2Array, amount: float, taper := 75.0) -> PackedVector2Array:
 	if pts.size() < 3:
 		return pts
 	var path := NavPath.new(pts)

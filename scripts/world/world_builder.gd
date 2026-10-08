@@ -16,12 +16,12 @@ const ROOFS := [Color(0.72, 0.26, 0.2), Color(0.28, 0.3, 0.34), Color(0.25, 0.36
 # Alternatives: water_gem.gdshader, water_sharp.gdshader, water_fold.gdshader, water_reference.gdshader.
 const WATER_SHADER := "res://shaders/water.gdshader"
 # Scale of the caged lamps on the ramp lift towers.
-const LIFT_LAMP := 1.6
+const LIFT_LAMP := 4.8
 # Scale of the 360° lanterns on top of the lift and on the dolphins.
-const LIFT_LANTERN := 1.3
-const DOLPHIN_LANTERN := 1.3
+const LIFT_LANTERN := 3.9
+const DOLPHIN_LANTERN := 3.9
 # Side (m) of the tiles that trees, rocks and houses are batched in for culling.
-const MULTIMESH_TILE := 64.0
+const MULTIMESH_TILE := 192.0
 
 var map: MapData
 var terrain: Terrain
@@ -146,9 +146,9 @@ func _multimesh(mesh: Mesh, xforms: Array[Transform3D], colors: Array[Color], no
 # --- Blocking grid so props don't overlap roads, lots and houses -------------------
 
 func _block(p: Vector3, radius: float) -> void:
-	var r := ceili(radius / 2.0)
-	var cx := floori(p.x / 2.0)
-	var cz := floori(p.z / 2.0)
+	var r := ceili(radius / 6.0)
+	var cx := floori(p.x / 6.0)
+	var cz := floori(p.z / 6.0)
 	for dz in range(-r, r + 1):
 		for dx in range(-r, r + 1):
 			_blocked[Vector2i(cx + dx, cz + dz)] = true
@@ -160,7 +160,7 @@ func _perch(a: Vector3, b: Vector3, spread: float, kind: int) -> void:
 
 
 func _is_blocked(x: float, z: float) -> bool:
-	return _blocked.has(Vector2i(floori(x / 2.0), floori(z / 2.0)))
+	return _blocked.has(Vector2i(floori(x / 6.0), floori(z / 6.0)))
 
 
 static func _hash(x: float, z: float) -> float:
@@ -180,7 +180,7 @@ func _build_terrain() -> void:
 			var h10 := terrain.h_index(i + 1, j)
 			var h01 := terrain.h_index(i, j + 1)
 			var h11 := terrain.h_index(i + 1, j + 1)
-			if maxf(maxf(h00, h10), maxf(h01, h11)) < -5.2:
+			if maxf(maxf(h00, h10), maxf(h01, h11)) < -15.6:
 				continue
 			var x0 := -hs + i * c
 			var z0 := -hs + j * c
@@ -197,12 +197,12 @@ func _build_terrain() -> void:
 	_add_mesh(mb.commit(), "Terrain")
 
 	var floor_mesh := PlaneMesh.new()
-	floor_mesh.size = Vector2.ONE * (Mainland.FAR * 2.0 + 1000.0)
+	floor_mesh.size = Vector2.ONE * (Mainland.FAR * 2.0 + 3000.0)
 	var floor_mat := StandardMaterial3D.new()
 	floor_mat.albedo_color = Color(0.4, 0.45, 0.36)
 	floor_mesh.material = floor_mat
 	var fl := _add_mesh(floor_mesh, "SeaFloor", false)
-	fl.position.y = -5.35
+	fl.position.y = -16.05
 
 
 func _terrain_tri(mb: MeshBuilder, a: Vector3, b: Vector3, c: Vector3) -> void:
@@ -220,14 +220,14 @@ func _terrain_tri(mb: MeshBuilder, a: Vector3, b: Vector3, c: Vector3) -> void:
 func _ground_color(h: float, ny: float, sx: float, sz: float) -> Color:
 	var r := _hash(sx, sz)
 	var col: Color
-	if h < -0.3:
-		col = Color(0.66, 0.63, 0.47).darkened(clampf(-h * 0.07, 0.0, 0.45))
+	if h < -0.9:
+		col = Color(0.66, 0.63, 0.47).darkened(clampf(-h * 0.023333, 0.0, 0.45))
 	elif ny < 0.72:
 		col = Color(0.5, 0.43, 0.42).lerp(Color(0.63, 0.54, 0.49), r)
-	elif h < 1.15:
+	elif h < 3.45:
 		col = Color(0.8, 0.73, 0.54)
 	else:
-		var g := clampf((h - 1.2) / 8.0, 0.0, 1.0)
+		var g := clampf((h - 3.6) / 24.0, 0.0, 1.0)
 		col = Color(0.52, 0.6, 0.25).lerp(Color(0.33, 0.46, 0.2), g)
 	return col.darkened(r * 0.08)
 
@@ -244,7 +244,7 @@ func _build_water() -> void:
 	mat.set_shader_parameter("seabed_height", ImageTexture.create_from_image(heights))
 	mat.set_shader_parameter("terrain_half_size", terrain.half_size)
 	mat.set_shader_parameter("terrain_cell", Terrain.CELL)
-	var inner := map.half_size + 100.0
+	var inner := map.half_size + 300.0
 	mat.set_shader_parameter("swell_extent", inner)
 	water_material = mat
 	var plane := PlaneMesh.new()
@@ -255,7 +255,7 @@ func _build_water() -> void:
 	water.material_override = mat
 
 	# Flat ring out to the horizon around the detailed plane.
-	var o := Mainland.FAR + 300.0
+	var o := Mainland.FAR + 900.0
 	var w := inner
 	var mb := MeshBuilder.new()
 	var col := Color.WHITE
@@ -279,93 +279,93 @@ func _build_terminals() -> void:
 		var hw := isl.lot_half_width
 		var ly := Layout.LOT_Y
 		var mid_u := (Layout.LOT_FRONT + Layout.LOT_BACK) * 0.5
-		mb.box(Vector3(0, ly - 0.45, mid_u), Vector3(hw * 2.0 + 1.2, 0.8, Layout.LOT_LENGTH + 1.2), CONCRETE)
-		mb.box(Vector3(0, ly - 0.3, mid_u), Vector3(hw * 2.0, 0.6, Layout.LOT_LENGTH), ASPHALT)
+		mb.box(Vector3(0, ly - 1.35, mid_u), Vector3(hw * 2.0 + 3.6, 2.4, Layout.LOT_LENGTH + 3.6), CONCRETE)
+		mb.box(Vector3(0, ly - 0.9, mid_u), Vector3(hw * 2.0, 1.8, Layout.LOT_LENGTH), ASPHALT)
 
 		# Lane markings
-		var mark_len := Layout.LANE_HEAD - (Layout.LOT_BACK + 2.5) + 1.0
-		var mark_u := (Layout.LANE_HEAD + 1.0 + Layout.LOT_BACK + 2.5) * 0.5
+		var mark_len := Layout.LANE_HEAD - (Layout.LOT_BACK + 7.5) + 3.0
+		var mark_u := (Layout.LANE_HEAD + 3.0 + Layout.LOT_BACK + 7.5) * 0.5
 		for lane_set in Layout.lane_positions(hw, isl.slips.size()):
 			for v in lane_set:
-				for side: float in [-1.2, 1.2]:
-					mb.box(Vector3(v + side, ly + 0.01, mark_u), Vector3(0.12, 0.02, mark_len), LINE_WHITE)
-		var u := Layout.LOT_BACK + 1.5
-		while u < Layout.LOT_FRONT - 1.0:
-			mb.box(Vector3(0, ly + 0.01, u), Vector3(0.14, 0.02, 1.2), LINE_YELLOW)
-			u += 2.4
+				for side: float in [-3.6, 3.6]:
+					mb.box(Vector3(v + side, ly + 0.03, mark_u), Vector3(0.36, 0.06, mark_len), LINE_WHITE)
+		var u := Layout.LOT_BACK + 4.5
+		while u < Layout.LOT_FRONT - 3.0:
+			mb.box(Vector3(0, ly + 0.03, u), Vector3(0.42, 0.06, 3.6), LINE_YELLOW)
+			u += 7.2
 
 		for i in isl.slips.size():
 			_build_slip(mb, isl.slip_offset(i))
 
 		# Terminal building beside the lot
-		var bv := hw + 5.0
-		mb.box(Vector3(bv, ly + 1.2, -12.0), Vector3(7.0, 3.4, 12.0), Color(0.9, 0.9, 0.87))
-		mb.box(Vector3(bv, ly + 1.6, -12.0), Vector3(7.1, 0.9, 10.5), Models.WINDOW_LIT)
-		mb.box(Vector3(bv, ly + 3.1, -12.0), Vector3(7.8, 0.4, 12.8), Models.WSF_GREEN)
-		mb.box(Vector3(bv - 3.9, ly + 3.4, -6.0), Vector3(0.12, 5.0, 0.12), Color(0.8, 0.8, 0.8))
-		mb.box(Vector3(bv - 3.9, ly + 5.6, -5.55), Vector3(0.05, 0.6, 0.9), Models.WSF_GREEN)
-		_perch(mb.xform * Vector3(bv, ly + 3.3, -17.6), mb.xform * Vector3(bv, ly + 3.3, -6.4), 3.3, Seagulls.Kind.ROOF)
+		var bv := hw + 15.0
+		mb.box(Vector3(bv, ly + 3.6, -36.0), Vector3(21.0, 10.2, 36.0), Color(0.9, 0.9, 0.87))
+		mb.box(Vector3(bv, ly + 4.8, -36.0), Vector3(21.3, 2.7, 31.5), Models.WINDOW_LIT)
+		mb.box(Vector3(bv, ly + 9.3, -36.0), Vector3(23.4, 1.2, 38.4), Models.WSF_GREEN)
+		mb.box(Vector3(bv - 11.7, ly + 10.2, -18.0), Vector3(0.36, 15.0, 0.36), Color(0.8, 0.8, 0.8))
+		mb.box(Vector3(bv - 11.7, ly + 16.8, -16.65), Vector3(0.15, 1.8, 2.7), Models.WSF_GREEN)
+		_perch(mb.xform * Vector3(bv, ly + 9.9, -52.8), mb.xform * Vector3(bv, ly + 9.9, -19.2), 9.9, Seagulls.Kind.ROOF)
 
 		# Toll plaza on the approach road
-		var tu := Layout.LOT_BACK - 3.0
-		for v: float in [-2.7, 2.7]:
-			mb.box(Vector3(v, ly + 0.4, tu), Vector3(1.1, 2.6, 1.8), Color(0.92, 0.92, 0.9))
-			mb.box(Vector3(v, ly + 0.9, tu), Vector3(1.15, 0.6, 1.3), Models.WINDOW_LIT)
-			mb.box(Vector3(v * 1.45, ly + 1.1, tu), Vector3(0.3, 4.0, 0.3), Color(0.85, 0.85, 0.85))
-		mb.box(Vector3(0, ly + 3.25, tu), Vector3(8.6, 0.35, 3.4), Models.WSF_GREEN)
-		for v: float in [-2.7, 0.0, 2.7]:
-			mb.box(Vector3(v, ly + 3.06, tu), Vector3(0.7, 0.04, 0.7), Models.lamp_glass(GlowBuilder.LED))
-			glows.glow(Vector3(v, ly + 3.0, tu), GlowBuilder.LED, 0.16, 4.0, false, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
-		glows.pool(Vector3(0, ly + 0.05, tu), GlowBuilder.SODIUM, 5.5, 0.3)
-		glows.glow(Vector3(bv - 3.9, ly + 5.6, -5.55), GlowBuilder.GREEN, 0.3, 2.5)
-		glows.pool(Vector3(bv - 4.5, ly + 0.05, -12.0), GlowBuilder.WARM, 4.5, 0.3)
+		var tu := Layout.LOT_BACK - 9.0
+		for v: float in [-8.1, 8.1]:
+			mb.box(Vector3(v, ly + 1.2, tu), Vector3(3.3, 7.8, 5.4), Color(0.92, 0.92, 0.9))
+			mb.box(Vector3(v, ly + 2.7, tu), Vector3(3.45, 1.8, 3.9), Models.WINDOW_LIT)
+			mb.box(Vector3(v * 1.45, ly + 3.3, tu), Vector3(0.9, 12.0, 0.9), Color(0.85, 0.85, 0.85))
+		mb.box(Vector3(0, ly + 9.75, tu), Vector3(25.8, 1.05, 10.2), Models.WSF_GREEN)
+		for v: float in [-8.1, 0.0, 8.1]:
+			mb.box(Vector3(v, ly + 9.18, tu), Vector3(2.1, 0.12, 2.1), Models.lamp_glass(GlowBuilder.LED))
+			glows.glow(Vector3(v, ly + 9.0, tu), GlowBuilder.LED, 0.48, 4.0, false, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+		glows.pool(Vector3(0, ly + 0.15, tu), GlowBuilder.SODIUM, 16.5, 0.3)
+		glows.glow(Vector3(bv - 11.7, ly + 16.8, -16.65), GlowBuilder.GREEN, 0.9, 2.5)
+		glows.pool(Vector3(bv - 13.5, ly + 0.15, -36.0), GlowBuilder.WARM, 13.5, 0.3)
 
 		# Light poles
-		for v: float in [-hw + 0.4, hw - 0.4]:
-			for pu: float in [Layout.LOT_FRONT - 1.0, Layout.LOT_BACK + 1.0]:
-				mb.box(Vector3(v, ly + 2.5, pu), Vector3(0.18, 5.0, 0.18), Color(0.35, 0.36, 0.38))
-				mb.box(Vector3(v, ly + 5.0, pu), Vector3(0.6, 0.18, 0.6), Color(0.95, 0.95, 0.8))
-				mb.box(Vector3(v, ly + 4.87, pu), Vector3(0.48, 0.08, 0.48), Models.lamp_glass(GlowBuilder.SODIUM))
-				glows.glow(Vector3(v, ly + 4.85, pu), GlowBuilder.SODIUM, 0.3, 6.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
-				glows.pool(Vector3(v * 0.7, ly + 0.05, pu), GlowBuilder.SODIUM, 8.0, 0.22)
-				var top := mb.xform * Vector3(v, ly + 5.09, pu)
+		for v: float in [-hw + 1.2, hw - 1.2]:
+			for pu: float in [Layout.LOT_FRONT - 3.0, Layout.LOT_BACK + 3.0]:
+				mb.box(Vector3(v, ly + 7.5, pu), Vector3(0.54, 15.0, 0.54), Color(0.35, 0.36, 0.38))
+				mb.box(Vector3(v, ly + 15.0, pu), Vector3(1.8, 0.54, 1.8), Color(0.95, 0.95, 0.8))
+				mb.box(Vector3(v, ly + 14.61, pu), Vector3(1.44, 0.24, 1.44), Models.lamp_glass(GlowBuilder.SODIUM))
+				glows.glow(Vector3(v, ly + 14.55, pu), GlowBuilder.SODIUM, 0.9, 6.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+				glows.pool(Vector3(v * 0.7, ly + 0.15, pu), GlowBuilder.SODIUM, 24.0, 0.22)
+				var top := mb.xform * Vector3(v, ly + 15.27, pu)
 				_perch(top, top, 0.0, Seagulls.Kind.LAMP)
 
 		_add_mesh(mb.commit(), isl.name + " Terminal")
 
 		# Keep trees and houses off the lot, piers and building.
 		var t := isl.lateral()
-		var bu := Layout.LOT_BACK - 6.0
+		var bu := Layout.LOT_BACK - 18.0
 		while bu < Layout.PIER_END:
-			var bvv := -hw - 3.0
-			while bvv < hw + 12.0:
-				_block(isl.shore + isl.dock_dir * bu + t * bvv, 1.0)
-				bvv += 1.5
-			bu += 1.5
+			var bvv := -hw - 9.0
+			while bvv < hw + 36.0:
+				_block(isl.shore + isl.dock_dir * bu + t * bvv, 3.0)
+				bvv += 4.5
+			bu += 4.5
 
 
 func _build_slip(mb: MeshBuilder, v: float) -> void:
 	var ly := Layout.LOT_Y
 	var pe := Layout.PIER_END
 	var lf := Layout.LOT_FRONT
-	mb.box(Vector3(v, ly - 0.2, (lf + pe) * 0.5), Vector3(5.0, 0.4, pe - lf + 0.4), CONCRETE)
-	mb.box(Vector3(v, ly + 0.01, (lf + pe) * 0.5), Vector3(0.12, 0.02, pe - lf - 1.0), LINE_YELLOW)
-	var u := lf + 1.0
+	mb.box(Vector3(v, ly - 0.6, (lf + pe) * 0.5), Vector3(15.0, 1.2, pe - lf + 1.2), CONCRETE)
+	mb.box(Vector3(v, ly + 0.03, (lf + pe) * 0.5), Vector3(0.36, 0.06, pe - lf - 3.0), LINE_YELLOW)
+	var u := lf + 3.0
 	while u < pe:
-		for side: float in [-2.2, 2.2]:
-			mb.box(Vector3(v + side, -1.4, u), Vector3(0.4, 4.2, 0.4), Models.WOOD)
-		u += 3.0
-	mb.box(Vector3(v, ly - 0.12, pe - 1.5), Vector3(5.2, 0.36, 3.0), Color(0.4, 0.42, 0.45))
-	for side: float in [-2.9, 2.9]:
-		mb.box(Vector3(v + side, 2.8, pe - 1.0), Vector3(0.5, 5.6, 0.5), Models.WSF_GREEN)
-	mb.box(Vector3(v, 5.4, pe - 1.0), Vector3(6.3, 0.5, 0.5), Models.WSF_GREEN)
+		for side: float in [-6.6, 6.6]:
+			mb.box(Vector3(v + side, -4.2, u), Vector3(1.2, 12.6, 1.2), Models.WOOD)
+		u += 9.0
+	mb.box(Vector3(v, ly - 0.36, pe - 4.5), Vector3(15.6, 1.08, 9.0), Color(0.4, 0.42, 0.45))
+	for side: float in [-8.7, 8.7]:
+		mb.box(Vector3(v + side, 8.4, pe - 3.0), Vector3(1.5, 16.8, 1.5), Models.WSF_GREEN)
+	mb.box(Vector3(v, 16.2, pe - 3.0), Vector3(18.9, 1.5, 1.5), Models.WSF_GREEN)
 	# Steady red 360° light on top of the lift, for ferries lining up at night.
-	var top := Vector3(v, 5.65, pe - 1.0)
+	var top := Vector3(v, 16.95, pe - 3.0)
 	Models.add_cage_lantern(mb, top, GlowBuilder.RED, LIFT_LANTERN)
-	glows.glow(Models.cage_lantern_glow_at(top, LIFT_LANTERN), GlowBuilder.RED, 0.2, 7.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+	glows.glow(Models.cage_lantern_glow_at(top, LIFT_LANTERN), GlowBuilder.RED, 0.6, 7.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
 	# Along the lift's cross beam, either side of the lantern.
 	for side: float in [-1.0, 1.0]:
-		_perch(mb.xform * Vector3(v + side * 0.45, 5.65, pe - 1.0), mb.xform * Vector3(v + side * 2.9, 5.65, pe - 1.0),
+		_perch(mb.xform * Vector3(v + side * 1.35, 16.95, pe - 3.0), mb.xform * Vector3(v + side * 8.7, 16.95, pe - 3.0),
 			0.0, Seagulls.Kind.LIFT)
 	for side: float in [-1.0, 1.0]:
 		var ww: Array = Layout.WING_WALL
@@ -380,19 +380,19 @@ func _build_slip(mb: MeshBuilder, v: float) -> void:
 		var outer := Layout.DOLPHIN_OUTER
 		var cap := _dolphin(mb, Vector3(v + side * outer.y, 0, outer.x), outer.z, 8)
 		Models.add_cage_lantern(mb, cap, mark, DOLPHIN_LANTERN)
-		glows.glow(Models.cage_lantern_glow_at(cap, DOLPHIN_LANTERN), mark, 0.14, 3.5, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+		glows.glow(Models.cage_lantern_glow_at(cap, DOLPHIN_LANTERN), mark, 0.42, 3.5, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
 		# Channel buoy, flashing.
-		var buoy := Vector3(v + side * 8.5, 0.0, pe + 46.0)
+		var buoy := Vector3(v + side * 25.5, 0.0, pe + 138.0)
 		var phase := Models.blink_phase_at(mb.xform * buoy)
 		Models.add_buoy(mb, buoy, Color(0.2, 0.55, 0.3) if side < 0 else Color(0.8, 0.2, 0.15), mark, phase)
-		glows.glow(Models.buoy_glow_at(buoy), mark, 0.22, 7.0, true, Models.blink_of(phase), Vector3.ZERO, Models.LAMP_ON_AT)
+		glows.glow(Models.buoy_glow_at(buoy), mark, 0.66, 7.0, true, Models.blink_of(phase), Vector3.ZERO, Models.LAMP_ON_AT)
 		# A caged lamp on the inside of each lift tower, lighting the ramp.
-		var lamp := Vector3(v + side * 2.65, 4.6, pe - 1.0)
+		var lamp := Vector3(v + side * 7.95, 13.8, pe - 3.0)
 		var out := Vector3(-side, 0, 0)
 		Models.add_bulkhead_lamp(mb, lamp, out, GlowBuilder.WARM, LIFT_LAMP)
 		glows.glow(Models.bulkhead_glow_at(lamp, out, LIFT_LAMP), GlowBuilder.WARM,
 			Models.bulkhead_glow_size(LIFT_LAMP), 5.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
-	glows.pool(Vector3(v, ly + 0.05, pe - 3.0), GlowBuilder.SODIUM, 3.5, 0.3)
+	glows.pool(Vector3(v, ly + 0.15, pe - 9.0), GlowBuilder.SODIUM, 10.5, 0.3)
 
 
 ## A wing wall from `a` to `b` (u, v in the terminal frame), its fendered face on
@@ -411,28 +411,28 @@ func _wing_wall(mb: MeshBuilder, a: Vector2, b: Vector2, side: float) -> void:
 	var saved := mb.xform
 	mb.xform = saved * Transform3D(Basis(out, Vector3.UP, along), (p0 + p1) * 0.5)
 	# Fender panel, the timber wall behind it and a cap along the top.
-	mb.box(Vector3(0.12, 0.6, 0), Vector3(0.24, 3.6, length + 0.2), Models.HULL_DARK)
-	mb.box(Vector3(0.5, 0.4, 0), Vector3(0.55, 4.4, length), Models.WOOD)
-	mb.box(Vector3(0.45, 2.55, 0), Vector3(0.9, 0.18, length + 0.3), Color(0.72, 0.72, 0.7))
-	var n := maxi(2, ceili(length / 1.7))
+	mb.box(Vector3(0.36, 1.8, 0), Vector3(0.72, 10.8, length + 0.6), Models.HULL_DARK)
+	mb.box(Vector3(1.5, 1.2, 0), Vector3(1.65, 13.2, length), Models.WOOD)
+	mb.box(Vector3(1.35, 7.65, 0), Vector3(2.7, 0.54, length + 0.9), Color(0.72, 0.72, 0.7))
+	var n := maxi(2, ceili(length / 5.1))
 	for i in n + 1:
 		var z := -length * 0.5 + length * i / n
-		mb.cylinder(Vector3(1.0, -2.0, z), 0.24, 0.22, 4.6, 6, Models.WOOD, Color(0.62, 0.6, 0.56))
+		mb.cylinder(Vector3(3.0, -6.0, z), 0.72, 0.66, 13.8, 6, Models.WOOD, Color(0.62, 0.6, 0.56))
 	mb.xform = saved
 
 
 ## A dolphin: a cluster of piles round one at `c` (on the waterline, terminal
 ## frame), `r` across, under a concrete cap. Returns the top of the cap.
 func _dolphin(mb: MeshBuilder, c: Vector3, r: float, piles: int) -> Vector3:
-	var top := 3.4
-	mb.cylinder(c + Vector3(0, -2.0, 0), 0.3, 0.28, top + 2.0, 6, Models.WOOD)
+	var top := 10.2
+	mb.cylinder(c + Vector3(0, -6.0, 0), 0.9, 0.84, top + 6.0, 6, Models.WOOD)
 	for i in piles:
 		var ang := TAU * i / piles
 		var d := Vector3(cos(ang), 0, sin(ang))
-		var foot := c + d * (r - 0.05) + Vector3(0, -2.0, 0)
-		mb.cylinder(foot, 0.26, 0.22, top + 1.8, 6, Models.WOOD)
-	mb.cylinder(c + Vector3(0, top - 0.2, 0), r + 0.1, r, 0.55, piles, Color(0.74, 0.74, 0.71), Color(0.8, 0.8, 0.77))
-	var cap := c + Vector3(0, top + 0.35, 0)
+		var foot := c + d * (r - 0.15) + Vector3(0, -6.0, 0)
+		mb.cylinder(foot, 0.78, 0.66, top + 5.4, 6, Models.WOOD)
+	mb.cylinder(c + Vector3(0, top - 0.6, 0), r + 0.3, r, 1.65, piles, Color(0.74, 0.74, 0.71), Color(0.8, 0.8, 0.77))
+	var cap := c + Vector3(0, top + 1.05, 0)
 	for k in 3:
 		var ang := TAU * (k + 0.25) / 3.0
 		var seat := mb.xform * (cap + Vector3(cos(ang), 0, sin(ang)) * r * 0.55)
@@ -452,16 +452,16 @@ func _build_roads() -> void:
 		var lines: Array[PackedVector3Array] = [main]
 		lines.append_array(isl.road_cross)
 		for line in lines:
-			mb.ribbon(line, 3.4, ROAD)
+			mb.ribbon(line, 10.2, ROAD)
 			for p in line:
-				_block(p, 3.0)
+				_block(p, 9.0)
 			_street_lamps(mb, line)
 	_add_mesh(mb.commit(), "Roads", false)
 
 
 ## Sodium lamps every LAMP_GAP along a road, alternating sides.
 func _street_lamps(mb: MeshBuilder, line: PackedVector3Array) -> void:
-	const LAMP_GAP := 16.0
+	const LAMP_GAP := 48.0
 	glows.xform = Transform3D.IDENTITY
 	var next := LAMP_GAP * 0.5
 	var walked := 0.0
@@ -472,17 +472,17 @@ func _street_lamps(mb: MeshBuilder, line: PackedVector3Array) -> void:
 		var lat := (b - a).cross(Vector3.UP)
 		lat.y = 0.0
 		var seg := Vector3(b.x - a.x, 0.0, b.z - a.z).length()
-		if seg < 0.01:
+		if seg < 0.03:
 			continue
 		lat = lat.normalized()
 		while next <= walked + seg:
-			var p := a.lerp(b, (next - walked) / seg) + lat * 2.2 * side
-			mb.box(p + Vector3(0, 1.7, 0), Vector3(0.12, 3.8, 0.12), Color(0.3, 0.31, 0.33))
-			mb.box(p + Vector3(0, 3.6, 0), Vector3(0.4, 0.14, 0.4), Color(0.25, 0.26, 0.28))
-			mb.box(p + Vector3(0, 3.5, 0), Vector3(0.3, 0.07, 0.3), Models.lamp_glass(GlowBuilder.SODIUM))
-			glows.glow(p + Vector3(0, 3.45, 0), GlowBuilder.SODIUM, 0.22, 5.0, p.y < 4.0, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
-			glows.pool(p + Vector3(0, 0.12, 0) - lat * 1.2 * side, GlowBuilder.SODIUM, 5.0, 0.22)
-			_perch(p + Vector3(0, 3.67, 0), p + Vector3(0, 3.67, 0), 0.0, Seagulls.Kind.LAMP)
+			var p := a.lerp(b, (next - walked) / seg) + lat * 6.6 * side
+			mb.box(p + Vector3(0, 5.1, 0), Vector3(0.36, 11.4, 0.36), Color(0.3, 0.31, 0.33))
+			mb.box(p + Vector3(0, 10.8, 0), Vector3(1.2, 0.42, 1.2), Color(0.25, 0.26, 0.28))
+			mb.box(p + Vector3(0, 10.5, 0), Vector3(0.9, 0.21, 0.9), Models.lamp_glass(GlowBuilder.SODIUM))
+			glows.glow(p + Vector3(0, 10.35, 0), GlowBuilder.SODIUM, 0.66, 5.0, p.y < 12.0, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+			glows.pool(p + Vector3(0, 0.36, 0) - lat * 3.6 * side, GlowBuilder.SODIUM, 15.0, 0.22)
+			_perch(p + Vector3(0, 11.01, 0), p + Vector3(0, 11.01, 0), 0.0, Seagulls.Kind.LAMP)
 			side = -side
 			next += LAMP_GAP
 		walked += seg
@@ -508,45 +508,45 @@ func _build_towns() -> void:
 		var inland := Vector3.UP.cross(t)  # perpendicular to the cross street
 		if isl.has_terminal:
 			inland = -isl.dock_dir
-		var town_r := sqrt(isl.population / 90.0) * 3.0
-		var spacing := 5.5
+		var town_r := sqrt(isl.population / 90.0) * 9.0
+		var spacing := 16.5
 		for b in range(-8, 9):
 			for a in range(-8, 9):
 				if isl.has_terminal and (a == 0 or b == 0):
 					continue  # the streets
 				var p := tc + t * (a * spacing) + inland * (b * spacing)
-				p += Vector3(rng.randf_range(-0.8, 0.8), 0, rng.randf_range(-0.8, 0.8))
+				p += Vector3(rng.randf_range(-2.4, 2.4), 0, rng.randf_range(-2.4, 2.4))
 				var r := Vector2(a, b).length() * spacing
 				if rng.randf() > exp(-pow(r / town_r, 2.0)) * 1.15:
 					continue
-				if isl.has_terminal and (p - isl.shore).dot(isl.dock_dir) > Layout.LOT_BACK - 4.0:
+				if isl.has_terminal and (p - isl.shore).dot(isl.dock_dir) > Layout.LOT_BACK - 12.0:
 					continue
 				if _is_blocked(p.x, p.z):
 					continue
 				var h := terrain.height_v(p)
-				if h < 1.4 or h > 10.0:
+				if h < 4.2 or h > 30.0:
 					continue
 				var hmin := h
 				var hmax := h
-				for o: Vector3 in [t * 1.6, -t * 1.6, inland * 1.9, -inland * 1.9]:
+				for o: Vector3 in [t * 4.8, -t * 4.8, inland * 5.7, -inland * 5.7]:
 					var hh := terrain.height_v(p + o)
 					hmin = minf(hmin, hh)
 					hmax = maxf(hmax, hh)
-				if hmax - hmin > 1.8 or hmin < 0.8:
+				if hmax - hmin > 5.4 or hmin < 2.4:
 					continue
 				var front := -inland * signf(b) if absi(b) <= absi(a) or a == 0 else -t * signf(a)
 				if not isl.has_terminal:
 					front = -inland
 				var basis := Basis(Vector3.UP, atan2(front.x, front.z) + rng.randf_range(-0.05, 0.05))
-				basis = basis.scaled(Vector3.ONE * rng.randf_range(0.9, 1.1))
+				basis = basis.scaled(Vector3.ONE * Models.LEGACY_SCALE * rng.randf_range(0.9, 1.1))
 				var vi := rng.randi_range(0, 9)
 				if r < town_r * 0.4 and isl.population > 3500 and rng.randf() < 0.5:
 					vi = 10 + rng.randi_range(0, 1)
 				var bucket: Array[Transform3D] = per_variant[vi]
-				var xf := Transform3D(basis, Vector3(p.x, hmin - 0.05, p.z))
+				var xf := Transform3D(basis, Vector3(p.x, hmin - 0.15, p.z))
 				bucket.append(xf)
-				_porch_light(xf, vi >= 10, h < 5.0)
-				_block(p, 2.6)
+				_porch_light(xf, vi >= 10, h < 15.0)
+				_block(p, 7.8)
 	var no_colors: Array[Color] = []
 	for i in variants.size():
 		var xforms: Array[Transform3D] = per_variant[i]
@@ -560,12 +560,13 @@ func _porch_light(xf: Transform3D, block: bool, waterfront: bool) -> void:
 	# In the fixture Models.house() / block() put by the door.
 	var lamp := Models.BLOCK_LAMP if block else Models.HOUSE_LAMP
 	var s := Models.BLOCK_LAMP_SCALE if block else Models.HOUSE_LAMP_SCALE
-	glows.glow(Models.bulkhead_glow_at(lamp, Vector3.BACK, s), GlowBuilder.WARM, Models.bulkhead_glow_size(s),
+	# (Positions in the house's frame; sizes in the world's.)
+	glows.glow(Models.bulkhead_glow_at(lamp, Vector3.BACK, s), GlowBuilder.WARM, Models.bulkhead_glow_size(s) * xf.basis.x.length(),
 		4.0 if block else 3.5, waterfront, 0.0, Vector3(0, 0, 1), Models.LAMP_ON_AT)
 	if block:
-		glows.pool(Vector3(0.0, 0.2, 3.6), GlowBuilder.WARM, 2.6, 0.35)
+		glows.pool(Vector3(0.0, 0.2, 3.6), GlowBuilder.WARM, 7.8, 0.35)
 	else:
-		glows.pool(Vector3(0.6, 0.2, 2.5), GlowBuilder.WARM, 1.8, 0.3)
+		glows.pool(Vector3(0.6, 0.2, 2.5), GlowBuilder.WARM, 5.4, 0.3)
 
 
 func _build_lighthouses() -> void:
@@ -577,23 +578,23 @@ func _build_lighthouses() -> void:
 		var dir := Vector3(cos(ang), 0, sin(ang))
 		var c := Vector3(isl.center.x, 0, isl.center.y)
 		var r := 0.0
-		while r < isl.radius * 1.6 and terrain.height_v(c + dir * r) > 1.6:
-			r += 0.5
-		var p := c + dir * maxf(r - 3.0, 0.0)
+		while r < isl.radius * 1.6 and terrain.height_v(c + dir * r) > 4.8:
+			r += 1.5
+		var p := c + dir * maxf(r - 9.0, 0.0)
 		var h := terrain.height_v(p)
-		if h < 1.2 or _is_blocked(p.x, p.z):
+		if h < 3.6 or _is_blocked(p.x, p.z):
 			continue
-		Models.add_lighthouse(mb, Vector3(p.x, h - 0.1, p.z))
+		Models.add_lighthouse(mb, Vector3(p.x, h - 0.3, p.z))
 		for k in 3:
 			var a := ang + PI + (k - 1) * 0.9
-			var seat := Vector3(p.x + cos(a) * 1.1, h + 6.95, p.z + sin(a) * 1.1)
+			var seat := Vector3(p.x + cos(a) * 3.3, h + 20.85, p.z + sin(a) * 3.3)
 			_perch(seat, seat, 0.0, Seagulls.Kind.LIGHTHOUSE)
-		var lamp := Vector3(p.x, h + 7.4, p.z)
+		var lamp := Vector3(p.x, h + 22.2, p.z)
 		var beacon := Color(1.0, 0.92, 0.75)
 		glows.xform = Transform3D.IDENTITY
-		glows.glow(lamp, beacon, 0.8, 9.0, true, 0.0, Vector3.ZERO, 0.0)
-		glows.beam(lamp, beacon, 2.2, 75.0, 0.5, 0.3, _hash(p.x, p.z) * TAU)
-		_block(p, 6.0)
+		glows.glow(lamp, beacon, 2.4, 9.0, true, 0.0, Vector3.ZERO, 0.0)
+		glows.beam(lamp, beacon, 6.6, 225.0, 0.5, 0.3, _hash(p.x, p.z) * TAU)
+		_block(p, 18.0)
 	_add_mesh(mb.commit(), "Lighthouses")
 
 
@@ -621,8 +622,8 @@ func _build_haul_outs() -> void:
 				for p in outline:
 					wet.append(p * 1.02 + p.normalized() * 0.04)
 				var grey := Color(0.44, 0.41, 0.4).lerp(Color(0.52, 0.47, 0.45), r.randf())
-				mb.extrude(outline, -4.6 - h.top, 0.0, grey, grey.lerp(Color(0.8, 0.79, 0.74), 0.18), 1.3)
-				mb.extrude(wet, -4.6 - h.top, -h.top + 0.22, Color(0.2, 0.2, 0.19), Color(0, 0, 0, 0), 1.3)
+				mb.extrude(outline, -13.8 - h.top, 0.0, grey, grey.lerp(Color(0.8, 0.79, 0.74), 0.18), 1.3)
+				mb.extrude(wet, -13.8 - h.top, -h.top + 0.22, Color(0.2, 0.2, 0.19), Color(0, 0, 0, 0), 1.3)
 				for k in r.randi_range(1, 3):
 					var at := Vector3(r.randf_range(-hx, hx) * 1.1, 0.0, r.randf_range(-hz, -hz * 0.3))
 					var s := r.randf_range(0.6, 1.1)
@@ -643,7 +644,7 @@ func _build_haul_outs() -> void:
 func _build_vegetation() -> void:
 	var forest := FastNoiseLite.new()
 	forest.seed = map.map_seed + 5
-	forest.frequency = 0.02
+	forest.frequency = 0.0066667
 	var pines: Array[Transform3D] = []
 	var pine_cols: Array[Color] = []
 	var rounds: Array[Transform3D] = []
@@ -654,26 +655,26 @@ func _build_vegetation() -> void:
 		if isl.inhabited and not isl.is_mainland:
 			towns.append(isl)
 
-	var step := 2.7
-	var hs := terrain.half_size - 3.0
+	var step := 8.1
+	var hs := terrain.half_size - 9.0
 	var z := -hs
 	while z < hs:
 		var x := -hs
 		while x < hs:
-			var px := x + rng.randf_range(-1.4, 1.4)
-			var pz := z + rng.randf_range(-1.4, 1.4)
+			var px := x + rng.randf_range(-4.2, 4.2)
+			var pz := z + rng.randf_range(-4.2, 4.2)
 			x += step
 			var h := terrain.height_at(px, pz)
 			# Open water gets nothing (and draws no random numbers), so skip the slope.
-			if h <= -1.0 or _is_blocked(px, pz):
+			if h <= -3.0 or _is_blocked(px, pz):
 				continue
-			var slope := Vector2(terrain.height_at(px + 1.0, pz) - terrain.height_at(px - 1.0, pz),
-				terrain.height_at(px, pz + 1.0) - terrain.height_at(px, pz - 1.0)).length() * 0.5
-			if h > 1.3 and slope < 1.0:
+			var slope := Vector2(terrain.height_at(px + 3.0, pz) - terrain.height_at(px - 3.0, pz),
+				terrain.height_at(px, pz + 3.0) - terrain.height_at(px, pz - 3.0)).length() / 6.0
+			if h > 3.9 and slope < 1.0:
 				var density := 0.85 + forest.get_noise_2d(px, pz) * 1.2
 				var near_town := false
 				for isl in towns:
-					var town_r := sqrt(isl.population / 90.0) * 3.0 + 6.0
+					var town_r := sqrt(isl.population / 90.0) * 9.0 + 18.0
 					if Vector2(px - isl.town_center.x, pz - isl.town_center.z).length() < town_r:
 						near_town = true
 						break
@@ -682,8 +683,8 @@ func _build_vegetation() -> void:
 				if rng.randf() > density:
 					continue
 				var s := rng.randf_range(0.75, 1.35)
-				var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.2), s))
-				var xf := Transform3D(basis, Vector3(px, h - 0.1, pz))
+				var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.2), s) * Models.LEGACY_SCALE)
+				var xf := Transform3D(basis, Vector3(px, h - 0.3, pz))
 				var tint := Color(rng.randf_range(0.8, 1.0), rng.randf_range(0.85, 1.0), rng.randf_range(0.8, 0.95))
 				if rng.randf() < (0.45 if near_town else 0.2):
 					rounds.append(xf)
@@ -691,9 +692,9 @@ func _build_vegetation() -> void:
 				else:
 					pines.append(xf)
 					pine_cols.append(tint)
-			elif (h > -1.0 and h < 0.7 and rng.randf() < 0.14) or (h > 0.7 and slope >= 1.0 and rng.randf() < 0.1):
+			elif (h > -3.0 and h < 2.1 and rng.randf() < 0.14) or (h > 2.1 and slope >= 1.0 and rng.randf() < 0.1):
 				var s := rng.randf_range(0.5, 1.7)
-				var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s * rng.randf_range(0.8, 1.4), s, s))
+				var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s * rng.randf_range(0.8, 1.4), s, s) * Models.LEGACY_SCALE)
 				rocks.append(Transform3D(basis, Vector3(px, h, pz)))
 		z += step
 	_forest(Models.tree_variants(false), pines, pine_cols, "Pines")
@@ -714,36 +715,36 @@ func _build_marinas() -> void:
 		var pe := Layout.MARINA_PIER_END
 		var hu := Layout.MARINA_HEAD_U
 		var hh := Layout.MARINA_HEAD_HALF
-		mb.box(Vector3(0, 0.75, (pe - 4.0) * 0.5), Vector3(1.8, 0.25, pe + 4.0), plank)
-		var u := -1.0
+		mb.box(Vector3(0, 2.25, (pe - 12.0) * 0.5), Vector3(5.4, 0.75, pe + 12.0), plank)
+		var u := -3.0
 		while u < pe:
 			for side: float in [-1.0, 1.0]:
-				mb.box(Vector3(side * 1.0, -1.3, u), Vector3(0.28, 4.3, 0.28), Models.WOOD)
-			u += 3.5
+				mb.box(Vector3(side * 3.0, -3.9, u), Vector3(0.84, 12.9, 0.84), Models.WOOD)
+			u += 10.5
 		# The T-head, a little lower, its pilings standing proud.
-		mb.box(Vector3(0, 0.5, hu), Vector3(hh * 2.0, 0.3, 2.0), float_col)
-		mb.box(Vector3(0, 0.36, hu + 1.02), Vector3(hh * 2.0, 0.12, 0.08), Color(0.25, 0.25, 0.26))
-		for v: float in [-hh + 0.3, -1.5, 1.5, hh - 0.3]:
-			mb.cylinder(Vector3(v, -2.0, hu - 1.2), 0.2, 0.18, 3.6, 6, Models.WOOD, Color(0.4, 0.33, 0.27))
+		mb.box(Vector3(0, 1.5, hu), Vector3(hh * 2.0, 0.9, 6.0), float_col)
+		mb.box(Vector3(0, 1.08, hu + 3.06), Vector3(hh * 2.0, 0.36, 0.24), Color(0.25, 0.25, 0.26))
+		for v: float in [-hh + 0.9, -4.5, 4.5, hh - 0.9]:
+			mb.cylinder(Vector3(v, -6.0, hu - 3.6), 0.6, 0.54, 10.8, 6, Models.WOOD, Color(0.4, 0.33, 0.27))
 		for b in Layout.MARINA_BERTHS:
 			# A cleat for each berth.
-			mb.box(Vector3(m.berth_v(b), 0.7, hu + 0.75), Vector3(0.35, 0.1, 0.12), Color(0.3, 0.3, 0.32))
+			mb.box(Vector3(m.berth_v(b), 2.1, hu + 2.25), Vector3(1.05, 0.3, 0.36), Color(0.3, 0.3, 0.32))
 		for side: float in [-1.0, 1.0]:
-			var post := Vector3(side * (hh - 0.3), 0.65, hu)
-			mb.box(post + Vector3(0, 0.8, 0), Vector3(0.1, 1.6, 0.1), Color(0.25, 0.26, 0.28))
-			var lamp := post + Vector3(0, 1.6, 0)
-			Models.add_lantern(mb, lamp, GlowBuilder.WARM, 0.9)
-			glows.glow(Models.lantern_glow_at(lamp, 0.9), GlowBuilder.WARM, 0.16, 4.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
-			glows.pool(Vector3(side * (hh - 1.2), 0.66, hu), GlowBuilder.WARM, 3.0, 0.25)
-			var top := mb.xform * (lamp + Vector3(0, 0.36, 0))
+			var post := Vector3(side * (hh - 0.9), 1.95, hu)
+			mb.box(post + Vector3(0, 2.4, 0), Vector3(0.3, 4.8, 0.3), Color(0.25, 0.26, 0.28))
+			var lamp := post + Vector3(0, 4.8, 0)
+			Models.add_lantern(mb, lamp, GlowBuilder.WARM, 2.7)
+			glows.glow(Models.lantern_glow_at(lamp, 2.7), GlowBuilder.WARM, 0.48, 4.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+			glows.pool(Vector3(side * (hh - 3.6), 1.98, hu), GlowBuilder.WARM, 9.0, 0.25)
+			var top := mb.xform * (lamp + Vector3(0, 1.08, 0))
 			_perch(top, top, 0.0, Seagulls.Kind.LAMP)
 		_add_mesh(mb.commit(), map.islands[m.island].name + " Marina")
 		# Keep trees and houses off the pier's landing.
-		var bu := -8.0
-		while bu < 2.0:
-			for bv: float in [-3.0, -1.5, 0.0, 1.5, 3.0]:
-				_block(m.at(bu, bv), 1.0)
-			bu += 1.5
+		var bu := -24.0
+		while bu < 6.0:
+			for bv: float in [-9.0, -4.5, 0.0, 4.5, 9.0]:
+				_block(m.at(bu, bv), 3.0)
+			bu += 4.5
 
 
 ## A timber jetty out to a wharf the boats lie alongside (the boats themselves
@@ -763,68 +764,68 @@ func _build_quays() -> void:
 		var mb := MeshBuilder.new()
 		mb.xform = q.xform()
 		glows.xform = mb.xform
-		var deck := 1.2
+		var deck := 3.6
 		var face := Layout.QUAY_FACE_U
-		var back := Layout.QUAY_JETTY_END - 2.0
+		var back := Layout.QUAY_JETTY_END - 6.0
 		var hh := Layout.QUAY_HALF
 		# The jetty, on its pilings.
-		mb.box(Vector3(0, deck - 0.15, (back - 2.0) * 0.5), Vector3(4.0, 0.3, back + 2.0), plank)
+		mb.box(Vector3(0, deck - 0.45, (back - 6.0) * 0.5), Vector3(12.0, 0.9, back + 6.0), plank)
 		var u := 0.0
 		while u < back:
-			for side: float in [-1.8, 1.8]:
-				mb.box(Vector3(side, -1.6, u), Vector3(0.3, 5.4, 0.3), Models.WOOD)
-			u += 3.0
+			for side: float in [-5.4, 5.4]:
+				mb.box(Vector3(side, -4.8, u), Vector3(0.9, 16.2, 0.9), Models.WOOD)
+			u += 9.0
 		# The wharf: a heavy timber deck with a concrete cap along its face.
 		var mid := (back + face) * 0.5
-		mb.box(Vector3(0, deck - 0.2, mid), Vector3(hh * 2.0, 0.4, face - back), plank)
-		mb.box(Vector3(0, deck + 0.02, face - 0.35), Vector3(hh * 2.0, 0.14, 0.7), cap)
-		mb.box(Vector3(0, deck - 0.9, face - 0.08), Vector3(hh * 2.0, 1.2, 0.16), Models.WOOD)
-		var v := -hh + 0.4
-		while v <= hh - 0.3:
-			mb.box(Vector3(v, -1.8, face - 0.2), Vector3(0.36, 5.6, 0.36), Models.WOOD)
-			mb.box(Vector3(v, -1.6, back + 0.3), Vector3(0.32, 5.4, 0.32), Models.WOOD)
-			v += 3.2
+		mb.box(Vector3(0, deck - 0.6, mid), Vector3(hh * 2.0, 1.2, face - back), plank)
+		mb.box(Vector3(0, deck + 0.06, face - 1.05), Vector3(hh * 2.0, 0.42, 2.1), cap)
+		mb.box(Vector3(0, deck - 2.7, face - 0.24), Vector3(hh * 2.0, 3.6, 0.48), Models.WOOD)
+		var v := -hh + 1.2
+		while v <= hh - 0.9:
+			mb.box(Vector3(v, -5.4, face - 0.6), Vector3(1.08, 16.8, 1.08), Models.WOOD)
+			mb.box(Vector3(v, -4.8, back + 0.9), Vector3(0.96, 16.2, 0.96), Models.WOOD)
+			v += 9.6
 		# Tyre fenders hung along the face, and bollards for the boats' lines.
-		v = -hh + 1.5
-		while v < hh - 1.0:
-			mb.box(Vector3(v, 0.3, face + 0.12), Vector3(0.75, 0.75, 0.26), tyre)
-			mb.box(Vector3(v, 0.3, face + 0.26), Vector3(0.4, 0.4, 0.04), Color(0.03, 0.03, 0.03))
-			v += 3.6 + r.randf() * 1.2
+		v = -hh + 4.5
+		while v < hh - 3.0:
+			mb.box(Vector3(v, 0.9, face + 0.36), Vector3(2.25, 2.25, 0.78), tyre)
+			mb.box(Vector3(v, 0.9, face + 0.78), Vector3(1.2, 1.2, 0.12), Color(0.03, 0.03, 0.03))
+			v += 10.8 + r.randf() * 3.6
 		var spread := (Layout.QUAY_BERTH_SPACING if fish else Layout.STATION_BERTH_SPACING) * 0.37
 		for b in q.berths():
 			for o: float in [-spread, 0.0, spread]:
-				var bp := Vector3(q.berth_v(b) + o, deck + 0.09, face - 0.45)
-				mb.cylinder(bp, 0.17, 0.15, 0.4, 8, Color(0.16, 0.17, 0.18))
-				mb.cylinder(bp + Vector3(0, 0.4, 0), 0.24, 0.24, 0.07, 8, Color(0.16, 0.17, 0.18))
+				var bp := Vector3(q.berth_v(b) + o, deck + 0.27, face - 1.35)
+				mb.cylinder(bp, 0.51, 0.45, 1.2, 8, Color(0.16, 0.17, 0.18))
+				mb.cylinder(bp + Vector3(0, 1.2, 0), 0.72, 0.72, 0.21, 8, Color(0.16, 0.17, 0.18))
 		if fish:
 			_fish_quay_props(mb, q, r, deck, back, face, hh)
 		else:
 			_pilot_station_props(mb, q, r, deck, back, face, hh)
 		# Floodlights on poles, lighting the wharf and the boats alongside (at the
 		# pilot station, only at the end away from the pilot house).
-		for fv: float in [-hh + 4.0, hh - 4.0]:
+		for fv: float in [-hh + 12.0, hh - 12.0]:
 			if not fish and signf(fv) == -q.side:
 				continue
-			var pole := Vector3(fv, deck, back + 0.6)
-			mb.box(pole + Vector3(0, 3.5, 0), Vector3(0.2, 7.0, 0.2), steel)
-			mb.box(pole + Vector3(0, 7.0, 0.3), Vector3(0.9, 0.35, 0.5), Color(0.25, 0.26, 0.27))
-			mb.box(pole + Vector3(0, 6.86, 0.42), Vector3(0.75, 0.08, 0.3), Models.lamp_glass(GlowBuilder.LED))
-			glows.glow(pole + Vector3(0, 6.85, 0.45), GlowBuilder.LED, 0.32, 7.0, true, 0.0, Vector3(0, 0, 1), Models.LAMP_ON_AT)
-			glows.pool(Vector3(fv * 0.85, deck + 0.05, (back + face) * 0.5 + 1.0), GlowBuilder.LED, 7.5, 0.22)
-			var top := mb.xform * (pole + Vector3(0, 7.2, 0.3))
+			var pole := Vector3(fv, deck, back + 1.8)
+			mb.box(pole + Vector3(0, 10.5, 0), Vector3(0.6, 21.0, 0.6), steel)
+			mb.box(pole + Vector3(0, 21.0, 0.9), Vector3(2.7, 1.05, 1.5), Color(0.25, 0.26, 0.27))
+			mb.box(pole + Vector3(0, 20.58, 1.26), Vector3(2.25, 0.24, 0.9), Models.lamp_glass(GlowBuilder.LED))
+			glows.glow(pole + Vector3(0, 20.55, 1.35), GlowBuilder.LED, 0.96, 7.0, true, 0.0, Vector3(0, 0, 1), Models.LAMP_ON_AT)
+			glows.pool(Vector3(fv * 0.85, deck + 0.15, (back + face) * 0.5 + 3.0), GlowBuilder.LED, 22.5, 0.22)
+			var top := mb.xform * (pole + Vector3(0, 21.6, 0.9))
 			_perch(top, top, 0.0, Seagulls.Kind.LAMP)
-		_perch(mb.xform * Vector3(-hh + 1.0, deck + 0.16, face - 0.35), mb.xform * Vector3(hh - 1.0, deck + 0.16, face - 0.35),
+		_perch(mb.xform * Vector3(-hh + 3.0, deck + 0.48, face - 1.05), mb.xform * Vector3(hh - 3.0, deck + 0.48, face - 1.05),
 			0.0, Seagulls.Kind.DOLPHIN)
 		_add_mesh(mb.commit(), q.title(map).capitalize())
 		# Keep trees and houses off the wharf and the jetty's landing.
-		var bu := -10.0
+		var bu := -30.0
 		while bu < face:
-			var half := hh + 1.5 if bu >= back - 1.0 else 4.5
+			var half := hh + 4.5 if bu >= back - 3.0 else 13.5
 			var bv := -half
 			while bv <= half:
-				_block(q.at(bu, bv), 1.0)
-				bv += 1.5
-			bu += 1.5
+				_block(q.at(bu, bv), 3.0)
+				bv += 4.5
+			bu += 4.5
 
 
 ## The fish shed at one end, its big door onto the wharf, totes stacked about,
@@ -835,51 +836,51 @@ func _fish_quay_props(mb: MeshBuilder, q: MapData.Wharf, r: RandomNumberGenerato
 	var trim := Color(0.9, 0.89, 0.84)
 	var totes := [Color(0.18, 0.38, 0.66), Color(0.9, 0.48, 0.14), Color(0.86, 0.86, 0.82)]
 	# The fish shed at one end, its big door onto the wharf.
-	var sv := -q.side * (hh - 8.0)
-	var sz := Vector3(11.0, 3.0, 4.6)
-	var sc := Vector3(sv, deck + sz.y * 0.5, back + sz.z * 0.5 + 0.3)
+	var sv := -q.side * (hh - 24.0)
+	var sz := Vector3(33.0, 9.0, 13.8)
+	var sc := Vector3(sv, deck + sz.y * 0.5, back + sz.z * 0.5 + 0.9)
 	mb.box(sc, sz, shed_wall)
-	mb.box(sc + Vector3(0, -0.35, sz.z * 0.5 + 0.01), Vector3(3.2, 2.3, 0.04), shed_wall.darkened(0.45))
-	for wv: float in [-3.8, 3.8]:
-		mb.box(sc + Vector3(wv, 0.4, sz.z * 0.5 + 0.01), Vector3(1.0, 0.7, 0.04), Models.WINDOW)
-	mb.box(sc + Vector3(0, sz.y * 0.5 - 0.06, 0), Vector3(sz.x + 0.1, 0.12, sz.z + 0.1), trim)
+	mb.box(sc + Vector3(0, -1.05, sz.z * 0.5 + 0.03), Vector3(9.6, 6.9, 0.12), shed_wall.darkened(0.45))
+	for wv: float in [-11.4, 11.4]:
+		mb.box(sc + Vector3(wv, 1.2, sz.z * 0.5 + 0.03), Vector3(3.0, 2.1, 0.12), Models.WINDOW)
+	mb.box(sc + Vector3(0, sz.y * 0.5 - 0.18, 0), Vector3(sz.x + 0.3, 0.36, sz.z + 0.3), trim)
 	var ry := deck + sz.y
-	var rx := sz.x * 0.5 + 0.25
-	var rz := sz.z * 0.5 + 0.35
+	var rx := sz.x * 0.5 + 0.75
+	var rz := sz.z * 0.5 + 1.05
 	var roof := Color(0.3, 0.31, 0.33)
 	var l0 := sc + Vector3(-rx, ry - sc.y, -rz)
 	var l1 := sc + Vector3(rx, ry - sc.y, -rz)
 	var f0 := sc + Vector3(-rx, ry - sc.y, rz)
 	var f1 := sc + Vector3(rx, ry - sc.y, rz)
-	var t0 := sc + Vector3(-rx, ry - sc.y + 1.5, 0)
-	var t1 := sc + Vector3(rx, ry - sc.y + 1.5, 0)
+	var t0 := sc + Vector3(-rx, ry - sc.y + 4.5, 0)
+	var t1 := sc + Vector3(rx, ry - sc.y + 4.5, 0)
 	mb.quad(l0, t0, t1, l1, roof, Vector3(0, 1, -1))
 	mb.quad(f0, f1, t1, t0, roof, Vector3(0, 1, 1))
 	mb.quad(l0, l1, f1, f0, roof.darkened(0.4), Vector3.DOWN)
 	for e: float in [-1.0, 1.0]:
 		var ex := sc.x + e * sz.x * 0.5
 		mb.tri(Vector3(ex, ry, sc.z - sz.z * 0.5), Vector3(ex, ry, sc.z + sz.z * 0.5),
-			Vector3(ex, ry + 1.4, sc.z), shed_wall, Vector3(e, 0, 0))
-	_perch(mb.xform * Vector3(sc.x - rx + 0.6, ry + 1.5, sc.z), mb.xform * Vector3(sc.x + rx - 0.6, ry + 1.5, sc.z), 0.0, Seagulls.Kind.ROOF)
+			Vector3(ex, ry + 4.2, sc.z), shed_wall, Vector3(e, 0, 0))
+	_perch(mb.xform * Vector3(sc.x - rx + 1.8, ry + 4.5, sc.z), mb.xform * Vector3(sc.x + rx - 1.8, ry + 4.5, sc.z), 0.0, Seagulls.Kind.ROOF)
 	# Fish totes stacked about the wharf.
 	for k in 9:
-		var tv := r.randf_range(-hh + 3.0, hh - 3.0)
-		if absf(tv - sv) < sz.x * 0.5 + 1.5:
+		var tv := r.randf_range(-hh + 9.0, hh - 9.0)
+		if absf(tv - sv) < sz.x * 0.5 + 4.5:
 			continue
-		var tu := r.randf_range(back + 1.0, face - 2.2)
+		var tu := r.randf_range(back + 3.0, face - 6.6)
 		var high := r.randi_range(1, 4)
 		var col: Color = totes[r.randi_range(0, totes.size() - 1)]
 		for t in high:
-			mb.box(Vector3(tv, deck + 0.3 + t * 0.55, tu), Vector3(1.2, 0.52, 0.8), col.darkened(r.randf() * 0.15))
+			mb.box(Vector3(tv, deck + 0.9 + t * 1.65, tu), Vector3(3.6, 1.56, 2.4), col.darkened(r.randf() * 0.15))
 	# A hoist for landing the catch, its boom out over the berths.
-	var hv := q.side * 2.0
-	mb.box(Vector3(hv, deck + 2.6, face - 1.2), Vector3(0.35, 5.2, 0.35), Color(0.85, 0.72, 0.18))
+	var hv := q.side * 6.0
+	mb.box(Vector3(hv, deck + 7.8, face - 3.6), Vector3(1.05, 15.6, 1.05), Color(0.85, 0.72, 0.18))
 	var saved := mb.xform
 	mb.xform = saved * Transform3D(Basis(Vector3.RIGHT, -0.55), Vector3(hv, deck + 1.0, face - 1.2))
-	mb.box(Vector3(0, 0, 3.0), Vector3(0.24, 0.24, 6.4), Color(0.85, 0.72, 0.18))
+	mb.box(Vector3(0, 0, 9.0), Vector3(0.72, 0.72, 19.2), Color(0.85, 0.72, 0.18))
 	mb.xform = saved
-	mb.box(Vector3(hv, deck + 2.8, face + 4.0), Vector3(0.03, 1.4, 0.03), Color(0.2, 0.2, 0.2))
-	var hook := mb.xform * Vector3(hv, deck + 5.2, face - 1.2)
+	mb.box(Vector3(hv, deck + 8.4, face + 12.0), Vector3(0.09, 4.2, 0.09), Color(0.2, 0.2, 0.2))
+	var hook := mb.xform * Vector3(hv, deck + 15.6, face - 3.6)
 	_perch(hook, hook, 0.0, Seagulls.Kind.LAMP)
 
 
@@ -891,64 +892,64 @@ func _pilot_station_props(mb: MeshBuilder, q: MapData.Wharf, _r: RandomNumberGen
 	var wall := Color(0.92, 0.91, 0.87)
 	var band := Color(0.86, 0.33, 0.1)
 	var roof := Color(0.22, 0.24, 0.27)
-	var sv := -q.side * (hh - 7.0)
-	var sz := Vector3(9.0, 5.6, 4.8)
-	var sc := Vector3(sv, deck + sz.y * 0.5, back + sz.z * 0.5 + 0.3)
+	var sv := -q.side * (hh - 21.0)
+	var sz := Vector3(27.0, 16.8, 14.4)
+	var sc := Vector3(sv, deck + sz.y * 0.5, back + sz.z * 0.5 + 0.9)
 	mb.box(sc, sz, wall)
 	# An orange band at the eaves and round the ground floor, windows all round,
 	# the upper floor's the watch room.
-	mb.box(sc + Vector3(0, sz.y * 0.5 - 0.3, 0), Vector3(sz.x + 0.06, 0.6, sz.z + 0.06), band)
-	mb.box(sc + Vector3(0, -sz.y * 0.5 + 0.25, 0), Vector3(sz.x + 0.06, 0.5, sz.z + 0.06), band.darkened(0.2))
-	mb.box(sc + Vector3(0, 1.2, 0), Vector3(sz.x + 0.04, 1.1, sz.z - 0.8), Models.WINDOW_LIT)
-	mb.box(sc + Vector3(0, 1.2, 0), Vector3(sz.x - 0.8, 1.1, sz.z + 0.04), Models.WINDOW_LIT)
-	for wv: float in [-2.6, 2.6]:
-		mb.box(sc + Vector3(wv, -1.2, sz.z * 0.5 + 0.01), Vector3(1.4, 0.9, 0.04), Models.WINDOW)
-	mb.box(sc + Vector3(0, -1.75, sz.z * 0.5 + 0.01), Vector3(1.1, 2.1, 0.04), band.darkened(0.45))
+	mb.box(sc + Vector3(0, sz.y * 0.5 - 0.9, 0), Vector3(sz.x + 0.18, 1.8, sz.z + 0.18), band)
+	mb.box(sc + Vector3(0, -sz.y * 0.5 + 0.75, 0), Vector3(sz.x + 0.18, 1.5, sz.z + 0.18), band.darkened(0.2))
+	mb.box(sc + Vector3(0, 3.6, 0), Vector3(sz.x + 0.12, 3.3, sz.z - 2.4), Models.WINDOW_LIT)
+	mb.box(sc + Vector3(0, 3.6, 0), Vector3(sz.x - 2.4, 3.3, sz.z + 0.12), Models.WINDOW_LIT)
+	for wv: float in [-7.8, 7.8]:
+		mb.box(sc + Vector3(wv, -3.6, sz.z * 0.5 + 0.03), Vector3(4.2, 2.7, 0.12), Models.WINDOW)
+	mb.box(sc + Vector3(0, -5.25, sz.z * 0.5 + 0.03), Vector3(3.3, 6.3, 0.12), band.darkened(0.45))
 	# A flat roof with a rail, the mast on it.
 	var ry := deck + sz.y
-	mb.box(Vector3(sc.x, ry + 0.08, sc.z), Vector3(sz.x + 0.5, 0.16, sz.z + 0.5), roof)
+	mb.box(Vector3(sc.x, ry + 0.24, sc.z), Vector3(sz.x + 1.5, 0.48, sz.z + 1.5), roof)
 	for e: float in [-1.0, 1.0]:
-		mb.box(Vector3(sc.x, ry + 0.6, sc.z + e * (sz.z * 0.5 + 0.2)), Vector3(sz.x + 0.4, 0.06, 0.06), wall)
-		mb.box(Vector3(sc.x + e * (sz.x * 0.5 + 0.2), ry + 0.6, sc.z), Vector3(0.06, 0.06, sz.z + 0.4), wall)
-	var mast := Vector3(sc.x + q.side * 2.5, ry, sc.z)
-	mb.box(mast + Vector3(0, 3.0, 0), Vector3(0.2, 6.0, 0.2), wall)
-	mb.box(mast + Vector3(0, 4.6, 0), Vector3(1.6, 0.08, 0.08), wall)
-	mb.box(mast + Vector3(0, 5.3, 0), Vector3(0.3, 0.3, 0.3), roof)
-	mb.box(mast + Vector3(0, 5.55, 0), Vector3(2.4, 0.12, 0.35), wall)
-	Models.add_lantern(mb, mast + Vector3(0, 6.0, 0), GlowBuilder.RED, 0.9)
-	glows.glow(Models.lantern_glow_at(mast + Vector3(0, 6.0, 0), 0.9), GlowBuilder.RED, 0.16, 5.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
+		mb.box(Vector3(sc.x, ry + 1.8, sc.z + e * (sz.z * 0.5 + 0.6)), Vector3(sz.x + 1.2, 0.18, 0.18), wall)
+		mb.box(Vector3(sc.x + e * (sz.x * 0.5 + 0.6), ry + 1.8, sc.z), Vector3(0.18, 0.18, sz.z + 1.2), wall)
+	var mast := Vector3(sc.x + q.side * 7.5, ry, sc.z)
+	mb.box(mast + Vector3(0, 9.0, 0), Vector3(0.6, 18.0, 0.6), wall)
+	mb.box(mast + Vector3(0, 13.8, 0), Vector3(4.8, 0.24, 0.24), wall)
+	mb.box(mast + Vector3(0, 15.9, 0), Vector3(0.9, 0.9, 0.9), roof)
+	mb.box(mast + Vector3(0, 16.65, 0), Vector3(7.2, 0.36, 1.05), wall)
+	Models.add_lantern(mb, mast + Vector3(0, 18.0, 0), GlowBuilder.RED, 2.7)
+	glows.glow(Models.lantern_glow_at(mast + Vector3(0, 18.0, 0), 2.7), GlowBuilder.RED, 0.48, 5.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
 	# The windsock, streaming off the yard.
-	var sock := mast + Vector3(0.8, 4.6, 0)
-	mb.box(sock + Vector3(0.45, -0.1, 0), Vector3(0.9, 0.3, 0.3), band)
-	mb.box(sock + Vector3(1.1, -0.18, 0), Vector3(0.5, 0.2, 0.2), wall)
-	var top := mb.xform * (mast + Vector3(0, 6.4, 0))
+	var sock := mast + Vector3(2.4, 13.8, 0)
+	mb.box(sock + Vector3(1.35, -0.3, 0), Vector3(2.7, 0.9, 0.9), band)
+	mb.box(sock + Vector3(3.3, -0.54, 0), Vector3(1.5, 0.6, 0.6), wall)
+	var top := mb.xform * (mast + Vector3(0, 19.2, 0))
 	_perch(top, top, 0.0, Seagulls.Kind.LAMP)
-	_perch(mb.xform * Vector3(sc.x - sz.x * 0.5 + 0.5, ry + 0.2, sc.z), mb.xform * Vector3(sc.x + sz.x * 0.5 - 0.5, ry + 0.2, sc.z),
+	_perch(mb.xform * Vector3(sc.x - sz.x * 0.5 + 1.5, ry + 0.6, sc.z), mb.xform * Vector3(sc.x + sz.x * 0.5 - 1.5, ry + 0.6, sc.z),
 		0.0, Seagulls.Kind.ROOF)
 	# A liferaft canister in its cradle and lifebuoys on posts along the face.
-	var lr := Vector3(-sv * 0.35, deck + 0.4, back + 1.4)
-	mb.box(lr, Vector3(1.6, 0.5, 0.9), Color(0.3, 0.32, 0.34))
-	mb.cylinder(lr + Vector3(0, 0.25, 0), 0.4, 0.4, 0.5, 8, Color(0.95, 0.95, 0.93))
+	var lr := Vector3(-sv * 0.35, deck + 1.2, back + 4.2)
+	mb.box(lr, Vector3(4.8, 1.5, 2.7), Color(0.3, 0.32, 0.34))
+	mb.cylinder(lr + Vector3(0, 0.75, 0), 1.2, 1.2, 1.5, 8, Color(0.95, 0.95, 0.93))
 	for lv: float in [-hh * 0.5, hh * 0.5]:
-		mb.box(Vector3(lv, deck + 0.6, face - 1.0), Vector3(0.12, 1.2, 0.12), Color(0.2, 0.2, 0.22))
-		mb.box(Vector3(lv, deck + 1.0, face - 0.92), Vector3(0.7, 0.7, 0.1), band)
-		mb.box(Vector3(lv, deck + 1.0, face - 0.9), Vector3(0.35, 0.35, 0.12), Color(0.2, 0.2, 0.22))
+		mb.box(Vector3(lv, deck + 1.8, face - 3.0), Vector3(0.36, 3.6, 0.36), Color(0.2, 0.2, 0.22))
+		mb.box(Vector3(lv, deck + 3.0, face - 2.76), Vector3(2.1, 2.1, 0.3), band)
+		mb.box(Vector3(lv, deck + 3.0, face - 2.7), Vector3(1.05, 1.05, 0.36), Color(0.2, 0.2, 0.22))
 
 
 func _build_route_overlay() -> void:
 	var mb := MeshBuilder.new()
 	var col := Color(0.92, 0.96, 1.0, 0.1)
 	for r in map.routes:
-		var s := 14.0
-		while s < r.length - 16.0:
+		var s := 42.0
+		while s < r.length - 48.0:
 			var a := r.curve.sample_baked(s)
-			var b := r.curve.sample_baked(s + 2.4)
-			var lat := (b - a).normalized().cross(Vector3.UP) * 0.25
+			var b := r.curve.sample_baked(s + 7.2)
+			var lat := (b - a).normalized().cross(Vector3.UP) * 0.75
 			# High enough to clear the swell so waves don't swallow dashes.
-			a.y = 0.8
-			b.y = 0.8
+			a.y = 2.4
+			b.y = 2.4
 			mb.quad(a - lat, a + lat, b + lat, b - lat, col, Vector3.UP)
-			s += 5.5
+			s += 16.5
 	# Water is also transparent and both meshes sit centred on the origin, so depth
 	# sorting between them flips with the camera. Force the overlay to draw after it.
 	var mat := Models.unshaded_material()
