@@ -65,6 +65,15 @@ func _initialize() -> void:
 		"tug2": [Models.tug(2), Vector3(0, 3, 0), 24.0],
 		"sailboat": [Models.sailboat(), Vector3(0, 1.8, 0), 11.0],
 		"sailboat_furled": [Models.sailboat_furled(), Vector3(0, 1.5, 0), 9.0],
+		# Sedans (real size), each in a paint off the reference sheet.
+		"sedan_modern": [Models.vehicle("sedan_modern", 1), Vector3(0, 0.7, 0), 6.5],
+		"sedan_sport": [Models.vehicle("sedan_sport", 5), Vector3(0, 0.7, 0), 6.5],
+		"sedan_boxy": [Models.vehicle("sedan_boxy", 7), Vector3(0, 0.7, 0), 6.5],
+		"sedan_nineties": [Models.vehicle("sedan_nineties", 9), Vector3(0, 0.7, 0), 6.5],
+		"sedan_luxury": [Models.vehicle("sedan_luxury", 10), Vector3(0, 0.7, 0), 7.0],
+		"sedan_ev": [Models.vehicle("sedan_ev", 12), Vector3(0, 0.7, 0), 6.5],
+		"sedan_compact": [Models.vehicle("sedan_compact", 11), Vector3(0, 0.7, 0), 6.0],
+		"sedan_exec": [Models.vehicle("sedan_exec", 2), Vector3(0, 0.7, 0), 6.5],
 		# Unit-length animals (fins and poses need their own shaders, so they show flat).
 		"humpback": [Models.humpback(), Vector3.ZERO, 1.4],
 		"gray_whale": [Models.gray_whale(), Vector3.ZERO, 1.4],

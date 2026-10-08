@@ -245,6 +245,66 @@ static func car(color_index: int) -> ArrayMesh:
 		return mb.commit())
 
 
+## Cars use the ones modelled in Blender (VEHICLES_GLB, built by art/vehicles.py into
+## art/vehicles.blend, their sizes and lamps in VehicleData): eight sedans, each car
+## painted from PAINTS. They're modelled at real size and drawn at VEHICLE_SCALE to
+## match the ferries until the world is real scale. The code-built car above is the
+## fallback: with `--classic-cars`, or if the model is missing.
+const VEHICLES_GLB := "res://assets/models/vehicles.glb"
+static var mid_cars := not "--classic-cars" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(VEHICLES_GLB)
+const VEHICLE_SCALE := FerryClass.MID_SCALE
+# The sedans (VehicleData keys) and how common each is on the road.
+const SEDANS := {"sedan_modern": 25, "sedan_compact": 18, "sedan_nineties": 15, "sedan_ev": 10,
+	"sedan_boxy": 8, "sedan_exec": 8, "sedan_luxury": 8, "sedan_sport": 8}
+# Paint and how common: whites, blacks, greys and silvers first, as in any car park.
+const PAINTS := [
+	[Color(0.9, 0.9, 0.88), 20], [Color(0.86, 0.84, 0.78), 5], [Color(0.1, 0.1, 0.11), 16],
+	[Color(0.3, 0.31, 0.33), 10], [Color(0.66, 0.68, 0.7), 12], [Color(0.15, 0.3, 0.6), 7],
+	[Color(0.12, 0.16, 0.3), 4], [Color(0.72, 0.14, 0.11), 8], [Color(0.42, 0.1, 0.12), 3],
+	[Color(0.2, 0.4, 0.27), 4], [Color(0.72, 0.65, 0.52), 3], [Color(0.25, 0.55, 0.6), 3],
+	[Color(0.9, 0.72, 0.18), 2], [Color(0.88, 0.42, 0.14), 1], [Color(0.4, 0.3, 0.22), 2]]
+
+
+## A sedan picked by how common each is, from `u` in [0, 1).
+static func pick_sedan(u: float) -> String:
+	var total := 0
+	for n: String in SEDANS:
+		total += SEDANS[n]
+	var x := u * total
+	for n: String in SEDANS:
+		x -= SEDANS[n]
+		if x < 0.0:
+			return n
+	return SEDANS.keys()[0]
+
+
+## A paint (index into PAINTS) picked by how common each is, from `u` in [0, 1).
+static func pick_paint(u: float) -> int:
+	var total := 0
+	for p: Array in PAINTS:
+		total += p[1]
+	var x := u * total
+	for i in PAINTS.size():
+		x -= PAINTS[i][1]
+		if x < 0.0:
+			return i
+	return 0
+
+
+## Vehicle `model` (a VehicleData key) in paint `paint`, at its modelled (real) size.
+static func vehicle(model: String, paint: int) -> ArrayMesh:
+	return _cached("%s_%d" % [model, paint], func():
+		var lib := _gltf_library(VEHICLES_GLB)
+		var key := model.replace("_", "")
+		var mb := MeshBuilder.new()
+		_append_part(mb, lib[key + "fixed"], Transform3D.IDENTITY)
+		_append_part(mb, lib[key + "body"], Transform3D.IDENTITY, Color.WHITE, PAINTS[paint % PAINTS.size()][0])
+		_append_part(mb, lib[key + "head"], Transform3D.IDENTITY, Color.WHITE, lamp_glass(GlowBuilder.HEADLIGHT))
+		_append_part(mb, lib[key + "tail"], Transform3D.IDENTITY, Color.WHITE, lamp_glass(GlowBuilder.TAIL))
+		return mb.commit())
+
+
 static func truck(color_index: int) -> ArrayMesh:
 	return _cached("truck_%d" % color_index, func():
 		var col: Color = CAR_COLORS[color_index % CAR_COLORS.size()]
@@ -303,23 +363,84 @@ const NET_POST := Color(0.88, 0.7, 0.12)
 const NET_H := 1.6
 
 
+## The mid-poly net (art/ferry_net_mid.py): yellow stanchions (`post`), wall brackets
+## (`eye`) and spans of diamond-mesh rope net (`bay_4`, `bay_5`, `bay_6`, 4 to 6 m
+## wide), modelled in metres and shown at FerryClass.MID_SCALE. It billows and
+## flutters in the apparent wind (shaders/net.gdshader). The boxes below are the
+## fallback: with `--classic-net`, or if the model is missing.
+const MID_NET_GLB := "res://assets/models/ferry_net_mid.glb"
+static var mid_net := not "--classic-net" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(MID_NET_GLB)
+const MID_NET_BAYS := [4, 5, 6]
+const MID_NET_H := 1.6
+static var _net_mat: ShaderMaterial
+
+
 ## One of a ferry's car deck nets (FerryClass.net_z, net_half_w), centred on z = 0:
-## rope strung between yellow posts, standing on the car deck. Ferry places one at
-## each end and drops the one at the docked end while cars cross it.
+## rope strung from wall to wall, held up by two yellow posts a third of the way
+## across. Ferry places one at each end and drops the one at the docked end while
+## cars cross it.
 static func ferry_net(fc: FerryClass) -> ArrayMesh:
+	if mid_net:
+		return _mid_ferry_net(fc)
 	return _cached("ferry_net_%d" % fc.size, func():
 		var mb := MeshBuilder.new()
 		var w := fc.net_half_w
 		var y := Layout.DECK_Y
-		var posts := maxi(2, ceili(2.0 * w / 3.6) + 1)
-		for i in posts:
-			mb.box(Vector3(lerpf(-w, w, i / float(posts - 1)), y + NET_H * 0.5, 0), Vector3(0.15, NET_H, 0.15), NET_POST)
+		for x: float in [-w / 3.0, w / 3.0]:
+			mb.box(Vector3(x, y + NET_H * 0.5, 0), Vector3(0.15, NET_H, 0.15), NET_POST)
 		for f: float in [0.2, 0.46, 0.73, 0.95]:
 			mb.box(Vector3(0, y + f * NET_H, 0), Vector3(2.0 * w, 0.06, 0.06), NET_ROPE)
 		var n := ceili(2.0 * w / 0.5)
 		for i in range(1, n):
 			mb.box(Vector3(lerpf(-w, w, i / float(n)), y + 0.575 * NET_H, 0), Vector3(0.06, 0.75 * NET_H, 0.06), NET_ROPE)
 		return mb.commit())
+
+
+## Three bays across the deck, from a bracket on each wall to the posts at the
+## thirds: the modelled width nearest a third of the deck's, stretched to fit. Each
+## net vertex's alpha holds how freely it moves (1 - alpha / 2: 0 at the posts and
+## walls and along the head rope's ends, most low in the middle of a bay), which
+## net.gdshader scales by the wind. Posts and brackets keep alpha 1.
+static func _mid_ferry_net(fc: FerryClass) -> ArrayMesh:
+	return _cached("ferry_net_mid_%d" % fc.size, func():
+		var lib := _gltf_library(MID_NET_GLB)
+		var k := FerryClass.MID_SCALE
+		var w := fc.net_half_w
+		var span := 2.0 * w / 3.0
+		var bay_w: int = MID_NET_BAYS[0]
+		for n: int in MID_NET_BAYS:
+			if absf(n * k - span) < absf(bay_w * k - span):
+				bay_w = n
+		var bay: MeshBuilder = lib["bay%d" % bay_w]
+		var mb := MeshBuilder.new()
+		for b in 3:
+			var x0 := -w + b * span
+			var xf := Transform3D(Basis.from_scale(Vector3(span / bay_w, k, k)), Vector3(x0, Layout.DECK_Y, 0))
+			var start := mb.verts.size()
+			_append_part(mb, bay, xf)
+			for i in range(start, mb.verts.size()):
+				var u := clampf((mb.verts[i].x - x0) / span, 0.0, 1.0)
+				var h := clampf((mb.verts[i].y - Layout.DECK_Y) / (MID_NET_H * k), 0.0, 1.0)
+				# Pinned at the ends; the head rope is slung taut, the foot slacker, the
+				# belly a third of the way up freest.
+				var free := sin(PI * u) * (0.35 + 0.65 * sin(PI * 0.75 * (1.0 - h)))
+				var c := mb.colors[i]
+				c.a = 1.0 - 0.5 * clampf(free, 0.0, 1.0)
+				mb.colors[i] = c
+		for x: float in [-w / 3.0, w / 3.0]:
+			_append_part(mb, lib["post"], Transform3D(Basis.from_scale(Vector3.ONE * k), Vector3(x, Layout.DECK_Y, 0)))
+		# The brackets face in from the walls.
+		for e: float in [-1.0, 1.0]:
+			var basis := Basis(Vector3.UP, 0.0 if e < 0.0 else PI).scaled(Vector3.ONE * k)
+			_append_part(mb, lib["eye"], Transform3D(basis, Vector3(e * w, Layout.DECK_Y, 0)))
+		if _net_mat == null:
+			_net_mat = ShaderMaterial.new()
+			_net_mat.shader = load("res://shaders/net.gdshader")
+		var mesh := mb.commit(_net_mat)
+		# The shadow and depth passes would draw it unmoved.
+		mesh.shadow_mesh = null
+		return mesh)
 
 
 # The Evergreen State's car deck lights: the lenses' glow, and the light they throw
@@ -1081,6 +1202,25 @@ static func car_lights() -> ArrayMesh:
 			gb.glow(Vector3(x, 0.5, 1.08), GlowBuilder.HEADLIGHT, 0.14, 7.0, false, 0.0, Vector3.BACK, 0.0)
 			gb.glow(Vector3(x * 1.1, 0.55, -1.14), GlowBuilder.TAIL, 0.11, 5.0, false, 0.0, Vector3.FORWARD, 0.0)
 		gb.cone(Vector3(0, 0.1, 1.4), Vector3.BACK, 9.0, 2.2, GlowBuilder.HEADLIGHT, 0.4)
+		return gb.commit())
+
+
+## The same for vehicle `model` (a VehicleData key; "" is the code-built car and truck),
+## its lamps where the model has them.
+static func vehicle_lights(model: String) -> ArrayMesh:
+	if model == "":
+		return car_lights()
+	return _cached("lights_" + model, func():
+		var d: Dictionary = VehicleData.VARIANTS[model]
+		var head: Vector3 = d.head
+		var tail: Vector3 = d.tail
+		var gb := GlowBuilder.new()
+		for sx: float in [-1.0, 1.0]:
+			gb.glow(Vector3(head.x * sx, head.y, head.z + 0.03), GlowBuilder.HEADLIGHT, 0.33, 7.0, false, 0.0,
+				Vector3.BACK, 0.0)
+			gb.glow(Vector3(tail.x * sx, tail.y, tail.z - 0.03), GlowBuilder.TAIL, 0.26, 5.0, false, 0.0,
+				Vector3.FORWARD, 0.0)
+		gb.cone(Vector3(0, 0.25, head.z + 0.3), Vector3.BACK, 21.0, 5.2, GlowBuilder.HEADLIGHT, 0.4)
 		return gb.commit())
 
 

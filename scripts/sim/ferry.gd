@@ -36,6 +36,7 @@ var at_a := true        # docked at A, or departed from A while sailing
 var hull: MeshInstance3D
 # The car deck nets at -Z and +Z (FerryClass.net_z).
 var _nets: Array[MeshInstance3D] = []
+var _net_wind := Vector2.ZERO
 var traveled := 0.0      # how far the hull's centre has come, dock to dock
 var trips := 0
 var aboard: Array[Vehicle] = []
@@ -532,6 +533,18 @@ func _update_trail(delta: float) -> void:
 	# props ease off while the forward prop brakes.
 	wake.update(delta, global_position, moved.normalized() if moving else Vector3.ZERO, speed * delta,
 			speed / fc.cruise * (1.0 - 0.6 * _thrust), state == State.SAILING and moving)
+	_blow_nets(moved / delta if moving and delta > 0.0 else Vector3.ZERO, delta)
+
+
+## The wind the nets feel (net.gdshader): the true wind less the ferry's own way, at
+## real speeds, in the hull's frame. Eased, so a jerky frame doesn't snap them.
+func _blow_nets(vel: Vector3, delta: float) -> void:
+	var wf := sim.wind_from()
+	var true_wind := -Vector3(wf.x, 0.0, wf.y) * sim.wind_speed / 3.6
+	var local := global_basis.inverse() * (true_wind - vel / Units.SPEED_UP)
+	_net_wind = _net_wind.lerp(Vector2(local.x, local.z), minf(1.0, delta * 1.5))
+	for net in _nets:
+		net.set_instance_shader_parameter("wind", _net_wind)
 
 
 func wake_shape() -> Vector4:

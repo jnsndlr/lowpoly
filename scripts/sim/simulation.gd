@@ -102,8 +102,12 @@ func _process(delta: float) -> void:
 func make_vehicle(parent: Node3D = null) -> Vehicle:
 	var v := Vehicle.new()
 	var truck := rng.randf() < 0.12
-	var col := rng.randi_range(0, Models.CAR_COLORS.size() - 1)
-	v.setup(Models.truck(col) if truck else Models.car(col), truck)
+	if truck or not Models.mid_cars:
+		var col := rng.randi_range(0, Models.CAR_COLORS.size() - 1)
+		v.setup(Models.truck(col) if truck else Models.car(col), truck)
+	else:
+		var model := Models.pick_sedan(rng.randf())
+		v.setup(Models.vehicle(model, Models.pick_paint(rng.randf())), false, model, Models.VEHICLE_SCALE)
 	(parent if parent else traffic).add_child(v)
 	return v
 

@@ -34,6 +34,7 @@ const MID_GLB := "res://assets/models/ferry_mid.glb"
 const MID_SCALE := 1.26
 const MID_CAR_DECK := 2.85  # her car deck above the waterline (art/ferry_mid.py CAR_DECK)
 const MID_DROP := MID_CAR_DECK * MID_SCALE - Layout.DECK_Y
+const MID_APRON_Z := 42.45  # where her car deck's asphalt gives way to the bare steel apron
 static var mid := not "--classic-ferry" in OS.get_cmdline_user_args() and ResourceLoader.exists(MID_GLB)
 
 # The mid-poly M/V Guemes (size 1), shown and dropped like the Evergreen State; her
@@ -224,15 +225,18 @@ func _init(s: int) -> void:
 		_place_nets()
 
 
-## The nets just past the end rows' cars (and inside the hull's end), from side to
-## side of the car deck there.
+## The nets from wall to wall of the car deck: the Evergreen State's on the apron's
+## edge, where her green bulwark ends (art/ferry_mid.py GREEN_Z - 0.3), to its inner
+## face (0.3 thick, slanting in there); the code-built boats' just past the end rows'
+## cars (and inside the hull's end). The Guemes' are set in _lay_out_guemes.
 func _place_nets() -> void:
-	net_z = minf(row_z[0] + 4.5, end_z - 1.5)
 	if evergreen:
-		net_half_w = (_mid_beam(net_z / MID_SCALE) - 0.45) * MID_SCALE
-	else:
-		var into := maxf(0.0, net_z - (half_length - chamfer)) / chamfer
-		net_half_w = half_beam - end_in * into - 0.6
+		net_z = MID_APRON_Z * MID_SCALE
+		net_half_w = (_mid_beam(MID_APRON_Z) - 0.36) * MID_SCALE
+		return
+	net_z = minf(row_z[0] + 4.5, end_z - 1.5)
+	var into := maxf(0.0, net_z - (half_length - chamfer)) / chamfer
+	net_half_w = half_beam - end_in * into - 0.6
 
 
 ## Whether lane `c` suits a truck (`truck`) or a car: trucks want the headroom,

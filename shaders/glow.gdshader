@@ -35,6 +35,8 @@ uniform bool instance_gate = false;
 // Which end is the bow for NAV lights (+1: +Z); double-ended ferries swap each
 // crossing, and only the bow end's sidelights are lit.
 instance uniform float nav_flip = 1.0;
+// POOL / CONE light only what they would really land on (below).
+uniform sampler2D depth_texture : hint_depth_texture, filter_nearest;
 
 const int GLOW = 0;
 const int POOL = 1;
@@ -48,6 +50,7 @@ varying flat int v_mode;
 varying vec3 v_color;
 varying vec3 v_shape;   // GLOW: core radius, bokeh radius (fractions of the quad), bokeh blend; REFLECT: blur
 varying float v_phase;
+varying flat vec3 v_up;  // POOL / CONE: the up of the ground they lie on
 
 float hash13(vec3 p) {
 	p = fract(p * 0.1031);
@@ -118,6 +121,7 @@ void vertex() {
 		vec3 side = normalize(cross(axis, vec3(0.0, 1.0, 0.0))) * size;
 		pos = (MODELVIEW_MATRIX * vec4(VERTEX + side * UV.x + axis * UV.y, 1.0)).xyz;
 		pos += normalize(-pos) * 0.12;
+		v_up = normalize(MODEL_MATRIX[1].xyz);
 	} else if (mode == BEAM) {
 		float a = TIME * CUSTOM1.x + CUSTOM1.z;
 		vec3 d = normalize(vec3(cos(a), -0.03, sin(a)));
@@ -168,6 +172,39 @@ void vertex() {
 	v_color *= energy;
 }
 
+// A pool or cone is a quad lifted a little off the ground, adding its light to
+// whatever shows through it: the lower half of a tyre or a bumper standing in it
+// would come out ground-coloured, as if sunk into the road. So it only lights level
+// surfaces at or below its own plane, found from the depth buffer. Water isn't in
+// the depth buffer, so a pool on it sees the sea floor well below and lights that.
+vec3 world_at(ivec2 px, vec2 size, mat4 inv_proj, mat4 inv_view) {
+	float depth = texelFetch(depth_texture, px, 0).r;
+	vec4 v = inv_proj * vec4((vec2(px) + 0.5) / size * 2.0 - 1.0, depth, 1.0);
+	return (inv_view * vec4(v.xyz / v.w, 1.0)).xyz;
+}
+
+// The nearer of the two neighbours along an axis, so a pixel at a tyre's edge takes
+// its slope from its own side rather than across the edge.
+vec3 slope(vec3 c, vec3 lo, vec3 hi) {
+	vec3 a = c - lo;
+	vec3 b = hi - c;
+	return dot(a, a) < dot(b, b) ? a : b;
+}
+
+float ground_mask(vec3 quad_view, vec2 frag, vec2 size, mat4 inv_proj, mat4 inv_view) {
+	ivec2 px = ivec2(frag);
+	vec3 surf = world_at(px, size, inv_proj, inv_view);
+	vec3 dx = slope(surf, world_at(px - ivec2(1, 0), size, inv_proj, inv_view), world_at(px + ivec2(1, 0), size, inv_proj, inv_view));
+	vec3 dy = slope(surf, world_at(px - ivec2(0, 1), size, inv_proj, inv_view), world_at(px + ivec2(0, 1), size, inv_proj, inv_view));
+	vec3 n = cross(dx, dy);
+	float level = smoothstep(0.75, 0.9, abs(dot(n, v_up)) * inversesqrt(max(dot(n, n), 1e-12)));
+	vec3 quad = (inv_view * vec4(quad_view, 1.0)).xyz;
+	float h = dot(surf - quad, v_up);
+	float m = (1.0 - smoothstep(0.0, 0.08, h)) * max(level, smoothstep(0.6, 1.0, -h));
+	// Too far off to tell a tyre from the road, where depth gets coarse.
+	return mix(m, 1.0, smoothstep(300.0, 500.0, -quad_view.z));
+}
+
 void fragment() {
 	float r = length(UV);
 	float f;
@@ -200,6 +237,9 @@ void fragment() {
 		float s = 0.6 + 0.4 * (1.0 - blur) * sin(UV.y * 7.0 - TIME * 2.4 + v_phase * 30.0) * sin(UV.y * 3.1 + TIME * 1.3 + v_phase * 12.0);
 		float x = UV.x + 0.25 * (1.0 - blur) * sin(UV.y * 9.0 + TIME * 3.1 + v_phase * 20.0);
 		f = exp(-x * x * mix(3.0, 2.0, blur)) * pow(max(1.0 - UV.y * UV.y, 0.0), mix(1.5, 1.0, blur)) * s;
+	}
+	if (v_mode == POOL || v_mode == CONE) {
+		f *= ground_mask(VERTEX, FRAGCOORD.xy, VIEWPORT_SIZE, INV_PROJECTION_MATRIX, INV_VIEW_MATRIX);
 	}
 	ALBEDO = v_color * f;
 }

@@ -40,6 +40,36 @@ const float nav_flip = 0.0;
 const float room_seed = 0.0;
 #endif
 
+#ifdef NET
+// The wind across the net (net.gdshader, Models.ferry_net), m/s in the net's frame:
+// x along it, y through it (+: blowing towards +z). Set per net by Ferry: the true
+// wind less the ferry's own way.
+instance uniform vec2 wind = vec2(0.0);
+
+// How far a net vertex is blown: its alpha holds how freely it moves (1 - alpha / 2).
+// A steady billow downwind, swaying with the gusts, and ripples running along it that
+// quicken and grow as the wind rises.
+vec3 net_flap(vec3 v, float a, vec3 origin) {
+	float free = (1.0 - a) * 2.0;
+	if (free <= 0.0) {
+		return v;
+	}
+	float seed = fract(dot(origin, vec3(0.013, 0.0, 0.029))) * 40.0;
+	float strength = length(wind);
+	float t = TIME + seed;
+	float gust = 0.7 + 0.2 * sin(t * 0.63) + 0.1 * sin(t * 1.71 + v.x * 0.07);
+	float billow = clamp(wind.y / 12.0, -1.0, 1.0) * 0.7 * gust;
+	float f = 1.6 + 0.22 * strength;
+	float along = wind.x >= 0.0 ? 1.0 : -1.0;
+	float ripple = sin(t * f - along * v.x * 1.1 + v.y * 1.7) + 0.45 * sin(t * f * 1.83 + v.x * 2.7 - v.y * 1.3);
+	float amp = min(0.03 + 0.009 * strength, 0.17);
+	v.z += free * (billow + amp * ripple);
+	// Bellied out, the net takes up its slack: the foot lifts a little.
+	v.y += free * 0.1 * abs(billow);
+	return v;
+}
+#endif
+
 varying vec3 world_pos;
 varying float local_z;
 // Flat: a whole face takes its first vertex's key (MeshBuilder starts both of a quad's
@@ -60,6 +90,9 @@ float hash13(vec3 p) {
 }
 
 void vertex() {
+#ifdef NET
+	VERTEX = net_flap(VERTEX, COLOR.a, MODEL_MATRIX[3].xyz);
+#endif
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	local_z = VERTEX.z;
 	// Instance origin (or room_seed), wall (normal) and storey (in metres, however big
@@ -72,6 +105,8 @@ void vertex() {
 void fragment() {
 	ALBEDO = srgb_to_linear(COLOR.rgb);
 	ROUGHNESS = 0.92;
+#ifndef NET
+	// (A net's alpha is its give in the wind, not glass.)
 	if (COLOR.a < 0.99 && night_lights > 0.0) {
 		float h = hash13(room_key);
 		// Always-lit glass comes on with the first lights; rooms one by one after.
@@ -103,6 +138,7 @@ void fragment() {
 			EMISSION = window_color * tint * window_energy * lit;
 		}
 	}
+#endif
 }
 
 void light() {

@@ -7,15 +7,17 @@ var path := PackedVector3Array()
 var speed := 24.0
 var delay := 0.0
 var is_truck := false
+var model := ""            # VehicleData key ("" for the code-built car and truck)
 var lane_v := 0.0          # lateral lane position while queued at a terminal
 var lot_arrival := 0.0     # sim minutes when it joined the queue
 var _on_arrive := Callable()
 
 
-func setup(mesh: Mesh, truck: bool) -> void:
+func setup(mesh: Mesh, truck: bool, model_key := "", model_scale := Models.LEGACY_SCALE) -> void:
 	is_truck = truck
+	model = model_key
 	# (Its lights, drawn by NightLights from its transform, scale with it.)
-	scale = Vector3.ONE * Models.LEGACY_SCALE
+	scale = Vector3.ONE * model_scale
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	add_child(mi)
