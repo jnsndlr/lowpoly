@@ -1692,8 +1692,48 @@ static func _trawler_outline(grow := 0.0) -> PackedVector2Array:
 	return pts
 
 
+## Trawlers use the mid-poly stern trawler modelled in Blender (MID_TRAWLER_GLB, source
+## art/trawler_mid.py / trawler_mid.blend), in the code-built one's frame and anchor
+## points (mast lanterns, gantry blocks, perches, wheelhouse windows). The code-built
+## trawler below is the fallback: with `--classic-trawler`, or if the model is missing.
+## The glb's livery parts (hull, gantry, net) are recoloured per variant.
+const MID_TRAWLER_GLB := "res://assets/models/trawler_mid.glb"
+static var mid_trawler := not "--classic-trawler" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(MID_TRAWLER_GLB)
+# Sidelight lamps (add_sidelight) on boards at the wheelhouse roof's front corners.
+const MID_TRAWLER_SIDELIGHT := Vector3(2.0, 5.63, 4.3)
+const MID_TRAWLER_SIDELIGHT_SCALE := 1.2
+# The stern light under the gantry's crossbar; the floods on its forward face and on
+# the wheelhouse roof's after edge.
+const MID_TRAWLER_STERN_LIGHT := Vector3(0, 6.28, -9.62)
+const MID_TRAWLER_GANTRY_FLOOD := Vector3(2.05, 6.5, -8.9)
+const MID_TRAWLER_HOUSE_FLOOD := Vector3(0.7, 5.65, 0.35)
+
+
+static func _mid_trawler(variant: int) -> MeshBuilder:
+	var mb := _gltf_parts(MID_TRAWLER_GLB, ["fixed"])
+	var paint := {"hull": TRAWLER_HULLS[variant % TRAWLER_HULLS.size()],
+		"gantry": TRAWLER_GANTRIES[variant % TRAWLER_GANTRIES.size()],
+		"net": TRAWLER_NETS[variant % TRAWLER_NETS.size()], "glass": WINDOW_LIT, "window": WINDOW,
+		"lens": lamp_glass(GlowBuilder.LED)}
+	for part: String in paint:
+		var p := _gltf_parts(MID_TRAWLER_GLB, [part])
+		mb.verts.append_array(p.verts)
+		mb.normals.append_array(p.normals)
+		for i in p.verts.size():
+			mb.colors.append(paint[part])
+	add_lantern(mb, TRAWLER_MAST, GlowBuilder.LED, TRAWLER_LANTERN)
+	add_lantern(mb, TRAWLER_MAST_GREEN, GlowBuilder.GREEN, TRAWLER_LANTERN)
+	for sx: float in [-1.0, 1.0]:
+		add_sidelight(mb, Vector3(sx * MID_TRAWLER_SIDELIGHT.x, MID_TRAWLER_SIDELIGHT.y, MID_TRAWLER_SIDELIGHT.z), sx,
+			1.0, MID_TRAWLER_SIDELIGHT_SCALE)
+	return mb
+
+
 ## A stern trawler; `variant` picks its colours.
 static func trawler(variant: int) -> ArrayMesh:
+	if mid_trawler:
+		return _cached("trawler_mid_%d" % variant, func(): return _mid_trawler(variant).commit())
 	return _cached("trawler_%d" % variant, func():
 		var mb := MeshBuilder.new()
 		var hull_col: Color = TRAWLER_HULLS[variant % TRAWLER_HULLS.size()]
@@ -1793,9 +1833,12 @@ static func trawler_lights() -> ArrayMesh:
 static func trawler_nav_lights() -> ArrayMesh:
 	return _cached("trawler_nav", func():
 		var gb := GlowBuilder.new()
-		gb.glow(Vector3(TRAWLER_SIDELIGHT.x, TRAWLER_SIDELIGHT.y, TRAWLER_SIDELIGHT.z + 0.1), GlowBuilder.RED, 0.2, 6.0, true, 0.0, Vector3(1, 0, 0.8), 0.0)
-		gb.glow(Vector3(-TRAWLER_SIDELIGHT.x, TRAWLER_SIDELIGHT.y, TRAWLER_SIDELIGHT.z + 0.1), GlowBuilder.GREEN, 0.2, 6.0, true, 0.0, Vector3(-1, 0, 0.8), 0.0)
-		gb.glow(Vector3(0, TRAWLER_DECK + 0.15, -10.1), GlowBuilder.LED, 0.16, 4.0, true, 0.0, Vector3(0, 0, -1), 0.0)
+		var sl := sidelight_glow_at(MID_TRAWLER_SIDELIGHT, 1.0, MID_TRAWLER_SIDELIGHT_SCALE) if mid_trawler \
+			else TRAWLER_SIDELIGHT + Vector3(0, 0, 0.1)
+		gb.glow(sl, GlowBuilder.RED, 0.2, 6.0, true, 0.0, Vector3(1, 0, 0.8), 0.0)
+		gb.glow(Vector3(-sl.x, sl.y, sl.z), GlowBuilder.GREEN, 0.2, 6.0, true, 0.0, Vector3(-1, 0, 0.8), 0.0)
+		gb.glow(MID_TRAWLER_STERN_LIGHT if mid_trawler else Vector3(0, TRAWLER_DECK + 0.15, -10.1), GlowBuilder.LED,
+			0.16, 4.0, true, 0.0, Vector3(0, 0, -1), 0.0)
 		return gb.commit())
 
 
@@ -1814,9 +1857,16 @@ static func trawler_working_lights() -> ArrayMesh:
 		var gb := GlowBuilder.new()
 		gb.glow(lantern_glow_at(TRAWLER_MAST_GREEN, TRAWLER_LANTERN), GlowBuilder.GREEN, 0.24, 7.0, true, 0.0, Vector3.ZERO, 0.0)
 		gb.glow(lantern_glow_at(TRAWLER_MAST, TRAWLER_LANTERN), GlowBuilder.LED, 0.22, 7.0, true, 0.0, Vector3.ZERO, 0.0)
-		for x: float in [-1.4, 1.4]:
-			gb.glow(Vector3(x, TRAWLER_GANTRY_TOP - 0.55, TRAWLER_GANTRY_Z + 0.15), GlowBuilder.LED, 0.3, 6.0, true, 0.0, Vector3(0, -0.5, 1), 0.0)
-		gb.glow(Vector3(0, TRAWLER_DECK + 3.7, 1.55), GlowBuilder.LED, 0.28, 5.0, false, 0.0, Vector3(0, -0.4, -1), 0.0)
+		if mid_trawler:
+			for sx: float in [-1.0, 1.0]:
+				var g := MID_TRAWLER_GANTRY_FLOOD
+				gb.glow(Vector3(sx * g.x, g.y, g.z), GlowBuilder.LED, 0.3, 6.0, true, 0.0, Vector3(0, -0.5, 1), 0.0)
+				var h := MID_TRAWLER_HOUSE_FLOOD
+				gb.glow(Vector3(sx * h.x, h.y, h.z), GlowBuilder.LED, 0.24, 5.0, false, 0.0, Vector3(0, -0.4, -1), 0.0)
+		else:
+			for x: float in [-1.4, 1.4]:
+				gb.glow(Vector3(x, TRAWLER_GANTRY_TOP - 0.55, TRAWLER_GANTRY_Z + 0.15), GlowBuilder.LED, 0.3, 6.0, true, 0.0, Vector3(0, -0.5, 1), 0.0)
+			gb.glow(Vector3(0, TRAWLER_DECK + 3.7, 1.55), GlowBuilder.LED, 0.28, 5.0, false, 0.0, Vector3(0, -0.4, -1), 0.0)
 		gb.pool(Vector3(0, TRAWLER_DECK + 0.05, -5.0), GlowBuilder.LED, 4.2, 0.5, 0.0)
 		gb.pool(Vector3(0, 0.05, -12.0), GlowBuilder.LED, 4.0, 0.1, 0.0)
 		return gb.commit())
