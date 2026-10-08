@@ -874,10 +874,21 @@ static func _face(mb: MeshBuilder, eye: Vector3, r: float, nose: Vector3) -> voi
 	mb.tri(nose + Vector3(-0.012, 0.004, 0), nose + Vector3(0.012, 0.004, 0), nose + Vector3(0, -0.012, 0.004), black, Vector3(0, 0.3, 1))
 
 
+## Seals and sea lions use the mid-poly ones modelled in Blender (MID_PINNIPEDS_GLB,
+## built by art/pinnipeds_mid.py into art/pinnipeds_mid.blend) to the same frame and
+## bend points. The code-built ones below are the fallback: with `--classic-seals`, or if
+## the model is missing.
+const MID_PINNIPEDS_GLB := "res://assets/models/pinnipeds_mid.glb"
+static var mid_pinnipeds := not "--classic-seals" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(MID_PINNIPEDS_GLB)
+
+
 ## A harbor seal: rotund, no neck to speak of, short flippers, a dog-like face
 ## with big dark eyes. Pale grey and heavily spotted (the instance colour tints
 ## it silver, tawny or dark).
 static func harbor_seal() -> ArrayMesh:
+	if mid_pinnipeds:
+		return _cached("harbor_seal_mid", func(): return _gltf_mesh(MID_PINNIPEDS_GLB, "harborseal"))
 	return _cached("harbor_seal", func():
 		var mb := MeshBuilder.new()
 		var coat := Color(0.86, 0.85, 0.82)
@@ -907,6 +918,8 @@ static func harbor_seal() -> ArrayMesh:
 ## little ear flaps, and long fore flippers it props itself up on. Brown, darker
 ## along the back (the instance colour tints bulls dark, females golden).
 static func sea_lion() -> ArrayMesh:
+	if mid_pinnipeds:
+		return _cached("sea_lion_mid", func(): return _gltf_mesh(MID_PINNIPEDS_GLB, "sealion"))
 	return _cached("sea_lion", func():
 		var mb := MeshBuilder.new()
 		var coat := Color(0.86, 0.84, 0.8)

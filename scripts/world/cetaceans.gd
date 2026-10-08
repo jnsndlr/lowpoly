@@ -111,6 +111,7 @@ var _marks := RandomNumberGenerator.new()   # its own stream, so the pods' moves
 var kinds := {}                 # species id -> Kind
 var _pods: Array[Pod] = []
 var _puffs: Array[Puff] = []
+var _blows: Blows
 var _puff_mm: MultiMesh
 var _puff_buf := PackedFloat32Array()
 
@@ -158,6 +159,9 @@ func setup(w: Wildlife, t: Terrain) -> void:
 		mmi.multimesh = k.mm
 		mmi.material_override = mat
 		add_child(mmi)
+
+	_blows = Blows.new()
+	add_child(_blows)
 
 	_puff_mm = MultiMesh.new()
 	_puff_mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -445,7 +449,8 @@ func _breathed(o: Animal, under_y: float) -> void:
 	o.wait = rng.randf_range(o.kind.gap.x, o.kind.gap.y)
 
 
-## The blow, from the blowhole, as big as the animal (two side by side for a gray whale).
+## The blow, from the blowhole, as big as the animal (two side by side for a gray
+## whale), drifting downwind (Blows).
 func _blow(o: Animal) -> void:
 	var k := o.kind
 	if k.blow == Vector3.ZERO:
@@ -453,12 +458,14 @@ func _blow(o: Animal) -> void:
 	var fwd := Vector3(sin(o.yaw), 0.0, cos(o.yaw))
 	var at := o.pos + fwd * o.length * 0.32
 	var size := k.blow * o.length / 8.0
+	var wf := wildlife.sim.wind_from()
+	var downwind := -Vector3(wf.x, 0.0, wf.y)
 	if k.heart:
-		var lat := Vector3(fwd.z, 0.0, -fwd.x) * o.length * 0.035
-		_puff(at + lat, size, k.blow_life)
-		_puff(at - lat, size, k.blow_life)
+		var lat := Vector3(fwd.z, 0.0, -fwd.x)
+		_blows.blow(at + lat * o.length * 0.035, size, k.blow_life, lat * 0.4, downwind)
+		_blows.blow(at - lat * o.length * 0.035, size, k.blow_life, -lat * 0.4, downwind)
 	else:
-		_puff(at, size, k.blow_life)
+		_blows.blow(at, size, k.blow_life, Vector3.ZERO, downwind)
 
 
 func _puff(at: Vector3, size: Vector3, life: float, color := Color.WHITE, flat := false) -> void:
