@@ -121,7 +121,7 @@ func extrude(outline: PackedVector2Array, y0: float, y1: float, col: Color, top_
 
 
 ## A flat strip following `points`, with shallow skirts so it never looks like it floats.
-func ribbon(points: PackedVector3Array, width: float, col: Color, skirt := 0.5) -> void:
+func ribbon(points: PackedVector3Array, width: float, col: Color, skirt := 1.5) -> void:
 	var side_col := col.darkened(0.25)
 	for i in points.size() - 1:
 		var a := points[i]

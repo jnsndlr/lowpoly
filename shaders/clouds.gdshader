@@ -7,13 +7,13 @@ render_mode blend_mix, cull_disabled, depth_draw_never, shadows_disabled, specul
 #include "res://shaders/clouds.gdshaderinc"
 
 uniform float opacity = 0.85;
-uniform float near_fade_start = 180.0;
-uniform float near_fade_end = 520.0;
+uniform float near_fade_start = 540.0;
+uniform float near_fade_end = 1560.0;
 uniform float puff = 5.0;
 // Out over the mainland the deck thins away and the backdrop's cumulus take over
 // (keep in sync with backdrop.gdshader).
-uniform float far_fade_start = 900.0;
-uniform float far_fade_end = 1600.0;
+uniform float far_fade_start = 2700.0;
+uniform float far_fade_end = 4800.0;
 
 varying vec3 world_pos;
 
@@ -32,7 +32,7 @@ void fragment() {
 		d = cloud_coverage_curve(n);
 		// The 12-unit finite difference smooths away the fine octaves anyway, so step
 		// only the broad ones and shift the full-detail value by that change.
-		float e = 12.0;
+		float e = 36.0;
 		float dx = cloud_coverage_curve(n + cloud_octaves(p + vec2(e, 0.0), TIME, 0, COARSE_OCTAVES) - coarse) - d;
 		float dz = cloud_coverage_curve(n + cloud_octaves(p + vec2(0.0, e), TIME, 0, COARSE_OCTAVES) - coarse) - d;
 		// Treat density as height so edges shade like rounded billows.

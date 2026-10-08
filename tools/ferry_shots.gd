@@ -56,7 +56,7 @@ func _process(_delta: float) -> bool:
 	var f: Ferry = ferries[shot]
 	if _wait < 0 or Engine.time_scale > 1.0 or main.rig.follow != f:
 		main.rig.follow = f
-		var d := (22.0 + f.fc.half_length * 2.2) * dist_k
+		var d := (66.0 + f.fc.half_length * 2.2) * dist_k
 		main.rig.target_dist = d
 		main.rig.distance = d
 		main.rig.target_pitch = pitch
@@ -92,8 +92,8 @@ func _terminal_shots() -> bool:
 	var isl: MapData.Island = (terms[shot] as Terminal).island
 	if _wait < 0 or frames > _wait + 1:
 		main.rig.follow = null
-		main.rig.target_pos = isl.shore + isl.dock_dir * 24.0
-		main.rig.target_dist = 75.0 + isl.slips.size() * 15.0
+		main.rig.target_pos = isl.shore + isl.dock_dir * 72.0
+		main.rig.target_dist = 225.0 + isl.slips.size() * 45.0
 		main.rig.target_pitch = 1.15
 		main.rig.target_yaw = atan2(-isl.dock_dir.x, -isl.dock_dir.z) + 0.5
 		main.rig.snap()

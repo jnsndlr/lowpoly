@@ -125,5 +125,5 @@ func commit() -> ArrayMesh:
 	mesh.surface_set_material(0, material())
 	# The shader moves every vertex (and reflections land far from their lights),
 	# so the mesh's own bounds mean nothing.
-	mesh.custom_aabb = AABB(Vector3(-4000, -200, -4000), Vector3(8000, 800, 8000))
+	mesh.custom_aabb = AABB(Vector3(-12000, -600, -12000), Vector3(24000, 2400, 24000))
 	return mesh

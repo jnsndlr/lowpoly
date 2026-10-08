@@ -4,8 +4,8 @@ extends Node3D
 ## simulation's weather and wind and are published as shader globals, which the
 ## land and water shaders sample to draw matching cloud shadows.
 
-const ALTITUDE := 170.0 # keep in sync with CLOUD_ALTITUDE in clouds.gdshaderinc
-const SIZE := 7000.0
+const ALTITUDE := 510.0 # keep in sync with CLOUD_ALTITUDE in clouds.gdshaderinc
+const SIZE := 21000.0
 const VISUAL_LAYER := 2
 const COVERAGE := {"Sunny": 0.18, "Light Breeze": 0.32, "Partly Cloudy": 0.48, "Overcast": 0.8}
 const DIRS := ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
@@ -20,7 +20,7 @@ func setup(weather: String, wind_dir: String, wind_speed: float) -> void:
 
 	# Wind is named for where it blows from; clouds drift the other way (-Z is north).
 	var a := DIRS.find(wind_dir) * TAU / 8.0
-	var drift := Vector2(-sin(a), cos(a)) * wind_speed * 0.4
+	var drift := Vector2(-sin(a), cos(a)) * wind_speed * 1.2
 	var cov: float = COVERAGE.get(weather, 0.45)
 	RenderingServer.global_shader_parameter_set("cloud_coverage", cov)
 	RenderingServer.global_shader_parameter_set("cloud_wind", drift)

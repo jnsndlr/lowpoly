@@ -63,7 +63,7 @@ static func _keep_right(pts: PackedVector3Array) -> PackedVector3Array:
 		d.y = 0.0
 		if d.length_squared() > 0.0001:
 			last_dir = d.normalized()
-		out.append(pts[i] + last_dir.cross(Vector3.UP) * 0.8)
+		out.append(pts[i] + last_dir.cross(Vector3.UP) * 2.4)
 	return out
 
 
@@ -120,8 +120,8 @@ func _spawn_car() -> void:
 	lane.enroute += 1
 	var car := sim.make_vehicle()
 	var path := _inbound[sim.rng.randi() % _inbound.size()].duplicate()
-	path.append(_local(-Layout.EXIT_V, Layout.LOT_BACK + 0.8))
-	path.append(_local(lane.v, Layout.LOT_BACK + 1.6))
+	path.append(_local(-Layout.EXIT_V, Layout.LOT_BACK + 2.4))
+	path.append(_local(lane.v, Layout.LOT_BACK + 4.8))
 	car.position = path[0]
 	car.drive(path, _on_car_reached_lot.bind(lane))
 
@@ -169,19 +169,19 @@ func take_car(rid: int) -> Vehicle:
 func boarding_path(car: Vehicle, rid: int) -> PackedVector3Array:
 	var sv: float = slip_v[rid]
 	return PackedVector3Array([
-		_local(car.lane_v, Layout.LANE_HEAD + 2.0),
-		_local(sv - 1.0, Layout.LOT_FRONT + 0.5),
-		_local(sv - 1.0, Layout.PIER_END),
+		_local(car.lane_v, Layout.LANE_HEAD + 6.0),
+		_local(sv - 3.0, Layout.LOT_FRONT + 1.5),
+		_local(sv - 3.0, Layout.PIER_END),
 	])
 
 
 func exit_path(rid: int) -> PackedVector3Array:
 	var sv: float = slip_v[rid]
 	var path := PackedVector3Array([
-		_local(sv + 1.0, Layout.PIER_END),
-		_local(sv + 1.0, Layout.LOT_FRONT + 0.5),
-		_local(Layout.EXIT_V, Layout.LANE_HEAD + 2.0),
-		_local(Layout.EXIT_V, Layout.LOT_BACK + 0.5),
+		_local(sv + 3.0, Layout.PIER_END),
+		_local(sv + 3.0, Layout.LOT_FRONT + 1.5),
+		_local(Layout.EXIT_V, Layout.LANE_HEAD + 6.0),
+		_local(Layout.EXIT_V, Layout.LOT_BACK + 1.5),
 	])
 	path.append_array(_outbound[sim.rng.randi() % _outbound.size()])
 	return path

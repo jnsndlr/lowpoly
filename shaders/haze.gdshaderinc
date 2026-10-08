@@ -14,15 +14,15 @@ vec4 backdrop_haze(vec3 world, float depth) {
 	float y = world.y;
 	// A lighter take on the engine's depth fog, only on low ground near the map.
 	float a = smoothstep(fog_range.x, fog_range.y, depth) * 0.6
-		* (1.0 - smoothstep(10.0, 300.0, y)) * (1.0 - smoothstep(1200.0, 2600.0, r));
+		* (1.0 - smoothstep(30.0, 900.0, y)) * (1.0 - smoothstep(3600.0, 7800.0, r));
 	vec3 col = haze_fog;
 	// The blue of distance, deepening with each layer out.
-	float far = smoothstep(600.0, 9000.0, r);
+	float far = smoothstep(1800.0, 27000.0, r);
 	far = pow(far, 0.75) * 0.78;
 	col = mix(col, mix(haze_sky, sky_zenith, 0.5), far / max(far + a, 1e-4));
 	a = max(a, far);
 	// Thin haze on the water at the foot of the far shores.
-	float low = smoothstep(1500.0, 6000.0, r) * (1.0 - smoothstep(0.0, 120.0, y)) * 0.4;
+	float low = smoothstep(4500.0, 18000.0, r) * (1.0 - smoothstep(0.0, 360.0, y)) * 0.4;
 	col = mix(col, haze_sky, low / max(low + a, 1e-4));
 	a = max(a, low);
 	return vec4(col, a);

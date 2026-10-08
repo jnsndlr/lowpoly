@@ -37,12 +37,12 @@ const RANK_FISH := 1500
 const RANK_CARGO := 2000
 const RANK_FERRY := 3000
 # Kept between hulls (their capsules already stand a little proud of the hulls).
-const MARGIN := 0.4
+const MARGIN := 1.2
 # Two ferry hulls (as capsule segments) are in each other's way closer than their
 # two hull radii and this: MARGIN, the extra kept clear of a higher rank's path,
-# and a metre over.
-const CORRIDOR_CLEAR := 1.9
-const POSE_STEP := 2.0
+# and three metres over.
+const CORRIDOR_CLEAR := 5.7
+const POSE_STEP := 6.0
 
 var sim: Simulation
 var nav: NavGrid
@@ -213,7 +213,7 @@ func _in_the_way(f: Ferry, other: Ferry) -> Array:
 				break
 	if lo > hi:
 		return [Vector2(1, 0), ends]
-	return [Vector2(maxf(lo - 4.0, s0), minf(hi + 4.0, r.length - s0)), ends]
+	return [Vector2(maxf(lo - 12.0, s0), minf(hi + 12.0, r.length - s0)), ends]
 
 
 ## A ferry's hull every POSE_STEP along its crossing, dock to dock, as [ends a, ends b].
@@ -223,9 +223,9 @@ func _route_poses(f: Ferry) -> Array:
 	var half := f.half_seg
 	var s := -f.dock_inset()
 	var end := f.route.length + f.dock_inset()
-	while s <= end + 0.01:
+	while s <= end + 0.03:
 		var p := f.route_point(s)
-		var t := f.route_point(s + 1.5) - f.route_point(s - 1.5)
+		var t := f.route_point(s + 4.5) - f.route_point(s - 4.5)
 		var t2 := Vector2(t.x, t.z).normalized() * half
 		ea.append(Vector2(p.x, p.z) - t2)
 		eb.append(Vector2(p.x, p.z) + t2)
@@ -381,7 +381,7 @@ func reserve_ground(boat: FishingBoat) -> FishingGround:
 	for g in grounds:
 		if g.worked_by != null and g.worked_by != boat and is_instance_valid(g.worked_by):
 			continue
-		var w := g.richness / (1.0 + g.center.distance_to(home) / 300.0)
+		var w := g.richness / (1.0 + g.center.distance_to(home) / 900.0)
 		free.append(g)
 		weights.append(w)
 		total += w
@@ -413,7 +413,7 @@ func reserve_spot(boat: Vessel, from: Vector2) -> Anchorage.Spot:
 		for sp in a.spots:
 			if sp.taken_by != null and is_instance_valid(sp.taken_by) and sp.taken_by != boat:
 				continue
-			var w := a.shelter * a.shelter / (1.0 + sp.pos.distance_to(from) / 350.0)
+			var w := a.shelter * a.shelter / (1.0 + sp.pos.distance_to(from) / 1050.0)
 			free.append(sp)
 			weights.append(w)
 			total += w
@@ -443,26 +443,26 @@ func _spawn_cargo(midway := false) -> void:
 		var flip := rng.randi_range(0, 1)
 		var side_a: int = ends[flip]
 		var side_b: int = ends[1 - flip]
-		var a := _edge_point(side_a, hs + 80.0)
-		var b := _edge_point(side_b, hs + 80.0)
+		var a := _edge_point(side_a, hs + 240.0)
+		var b := _edge_point(side_b, hs + 240.0)
 		if not _open_water(a, _edge_normal(side_a)) or not _open_water(b, _edge_normal(side_b)):
 			continue
 		var pts := nav.find_path(a, b, true)
 		if pts.size() < 2:
 			continue
 		# Run in from (and out to) well beyond the map, into the haze.
-		pts.insert(0, a + _edge_normal(side_a) * 160.0)
-		pts.append(b + _edge_normal(side_b) * 160.0)
+		pts.insert(0, a + _edge_normal(side_a) * 480.0)
+		pts.append(b + _edge_normal(side_b) * 480.0)
 		# Kept right all the way out, so ships coming and going there pass too.
 		var sp := VesselTypes.pick(VesselTypes.cargo_ships(), rng)
-		pts = nav.finish(pts, 10.0, 14.0, 3, sp.half_beam + 2.0, 0.0)
+		pts = nav.finish(pts, 30.0, 42.0, 3, sp.half_beam + 6.0, 0.0)
 		# finish() hands back the raw track if no smoothing stays afloat; out past the
 		# map's edge that could cut a headland of the mainland.
 		if not nav.afloat(pts, sp.half_beam):
 			continue
 		var path := NavPath.new(pts)
 		var s0 := path.length * rng.randf_range(0.3, 0.55) if midway else 0.0
-		if not is_clear(path.sample(s0), 90.0) or _meets_head_on(path):
+		if not is_clear(path.sample(s0), 270.0) or _meets_head_on(path):
 			continue
 		var ship := CargoShip.new()
 		sim.add_child(ship)
@@ -479,7 +479,7 @@ func _spawn_cargo(midway := false) -> void:
 func _meets_head_on(path: NavPath) -> bool:
 	for ship in cargo_ships:
 		var end := ship.path.pts[ship.path.pts.size() - 1]
-		if end.distance_to(path.pts[0]) < 220.0:
+		if end.distance_to(path.pts[0]) < 660.0:
 			return true
 	return false
 
@@ -499,8 +499,8 @@ func _edge_point(side: int, e: float) -> Vector2:
 ## True if the run out from `p` along `out`, past the nav grid, stays in deep water.
 func _open_water(p: Vector2, out: Vector2) -> bool:
 	for k in 13:
-		var q := p + out * (k * 15.0)
-		if sim.terrain.height_at(q.x, q.y) > -3.5:
+		var q := p + out * (k * 45.0)
+		if sim.terrain.height_at(q.x, q.y) > -10.5:
 			return false
 	return true
 
@@ -519,7 +519,7 @@ func hull_gap(v: Vessel, p: Vector2, h: Vector2) -> float:
 		if o == v or Vessel.paired(v, o):
 			continue
 		var q := o.pos2()
-		var r := v.half_seg + o.half_seg + v.hull_radius + o.hull_radius + 2.0
+		var r := v.half_seg + o.half_seg + v.hull_radius + o.hull_radius + 6.0
 		if absf(q.x - p.x) > r or absf(q.y - p.y) > r:
 			continue
 		var oh := o.heading2() * o.half_seg
@@ -539,20 +539,20 @@ func wait_spot(h: MapData.Harbour, b: int) -> Vector2:
 		var ap := h.approach()
 		var approach := h.at(ap.x, ap.y)
 		var a2 := Vector2(approach.x, approach.z)
-		for u in range(int(bounds.x), int(bounds.x) + 60, 6):
-			for v in range(-70, 71, 6):
+		for u in range(int(bounds.x), int(bounds.x) + 180, 18):
+			for v in range(-210, 213, 18):
 				if absf(v) < bounds.y or not h.wait_ok(u, v):
 					continue
 				var p3 := h.at(u, v)
 				var p := Vector2(p3.x, p3.z)
 				if not nav.open_at(p, false) or nav.find_path(a2, p, false).is_empty():
 					continue
-				var score := p.distance_to(a2) + (80.0 if nav.open_at(p, true) else 0.0)
+				var score := p.distance_to(a2) + (240.0 if nav.open_at(p, true) else 0.0)
 				if score < best_score:
 					best_score = score
 					best = p
 		if best == Vector2.INF:
-			var p3 := h.at(ap.x + 20.0, ap.y)
+			var p3 := h.at(ap.x + 60.0, ap.y)
 			best = Vector2(p3.x, p3.z)
 		_wait_spots[h] = best
 	var spot: Vector2 = _wait_spots[h]
@@ -599,7 +599,7 @@ func avoid_circles(o: Vessel, pad: float) -> Array[Vector3]:
 	while d < look:
 		var q := o.ahead(d)
 		out.append(Vector3(q.x, q.y, o.hull_radius + pad))
-		d += maxf(o.hull_radius, 3.0)
+		d += maxf(o.hull_radius, 9.0)
 	return out
 
 
@@ -665,7 +665,7 @@ func _update_clearances() -> void:
 			own[v] = mine
 			hulls[v] = mine
 			var sl := minf(v.shown_look(), left)
-			if sl > 0.5:
+			if sl > 1.5:
 				shown[v] = Claim.new(v, sl)
 		else:
 			hulls[v] = Claim.new(v, 0.0)
@@ -690,10 +690,10 @@ func _update_clearances() -> void:
 			# (A vessel steering its own way keeps out of others' paths itself.)
 			if o.rank > v.rank and not v.free_nav and shown.has(o) and not o.waits_for(v):
 				var theirs: Claim = shown[o]
-				if not reach.grow(0.5).intersects(theirs.box) or _touches(mine.a[0], mine.b[0], theirs, thr):
+				if not reach.grow(1.5).intersects(theirs.box) or _touches(mine.a[0], mine.b[0], theirs, thr):
 					continue
 				for j in theirs.size():
-					var k2 := _first_hit(mine, theirs.a[j], theirs.b[j], thr + 0.5, false)
+					var k2 := _first_hit(mine, theirs.a[j], theirs.b[j], thr + 1.5, false)
 					if k2 > 0:
 						_limit(v, o, mine.ds[k2 - 1], false)
 
@@ -715,7 +715,7 @@ static func _first_hit(mine: Claim, c: Vector2, d: Vector2, thr: float, closing 
 		if not sbox.intersects(Rect2(mine.a[k], Vector2.ZERO).expand(mine.b[k])):
 			continue
 		var dk := _seg_dist(mine.a[k], mine.b[k], c, d)
-		if dk < thr and dk < now - 0.01:
+		if dk < thr and dk < now - 0.03:
 			return k
 	return -1
 

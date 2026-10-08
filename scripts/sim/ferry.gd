@@ -8,14 +8,14 @@ extends Vessel
 
 enum State { UNLOADING, LOADING, SAILING }
 
-const ACCEL := 1.4
+const ACCEL := 4.2
 # Arrival: ferries ease off to APPROACH_SPEED along the run-in, then from the
 # moment the bow passes the outer dolphins the forward prop reverse-thrusts them
 # to a stop at the dock (the stern props backing off).
-const DECEL := 0.5
+const DECEL := 1.5
 # Braking to give way to other traffic.
-const YIELD_DECEL := 0.9
-const APPROACH_SPEED := 3.2
+const YIELD_DECEL := 2.7
+const APPROACH_SPEED := 9.6
 const OUTER_DOLPHIN_U := Layout.DOLPHIN_OUTER.x
 const MIN_DWELL := 10.0
 const MAX_DWELL := 24.0
@@ -23,7 +23,7 @@ const DISPATCH_GAP := 0.5
 # A ferry about to leave holds in at the dock while a stretch of water it shares
 # with another route, no further out than this, is taken, or while a ferry
 # coming in to the same terminal, this close to it, has it still to pass.
-const ARRIVAL_PRIORITY := 220.0
+const ARRIVAL_PRIORITY := 660.0
 
 var sim: Simulation
 var fc: FerryClass
@@ -49,7 +49,7 @@ var _tracking := false
 var _waiting_for: Ferry = null   # holding off a corridor this ferry has reserved
 var _giving_way := false         # (holding in at the dock for _waiting_for to come in)
 var _runs := {}                   # at_a -> _corridor_runs() for that direction
-# Route curves run between where a 30 m hull's centre lies docked
+# Route curves run between where a 90 m hull's centre lies docked
 # (Layout.DOCK_U); a shorter one docks this much further in at both ends, a
 # longer one further out (negative).
 var _inset := 0.0
@@ -68,7 +68,7 @@ func setup(s: Simulation, r: MapData.Route, nm: String, size: int) -> void:
 	# A capsule round the hull: its corners just touch, its ends cover the bows.
 	half_seg = fc.half_seg()
 	hull_radius = fc.hull_radius
-	claim_step = 4.0
+	claim_step = 12.0
 	wake = WakeTrail.new(fc.half_length, 8.0 * fc.half_length / 15.0, 24.0, 46)
 	term_a = sim.terminals[r.a]
 	term_b = sim.terminals[r.b]
@@ -137,7 +137,7 @@ func route_point(s: float) -> Vector3:
 	if s >= 0.0 and s <= length:
 		return route.curve.sample_baked(s)
 	var end := 0.0 if s < 0.0 else length
-	var inner := clampf(end + (1.5 if s < 0.0 else -1.5), 0.0, length)
+	var inner := clampf(end + (4.5 if s < 0.0 else -4.5), 0.0, length)
 	var p := route.curve.sample_baked(end)
 	var dir := p - route.curve.sample_baked(inner)
 	dir.y = 0.0
@@ -269,25 +269,25 @@ func _on_boarded(car: Vehicle, slot: int) -> void:
 func _tick_sailing(delta: float) -> void:
 	var remaining := run_length() - traveled
 	# Distance from the bow reaching the outer dolphins to being docked.
-	var zone := OUTER_DOLPHIN_U - Layout.PIER_END - 0.4
+	var zone := OUTER_DOLPHIN_U - Layout.PIER_END - 1.2
 	var rem := maxf(remaining, 0.0)
 	var brake_v: float
 	if rem > zone:
 		brake_v = APPROACH_SPEED + sqrt(2.0 * DECEL * (rem - zone))
 	else:
-		brake_v = 0.3 + (APPROACH_SPEED - 0.3) * sqrt(rem / zone)
+		brake_v = 0.9 + (APPROACH_SPEED - 0.9) * sqrt(rem / zone)
 	# Picks up from wherever it is (it may have stopped for traffic mid-crossing).
 	var target := minf(fc.cruise, minf(brake_v, yield_speed()))
 	var wait := _corridor_wait()
 	hold = wait
-	target = minf(target, sqrt(2.0 * YIELD_DECEL * maxf(wait - 0.5, 0.0)))
+	target = minf(target, sqrt(2.0 * YIELD_DECEL * maxf(wait - 1.5, 0.0)))
 	speed = minf(target, speed + ACCEL * delta)
-	_thrust = move_toward(_thrust, 1.0 if rem < zone and rem > 0.5 else 0.0, delta * 0.8)
+	_thrust = move_toward(_thrust, 1.0 if rem < zone and rem > 1.5 else 0.0, delta * 0.8)
 	traveled = minf(traveled + speed * delta, run_length())
 	_place(_route_s(traveled))
 	_bob_time += delta
-	position.y = sin(_bob_time * 1.3) * 0.07
-	if traveled >= run_length() - 0.01:
+	position.y = sin(_bob_time * 1.3) * 0.21
+	if traveled >= run_length() - 0.03:
 		_dock_corridors()
 		hold = INF
 		speed = 0.0
@@ -314,7 +314,7 @@ func _corridor_runs() -> Array:
 	list.sort_custom(func(a, b): return a[0] < b[0])
 	var runs := []
 	for e in list:
-		if not runs.is_empty() and e[0] <= runs[-1][1] + 1.0:
+		if not runs.is_empty() and e[0] <= runs[-1][1] + 3.0:
 			runs[-1][1] = maxf(runs[-1][1], e[1])
 			runs[-1][2].append([e[1], e[2]])
 		else:
@@ -329,7 +329,7 @@ func _corridor_runs() -> Array:
 func _corridor_wait() -> float:
 	_waiting_for = null
 	_giving_way = false
-	if traveled < 0.5 and _blocked_at_dock():
+	if traveled < 1.5 and _blocked_at_dock():
 		return 0.0
 	for run in _corridor_runs():
 		for e in run[2]:
@@ -337,7 +337,7 @@ func _corridor_wait() -> float:
 				e[1].owner = null
 		if traveled > run[1]:
 			continue
-		if run[0] - traveled > self_look() + 10.0:
+		if run[0] - traveled > self_look() + 30.0:
 			break
 		var holder := _run_holder(run, traveled)
 		if holder == null:
@@ -443,7 +443,7 @@ func claim_corridors_at_start() -> void:
 			state = State.SAILING
 			_state_time = 0.0
 			for r in _corridor_runs():
-				if r[1] >= run_length() - 1.0:
+				if r[1] >= run_length() - 3.0:
 					at = r[0]
 		else:
 			at = run[0]
@@ -460,7 +460,7 @@ func claim_corridors_at_start() -> void:
 ## again. Frees the rest.
 func _dock_corridors() -> void:
 	for run in _corridor_runs():
-		var keep: bool = run[1] >= run_length() - 1.0 and _run_blocks_dock(run, not at_a)
+		var keep: bool = run[1] >= run_length() - 3.0 and _run_blocks_dock(run, not at_a)
 		for e in run[2]:
 			if keep:
 				# (Never from another ferry: one that has taken a corridor this one
@@ -497,7 +497,7 @@ func path_left() -> float:
 ## Positions the ferry at distance s along the route curve. +Z always faces A → B.
 func _place(s: float) -> void:
 	var p := route_point(s)
-	var d := route_point(s + 1.5) - route_point(s - 1.5)
+	var d := route_point(s + 4.5) - route_point(s - 4.5)
 	d.y = 0.0
 	if d.length_squared() < 1e-6:
 		return
@@ -523,7 +523,7 @@ func _update_trail(delta: float) -> void:
 
 func wake_shape() -> Vector4:
 	# Double-ended and blunt: both ends square off over the last few metres.
-	return Vector4(3.0, 0.62, 3.0, 0.62)
+	return Vector4(9.0, 0.62, 9.0, 0.62)
 
 
 func wake_hull() -> Vector4:
@@ -544,7 +544,7 @@ func kind_text() -> String:
 
 
 func status_text() -> String:
-	if state == State.SAILING and speed < 0.2 and _waiting_for:
+	if state == State.SAILING and speed < 0.6 and _waiting_for:
 		if _giving_way:
 			return "Holding in for %s to come in" % _waiting_for.ferry_name
 		return "Waiting for %s to clear the channel" % _waiting_for.ferry_name

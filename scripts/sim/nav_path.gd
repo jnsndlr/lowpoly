@@ -42,7 +42,7 @@ func sample(s: float) -> Vector2:
 
 
 ## Direction of travel at s, averaged over `span` either side so corners read smoothly.
-func tangent(s: float, span := 1.5) -> Vector2:
+func tangent(s: float, span := 4.5) -> Vector2:
 	var d := sample(s + span) - sample(s - span)
 	if d.length_squared() < 1e-8:
 		if pts.size() >= 2:

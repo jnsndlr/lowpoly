@@ -62,6 +62,11 @@ float px_per_unit(float z, mat4 proj, vec2 vp) {
 void vertex() {
 	int mode = int(CUSTOM0.y + 0.5);
 	float size = CUSTOM0.x;
+	// Point lights and reflections grow with a mesh drawn bigger than it was built
+	// (pools and cones already do, through MODELVIEW_MATRIX).
+	if (mode == GLOW || mode == NAV || mode >= REFLECT) {
+		size *= length(MODEL_MATRIX[0].xyz);
+	}
 	vec3 wc = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	// Local position, so lights riding on cars and ferries keep their phase.
 	v_phase = hash13(VERTEX * 1.37 + 0.5);
@@ -89,7 +94,7 @@ void vertex() {
 	if (mode == GLOW || mode == NAV) {
 		vec3 vc = (VIEW_MATRIX * vec4(wc, 1.0)).xyz;
 		float z = -vc.z;
-		keep = keep && z > 0.5;
+		keep = keep && z > 1.5;
 		if (dot(CUSTOM1.xyz, CUSTOM1.xyz) > 0.0) {
 			vec3 facing = normalize(mat3(MODEL_MATRIX) * CUSTOM1.xyz);
 			energy *= mix(0.12, 1.0, smoothstep(-0.2, 0.6, dot(facing, normalize(CAMERA_POSITION_WORLD - wc))));
@@ -99,20 +104,20 @@ void vertex() {
 		float core = max(true_px, min_pixels);
 		// Sub-pixel lights keep a visible point but give up some brightness.
 		energy *= clamp(true_px / min_pixels, 0.35, 1.0);
-		energy *= mix(1.0, 0.4, smoothstep(700.0, 2200.0, z));
+		energy *= mix(1.0, 0.4, smoothstep(2100.0, 6600.0, z));
 		float coc = min(bokeh_aperture * max(z - focus_distance * bokeh_start, 0.0) / z, bokeh_max);
 		float r = max(core * 4.0, coc);
 		float b = smoothstep(1.5, 4.0, coc / core);
 		v_shape = vec3(core / r, coc / r, b);
 		energy *= mix(1.0, clamp(pow(core * 1.6 / max(coc, 1e-3), 2.0), 0.035, 1.0), b);
 		// Lift it toward the camera so its own lamp housing doesn't hide it.
-		vc += normalize(-vc) * min(size * 2.0, 1.2);
+		vc += normalize(-vc) * min(size * 2.0, 3.6);
 		pos = vc + vec3(UV * r / ppu, 0.0);
 	} else if (mode == POOL || mode == CONE) {
 		vec3 axis = CUSTOM1.xyz;
 		vec3 side = normalize(cross(axis, vec3(0.0, 1.0, 0.0))) * size;
 		pos = (MODELVIEW_MATRIX * vec4(VERTEX + side * UV.x + axis * UV.y, 1.0)).xyz;
-		pos += normalize(-pos) * 0.04;
+		pos += normalize(-pos) * 0.12;
 	} else if (mode == BEAM) {
 		float a = TIME * CUSTOM1.x + CUSTOM1.z;
 		vec3 d = normalize(vec3(cos(a), -0.03, sin(a)));
@@ -123,7 +128,7 @@ void vertex() {
 	} else {
 		// Where the mirrored light shows: the view ray to it crosses the water here.
 		vec3 cam = CAMERA_POSITION_WORLD;
-		keep = keep && wc.y > 0.5 && cam.y > 1.0;
+		keep = keep && wc.y > 1.5 && cam.y > 3.0;
 		// A lamp facing away (a ferry's far rail) is hidden by its hull, and so is the
 		// light it would throw on the water toward us.
 		if (dot(CUSTOM1.xyz, CUSTOM1.xyz) > 0.0) {
@@ -133,11 +138,11 @@ void vertex() {
 		}
 		vec3 m = vec3(wc.x, -wc.y, wc.z);
 		vec3 q = cam + (m - cam) * (cam.y / (cam.y - m.y));
-		q.y = 0.3;
+		q.y = 0.9;
 		vec3 vq = (VIEW_MATRIX * vec4(q, 1.0)).xyz;
 		vec3 vl = (VIEW_MATRIX * vec4(wc, 1.0)).xyz;
 		float z = -vq.z;
-		keep = keep && z > 0.5 && -vl.z > 0.5;
+		keep = keep && z > 1.5 && -vl.z > 1.5;
 		float ppu = px_per_unit(z, PROJECTION_MATRIX, VIEWPORT_SIZE);
 		vec2 axis = vl.xy / -vl.z - vq.xy / z;
 		axis = dot(axis, axis) > 1e-10 ? normalize(axis) : vec2(0.0, 1.0);
@@ -153,7 +158,7 @@ void vertex() {
 		w_px = max(w_px, coc * 1.1);
 		l_px += coc * 2.0;
 		energy *= clamp(w0 * l0 / (w_px * l_px), 0.06, 1.0);
-		energy *= mix(1.0, 0.35, smoothstep(150.0, 700.0, z));
+		energy *= mix(1.0, 0.35, smoothstep(450.0, 2100.0, z));
 		v_shape = vec3(clamp(coc / 6.0, 0.0, 1.0), 0.0, 0.0);
 		pos = vq + vec3((vec2(-axis.y, axis.x) * UV.x * w_px + axis * UV.y * l_px) / ppu, 0.0);
 	}

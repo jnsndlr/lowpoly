@@ -5,8 +5,8 @@ extends ShipTender
 ## fetched off; then it heads home (see Pilotage). Between jobs it lies alongside
 ## at the pilot station.
 
-const ASTERN := 24.0           # its station: this far astern of the tanker's stern, along its track,
-const OFF := 4.0               # and this far out to one side of its wake
+const ASTERN := 72.0           # its station: this far astern of the tanker's stern, along its track,
+const OFF := 12.0               # and this far out to one side of its wake
 
 var _mast_light: MeshInstance3D
 
@@ -27,7 +27,7 @@ func setup(t: MarineTraffic, nm: String, sp: VesselSpec, st: MapData.PilotStatio
 	wharf = st
 	berth = b
 	# (Handier alongside than a trawler: thrusters, or twin screws.)
-	crab_speed = 0.9
+	crab_speed = 2.7
 	_bob = t.rng.randf() * TAU
 	_tie_up()
 
@@ -49,15 +49,15 @@ func _station(g: float) -> Vector2:
 func _station_world(g: float) -> Vector2:
 	var back := ship.s - (ship.half_seg + ship.hull_radius + ASTERN)
 	var p := ship.path.sample(back) if back > 0.0 else ship.pos2() - ship.heading2() * (ship.half_seg + ship.hull_radius + ASTERN)
-	var t := ship.path.tangent(maxf(back, 0.0), 10.0)
+	var t := ship.path.tangent(maxf(back, 0.0), 30.0)
 	var right := Vector2(-t.y, t.x)
 	var lat := ship.hull_radius * 0.5 + hull_radius + g
-	var shoal := -spec.draft - 0.6
+	var shoal := -spec.draft - 1.8
 	while lat > 0.0:
 		var q := p + right * side * lat
 		if traffic.sim.terrain.height_at(q.x, q.y) < shoal:
 			return q
-		lat -= 3.0
+		lat -= 9.0
 	return p
 
 
@@ -77,7 +77,7 @@ func _working_gap() -> float:
 
 
 func _closing_gap() -> float:
-	return OFF + 10.0
+	return OFF + 30.0
 
 
 ## Escorting until the tanker has dropped its pilot (or is nearly out).

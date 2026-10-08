@@ -7,8 +7,8 @@ extends Vessel
 ## holds it up for long, and the rules of the road (helm_role).
 
 const STUCK_REPLAN := 4.0
-const CREEP := 0.35             # m/s, working its way out from against another hull
-const TAIL_SHOAL := -0.9        # its trailing end never swings over water shallower than this
+const CREEP := 1.05             # m/s, working its way out from against another hull
+const TAIL_SHOAL := -2.7        # its trailing end never swings over water shallower than this
 
 var traffic: MarineTraffic
 var helm: Helm
@@ -32,7 +32,7 @@ func _make_way(delta: float, want_yaw: float, target: float, turn: float) -> voi
 		target = drive
 		decel = _coast()
 	var safe := yield_speed()
-	if safe < target - 0.05:
+	if safe < target - 0.15:
 		brake_time += delta
 		target = safe
 		decel = spec.decel
@@ -75,17 +75,17 @@ func _coast() -> float:
 
 
 ## Whether its hull could lie at `p` heading along `d` without getting any
-## nearer another hull than it is (`now_gap`, or 0.3 m clear), and without its
+## nearer another hull than it is (`now_gap`, or 0.9 m clear), and without its
 ## leading end (`lead`, along the way it is moving), its middle or its trailing
 ## end (swinging out as it turns) going any further over the shallows than it
 ## is: anywhere deep enough for it is fine, and backing off a shoal always is.
 func _safe(p: Vector2, d: Vector2, lead: Vector2, now_gap: float) -> bool:
-	if traffic.hull_gap(self, p, d) < minf(0.3, now_gap) - 0.001:
+	if traffic.hull_gap(self, p, d) < minf(0.9, now_gap) - 0.003:
 		return false
 	var terrain := traffic.sim.terrain
 	var cur := Vector2(sin(_yaw), cos(_yaw))
 	var now_lead := cur * signf(cur.dot(lead) + 1e-3)
-	var deep := -1.0 - (spec.draft - 1.0)
+	var deep := -3.0 - (spec.draft - 3.0)
 	# Turning where it lies, it only has to keep its ends off the shoals.
 	var turning := p.distance_squared_to(pos2()) < 1e-8
 	for e: float in [1.0, 0.0, -1.0]:
@@ -101,14 +101,14 @@ func _safe(p: Vector2, d: Vector2, lead: Vector2, now_gap: float) -> bool:
 
 ## Held up against another hull for a while: plan round it.
 func _check_stuck(delta: float) -> void:
-	if speed < 0.1 and clear < 1.0 and blocked_by_hull and is_instance_valid(blocker):
+	if speed < 0.3 and clear < 3.0 and blocked_by_hull and is_instance_valid(blocker):
 		_stuck += delta
 	else:
 		_stuck = 0.0
 	if _stuck < STUCK_REPLAN:
 		return
 	_stuck = 0.0
-	helm.replan(traffic.avoid_circles(blocker, 3.0))
+	helm.replan(traffic.avoid_circles(blocker, 9.0))
 
 
 func helm_yaw() -> float:
@@ -174,7 +174,7 @@ func _same_kind(o: Vessel) -> String:
 ## Coming up from more than 22.5° abaft its beam, and faster.
 func _overtaking(o: Vessel) -> bool:
 	var rel := pos2() - o.pos2()
-	return rel.dot(o.heading2()) < -rel.length() * 0.38 and speed > o.speed + 0.1
+	return rel.dot(o.heading2()) < -rel.length() * 0.38 and speed > o.speed + 0.3
 
 
 ## Two power vessels crossing: the one with the other on its starboard side gives way.

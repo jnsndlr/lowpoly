@@ -16,13 +16,13 @@ extends MarinaBoat
 
 enum State { MOORED, LEAVING, SAILING, WAITING, ARRIVING }
 
-const COAST := 0.18          # slowing with no drive from the sails
+const COAST := 0.54          # slowing with no drive from the sails
 const DWELL := Vector2(60.0, 260.0)   # game minutes moored between trips
 const LEAVE_HOURS := Vector2(6.5, 19.5)
-const GOAL_R := 14.0
-const DOUSE_R := 45.0          # sails come down this far from the marina
-const CLEAR_OF_MARINA := 25.0  # past the back-out point, where it lets go of the lock and hoists sail
-const HOLD_R := 8.0            # waiting, it holds station this near its waiting spot
+const GOAL_R := 42.0
+const DOUSE_R := 135.0          # sails come down this far from the marina
+const CLEAR_OF_MARINA := 75.0  # past the back-out point, where it lets go of the lock and hoists sail
+const HOLD_R := 24.0            # waiting, it holds station this near its waiting spot
 # Points of sail: none at all within NO_GO of the wind; close-hauled it sails
 # CLOSE_HAULED off it. Speed (as a share of its cruise) by angle off the wind.
 const NO_GO := 0.7
@@ -155,10 +155,10 @@ func _plan_goals(dm: MapData.Marina, db: int) -> Array[Vector2]:
 ## Somewhere out on open water for a day sail.
 func _waypoint(from: Vector2) -> Vector2:
 	var nav := traffic.nav
-	var lim := traffic.sim.map.half_size - 40.0
+	var lim := traffic.sim.map.half_size - 120.0
 	for k in 16:
 		var a := traffic.rng.randf() * TAU
-		var p := from + Vector2(cos(a), sin(a)) * traffic.rng.randf_range(80.0, 220.0)
+		var p := from + Vector2(cos(a), sin(a)) * traffic.rng.randf_range(240.0, 660.0)
 		if absf(p.x) < lim and absf(p.y) < lim and nav.open_at(p, false) and not nav.find_path(from, p, false).is_empty():
 			return p
 	return Vector2.INF
@@ -171,10 +171,10 @@ func _place_part_way(goals: Array[Vector2], progress: float) -> bool:
 	if pts.size() < 2:
 		return false
 	var p := NavPath.new(pts)
-	if p.length < 80.0:
+	if p.length < 240.0:
 		return false
 	var at := p.sample(p.length * progress)
-	if not traffic.is_clear(at, 8.0, self) or not traffic.nav.open_at(at, false):
+	if not traffic.is_clear(at, 24.0, self) or not traffic.nav.open_at(at, false):
 		return false
 	var t := p.tangent(p.length * progress)
 	_yaw = atan2(t.x, t.y)
@@ -241,12 +241,12 @@ func _navigate(delta: float) -> void:
 	# Waiting its turn: holds station on its spot, head to wind, unless something
 	# needs keeping clear of.
 	if state == State.WAITING:
-		target = minf(target, 0.9)
+		target = minf(target, 2.7)
 		if helm.distance_left() < HOLD_R and helm.give_way_to == null:
 			want_yaw = _wind_yaw()
 			target = 0.0
 	_make_way(delta, want_yaw, target, spec.motor_turn if motoring else spec.turn)
-	position.y = sin(_bob * 1.6) * 0.05
+	position.y = sin(_bob * 1.6) * 0.15
 	_pose(delta)
 
 

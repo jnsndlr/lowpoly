@@ -33,10 +33,11 @@ const WATER_APPEAL := 0.35
 const COMPANY := 0.8
 # Chance a landing gull sets down next to one already there rather than anywhere.
 const HUDDLE := 0.6
-const PERCH_RANGE := 240.0
-const PERCH_FALLOFF := 70.0
-# Trawler-local perches (Models.trawler), used while it lies alongside: the
-# wheelhouse roof, the gantry's crossbar, the bulwark rails and the foredeck.
+const PERCH_RANGE := 720.0
+const PERCH_FALLOFF := 210.0
+# Trawler-local perches (Models.trawler, in its built size: the hull is drawn
+# spec.scale times that), used while it lies alongside: the wheelhouse roof, the
+# gantry's crossbar, the bulwark rails and the foredeck.
 const TRAWLER_PERCHES := [
 	[Vector3(0, 5.52, 2.0), Vector3(0, 5.52, 4.6), 1.6],
 	[Vector3(-2.6, 6.78, -9.3), Vector3(2.6, 6.78, -9.3), 0.0],
@@ -46,8 +47,8 @@ const TRAWLER_PERCHES := [
 # A fishing boat at work draws gulls from this far (further when it is hauling or
 # steaming home with the catch: there's fish to be had), and they follow it this
 # much more readily than anything else.
-const FISH_ATTENTION := 220.0
-const FISH_ATTENTION_FED := 340.0
+const FISH_ATTENTION := 660.0
+const FISH_ATTENTION_FED := 1020.0
 const FISH_CHANCE := 0.8
 const FISH_RESTLESS := 0.12     # chance a second a perched gull within reach gets up for it
 # Spread of a raft of gulls on the water.
@@ -55,16 +56,16 @@ const RAFT := 6.0
 # Height of the body's origin above the perch point (water: sitting in it).
 const REST := 0.1 * SCALE
 const FLOAT := 0.03
-const SPEED := 10.0
-const ACCEL := 7.0
+const SPEED := 30.0
+const ACCEL := 21.0
 # Horizontal distance from its perch at which a gull starts its landing glide.
-const LAND_START := 15.0
+const LAND_START := 45.0
 const GROUP_CHANCE := 0.4
-const RECRUIT_RADIUS := 26.0
+const RECRUIT_RADIUS := 78.0
 const MAX_RECRUITS := 5
 const ROAM_CHANCE := 0.2
 const ESCORT_CHANCE := 0.25
-const JOIN_RADIUS := 35.0
+const JOIN_RADIUS := 105.0
 
 
 ## Somewhere gulls can sit: a point, a line from `a` to `b` (a beam, a rail), a
@@ -148,9 +149,9 @@ class Gull:
 	var age := 0.0              # plumage: 0 adult, 0.5 second/third-year, 1 first-year
 	var leader: Gull = null     # flying with (or, while perched, about to follow)
 	var offset := Vector3.ZERO  # formation slot in the leader's frame / escort offset
-	var alt := 20.0             # cruising height for this leg
+	var alt := 60.0             # cruising height for this leg
 	var orbit := Vector3.ZERO   # roam: centre of the circle (y = height)
-	var orbit_r := 20.0
+	var orbit_r := 60.0
 	var orbit_dir := 1.0
 	var escort: Vessel = null   # roam: the ferry or fishing boat it's tailing
 	var boost := 0.0            # seconds of hard flapping left after take-off
@@ -173,7 +174,7 @@ var rng := RandomNumberGenerator.new()
 var _perches: Array[Perch] = []
 var _gulls: Array[Gull] = []
 var _wind_yaw := 0.0
-var _bound := 300.0
+var _bound := 900.0
 var _mm: MultiMesh
 var _buf := PackedFloat32Array()
 
@@ -183,7 +184,7 @@ func setup(s: Simulation, d: DayCycle, perches: Array[Perch]) -> void:
 	sim = s
 	day_cycle = d
 	rng.seed = sim.map.map_seed * 17 + 5
-	_bound = sim.terrain.half_size - 40.0
+	_bound = sim.terrain.half_size - 120.0
 	# Perched gulls face into the wind (named for where it blows from; -Z is north).
 	var a: float = CloudLayer.DIRS.find(sim.wind_dir) * TAU / 8.0
 	_wind_yaw = atan2(sin(a), -cos(a))
@@ -193,7 +194,8 @@ func setup(s: Simulation, d: DayCycle, perches: Array[Perch]) -> void:
 			_perches.append(Perch.new(fp[0], fp[1], fp[2], Kind.FERRY, f))
 	for b in sim.marine.fishing_boats:
 		for bp: Array in TRAWLER_PERCHES:
-			var p := Perch.new(bp[0], bp[1], bp[2], Kind.BOAT)
+			var k: float = b.spec.scale
+			var p := Perch.new(bp[0] * k, bp[1] * k, bp[2] * k, Kind.BOAT)
 			p.boat = b
 			_perches.append(p)
 	_build_pool()
@@ -291,7 +293,7 @@ func _tick_perched(g: Gull, dt: float) -> void:
 		g.pos.y += sin(g.bob * 1.6) * 0.06
 		g.yaw += sin(g.bob * 0.3) * 0.1 * dt
 		# Paddle out of the way of a ferry, or a fishing boat coming back over them.
-		if g.timer > 1.0 and (_ferry_near(g.pos, 34.0) != null or _boat_bearing_down(g.pos)):
+		if g.timer > 1.0 and (_ferry_near(g.pos, 102.0) != null or _boat_bearing_down(g.pos)):
 			g.timer = rng.randf_range(0.0, 0.8)
 	else:
 		g.yaw = lerp_angle(g.yaw, _wind_yaw + g.facing, 1.0 - exp(-dt * 1.5))
@@ -339,8 +341,8 @@ func _take_off(g: Gull) -> void:
 	_release(g)
 	g.stretch = 0.0
 	g.boost = rng.randf_range(0.8, 1.4)
-	g.alt = rng.randf_range(12.0, 32.0)
-	g.vel = Vector3(sin(g.yaw), 0.0, cos(g.yaw)) * 3.0 + Vector3.UP * 3.5
+	g.alt = rng.randf_range(36.0, 96.0)
+	g.vel = Vector3(sin(g.yaw), 0.0, cos(g.yaw)) * 9.0 + Vector3.UP * 10.5
 
 
 ## Calls some perched neighbours up to fly along.
@@ -366,7 +368,7 @@ func _decide(g: Gull) -> void:
 		_start_roam(g, fish)
 		return
 	var r := rng.randf()
-	var f := _ferry_near(g.pos, 150.0)
+	var f := _ferry_near(g.pos, 450.0)
 	if f != null and r < ESCORT_CHANCE:
 		_start_roam(g, f)
 		return
@@ -386,7 +388,7 @@ func _fly_to(g: Gull) -> void:
 	g.state = State.FLY
 	g.escort = null
 	g.timer = 60.0
-	g.alt = maxf(g.alt, _seat_world(g).y + 6.0)
+	g.alt = maxf(g.alt, _seat_world(g).y + 18.0)
 
 
 func _tick_fly(g: Gull, dt: float) -> void:
@@ -403,7 +405,7 @@ func _tick_fly(g: Gull, dt: float) -> void:
 		return
 	# Cruise, then let down along a shallow slope to just above the perch.
 	var aim := target
-	aim.y = minf(target.y + 2.0 + (flat - LAND_START) * 0.4, maxf(g.alt, target.y + 2.0))
+	aim.y = minf(target.y + 6.0 + (flat - LAND_START) * 0.4, maxf(g.alt, target.y + 6.0))
 	_steer(g, (aim - g.pos).normalized() * SPEED, ACCEL, dt)
 
 
@@ -411,15 +413,15 @@ func _start_roam(g: Gull, escort: Vessel = null) -> void:
 	g.state = State.ROAM
 	g.escort = escort
 	g.timer = rng.randf_range(8.0, 25.0) if escort else rng.randf_range(5.0, 15.0)
-	g.offset = Vector3(rng.randf_range(-7.0, 7.0), rng.randf_range(5.0, 12.0), rng.randf_range(14.0, 26.0))
+	g.offset = Vector3(rng.randf_range(-21.0, 21.0), rng.randf_range(15.0, 36.0), rng.randf_range(42.0, 78.0))
 	if escort is FishingBoat:
 		# A loose, low, squabbling crowd over the wake.
 		g.timer = rng.randf_range(15.0, 45.0)
-		g.offset = Vector3(rng.randf_range(-12.0, 12.0), rng.randf_range(3.0, 10.0), rng.randf_range(8.0, 34.0))
+		g.offset = Vector3(rng.randf_range(-36.0, 36.0), rng.randf_range(9.0, 30.0), rng.randf_range(24.0, 102.0))
 	var a := rng.randf() * TAU
-	var c := g.pos + Vector3(cos(a), 0.0, sin(a)) * rng.randf_range(10.0, 40.0)
-	g.orbit = Vector3(c.x, rng.randf_range(10.0, 35.0), c.z)
-	g.orbit_r = rng.randf_range(10.0, 28.0)
+	var c := g.pos + Vector3(cos(a), 0.0, sin(a)) * rng.randf_range(30.0, 120.0)
+	g.orbit = Vector3(c.x, rng.randf_range(30.0, 105.0), c.z)
+	g.orbit_r = rng.randf_range(30.0, 84.0)
 	g.orbit_dir = 1.0 if rng.randf() < 0.5 else -1.0
 	g.think = rng.randf_range(1.0, 3.0)
 
@@ -451,7 +453,7 @@ func _tick_roam(g: Gull, dt: float) -> void:
 		if f is FishingBoat:
 			# Wheeling about over it rather than holding station.
 			var wob := g.timer * 0.7 + g.flap_phase
-			aim += Vector3(sin(wob) * 6.0, sin(wob * 1.3) * 2.0, cos(wob * 0.8) * 6.0)
+			aim += Vector3(sin(wob) * 18.0, sin(wob * 1.3) * 6.0, cos(wob * 0.8) * 18.0)
 		var want := dir * f.speed + (aim - g.pos) * 0.5
 		_steer(g, want.limit_length(SPEED * 1.4), ACCEL, dt)
 	else:
@@ -493,7 +495,7 @@ func _tick_follow(g: Gull, dt: float) -> void:
 		# The leader's coming down: find a spot near it.
 		var near := _seat_world(l) if l != null and l.perch != null else g.pos
 		g.leader = null
-		if _claim(g, near, 35.0):
+		if _claim(g, near, 105.0):
 			_fly_to(g)
 		else:
 			_start_roam(g)
@@ -515,7 +517,7 @@ func _begin_land(g: Gull) -> void:
 	g.land_vel = g.vel
 	g.land_t = 0.0
 	var d := g.pos.distance_to(_seat_world(g))
-	g.land_time = clampf(d / maxf(g.vel.length(), 4.0) * 1.5, 1.0, 3.0)
+	g.land_time = clampf(d / maxf(g.vel.length(), 12.0) * 1.5, 1.0, 3.0)
 
 
 ## A Hermite glide from where it broke off to the perch, braking and flaring at the end.
@@ -560,15 +562,15 @@ func _steer(g: Gull, want: Vector3, accel: float, dt: float) -> void:
 	g.vel = g.vel.move_toward(want, accel * dt)
 	# Gulls can't hover: keep some airspeed once clear of the perch.
 	var h := Vector2(g.vel.x, g.vel.z)
-	if g.boost <= 0.0 and h.length() < 5.0:
+	if g.boost <= 0.0 and h.length() < 15.0:
 		var fwd := Vector2(sin(g.yaw), cos(g.yaw))
-		h = fwd * 5.0 if h.length() < 0.1 else h.normalized() * 5.0
+		h = fwd * 15.0 if h.length() < 0.3 else h.normalized() * 15.0
 		g.vel.x = h.x
 		g.vel.z = h.y
 	g.pos += g.vel * dt
 	# Clear the treetops over land, skim no lower than a few metres over water.
 	var ground := sim.terrain.height_at(g.pos.x, g.pos.z)
-	var floor_y := ground + 10.0 if ground > 0.0 else 3.0
+	var floor_y := ground + 30.0 if ground > 0.0 else 9.0
 	if g.pos.y < floor_y:
 		g.vel.y = maxf(g.vel.y, (floor_y - g.pos.y) * 1.5)
 	_orient(g, dt)
@@ -576,7 +578,7 @@ func _steer(g: Gull, want: Vector3, accel: float, dt: float) -> void:
 
 func _orient(g: Gull, dt: float) -> void:
 	var h := Vector2(g.vel.x, g.vel.z)
-	if h.length_squared() > 0.04:
+	if h.length_squared() > 0.36:
 		var ny := atan2(g.vel.x, g.vel.z)
 		var rate := angle_difference(g.yaw, ny) / maxf(dt, 1e-4)
 		g.yaw = ny
@@ -597,7 +599,7 @@ func _wings_in_flight(g: Gull, dt: float) -> void:
 	if g.boost > 0.0:
 		amp = 1.0
 		freq = 4.5
-	elif g.vel.y > 0.8 or g.flap_burst > 0.0:
+	elif g.vel.y > 2.4 or g.flap_burst > 0.0:
 		amp = 0.7
 	g.flap_amp = move_toward(g.flap_amp, amp, dt * 3.0)
 	g.flap_phase = fmod(g.flap_phase + dt * TAU * freq, TAU)
@@ -667,7 +669,7 @@ func _fish_near(p: Vector3) -> FishingBoat:
 ## A fishing boat under way heading for a gull sitting on the water at `p`.
 func _boat_bearing_down(p: Vector3) -> bool:
 	for b in sim.marine.fishing_boats:
-		if b.speed < 0.3 or b.global_position.distance_squared_to(p) > 30.0 * 30.0:
+		if b.speed < 0.9 or b.global_position.distance_squared_to(p) > 90.0 * 90.0:
 			continue
 		var to := Vector2(p.x - b.global_position.x, p.z - b.global_position.z)
 		if to.dot(b.heading2()) > 0.0:
@@ -678,16 +680,16 @@ func _boat_bearing_down(p: Vector3) -> bool:
 ## A seat on the water astern of fishing boat `b`, among the others there.
 func _claim_wake(g: Gull, b: FishingBoat) -> bool:
 	var h := b.heading2()
-	var stern := b.global_position - Vector3(h.x, 0.0, h.y) * (b.spec.half_length + rng.randf_range(6.0, 22.0))
+	var stern := b.global_position - Vector3(h.x, 0.0, h.y) * (b.spec.half_length + rng.randf_range(18.0, 66.0))
 	for p in _perches:
-		if p.kind == Kind.WATER and p.gulls.size() < p.capacity and Vector2(p.a.x - stern.x, p.a.z - stern.z).length() < 14.0:
+		if p.kind == Kind.WATER and p.gulls.size() < p.capacity and Vector2(p.a.x - stern.x, p.a.z - stern.z).length() < 42.0:
 			var seat: Variant = _find_seat(p)
 			if seat != null:
 				p.gulls.append(g)
 				g.perch = p
 				g.seat = seat
 				return true
-	if sim.terrain.height_at(stern.x, stern.z) > -1.5:
+	if sim.terrain.height_at(stern.x, stern.z) > -4.5:
 		return false
 	var raft := Perch.new(Vector3(stern.x, 0.0, stern.z), Vector3(stern.x, 0.0, stern.z), RAFT, Kind.WATER)
 	var s0: Variant = _find_seat(raft)
@@ -794,10 +796,10 @@ func _pick_facing() -> float:
 func _new_raft(near: Vector3, radius: float) -> Perch:
 	for attempt in 8:
 		var a := rng.randf() * TAU
-		var d := rng.randf_range(12.0, minf(radius, 70.0))
+		var d := rng.randf_range(36.0, minf(radius, 210.0))
 		var p := Vector3(near.x + cos(a) * d, 0.0, near.z + sin(a) * d)
-		if absf(p.x) < _bound and absf(p.z) < _bound and sim.terrain.height_at(p.x, p.z) < -1.5 \
-				and _ferry_near(p, 40.0) == null:
+		if absf(p.x) < _bound and absf(p.z) < _bound and sim.terrain.height_at(p.x, p.z) < -4.5 \
+				and _ferry_near(p, 120.0) == null:
 			return Perch.new(p, p, RAFT, Kind.WATER)
 	return null
 

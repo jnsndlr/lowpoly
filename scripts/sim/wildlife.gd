@@ -29,8 +29,8 @@ enum Phase { ARRIVE, CIRCLE, FORAGE, HAULED, DEPART, GONE }
 enum Role { BULL, COW, JUVENILE, CALF, ADULT, PUP }
 
 # A sighting counts within this of an island's ferry dock, or of a sailing ferry.
-const DOCK_RADIUS := 150.0
-const FERRY_RADIUS := 110.0
+const DOCK_RADIUS := 450.0
+const FERRY_RADIUS := 330.0
 # Reputation: a sighting adds the species' draw (less as an island nears REP_CAP),
 # which halves every REP_HALF_LIFE_DAYS down to a floor of SEASON_FLOOR times the
 # best the island reached this season. The floor clears when the season turns.
@@ -41,13 +41,13 @@ const SEASON_FLOOR := 0.4
 const PHOTO_BONUS := 0.5
 const HISTORY := 12
 # Water deeper than this is open to a group (the sea floor is Terrain.SEA_FLOOR).
-const DEEP := -2.6
+const DEEP := -7.8
 # Radians per game minute a group can swing its heading.
 const TURN_RATE := 0.35
 # A bow-riding group joins boats under way at least this fast within this range,
 # rides for a few minutes, then won't again for a while.
-const BOW_SPEED := 5.0
-const BOW_RANGE := 90.0
+const BOW_SPEED := 15.0
+const BOW_RANGE := 270.0
 const BOW_RIDE := Vector2(3.0, 7.0)
 const BOW_REST := Vector2(10.0, 25.0)
 # Game minutes before a resident seal or sea lion group leaves that the next sets off.
@@ -65,12 +65,12 @@ class Species:
 	var daily_chance := 1.0             # visits per day (fractions roll)
 	var window := Vector2(6.5, 18.0)    # hours of the day a visit can start in
 	var behavior := Behavior.CIRCLE_ISLAND
-	var speed := 4.5                    # cruising, m per game minute
+	var speed := 13.5                   # cruising, m per game minute
 	var enabled := false
 	var keep := 0.0                     # how far boats keep off (0: they don't steer round it)
 	var depth := DEEP                   # shallowest water it swims in
-	var patch := Vector2(80.0, 200.0)   # FORAGE: how far off the island it feeds
-	var roam := 60.0                    # FORAGE: how far it wanders about there
+	var patch := Vector2(240.0, 600.0)   # FORAGE: how far off the island it feeds
+	var roam := 180.0                    # FORAGE: how far it wanders about there
 	var bow_rides := false
 	var haul := Vector3(1.0, 1.0, 0.0)  # HAUL_OUT: liking for beach, rock, dock
 	var resident := 0                   # HAUL_OUT: groups always lying up somewhere on the map
@@ -112,8 +112,8 @@ class Visit:
 	var pos := Vector3.ZERO             # centre of the group, at the surface
 	var heading := 0.0                  # yaw (+Z forward)
 	var speed := 0.0
-	var base_r := 60.0                  # circling radius around the target
-	var orbit_r := 60.0
+	var base_r := 180.0                  # circling radius around the target
+	var orbit_r := 180.0
 	var orbit_dir := 1.0
 	var seed := 0.0
 	var exit := Vector3.ZERO
@@ -182,19 +182,19 @@ func setup(s: Simulation) -> void:
 ## night), and there are always a few groups of them hauled out somewhere.
 static func table() -> Array[Species]:
 	var out: Array[Species] = [
-		Species.new("orca", "Orca", "Orcas", 3.0, Vector2i(2, 8), 3.0, 1.0, Behavior.CIRCLE_ISLAND, 4.5, true).with(
-			{"keep": 45.0}),
-		Species.new("humpback", "Humpback whale", "Humpback whales", 2.4, Vector2i(1, 3), 4.0, 0.5, Behavior.FORAGE, 3.0, true).with(
-			{"keep": 50.0, "patch": Vector2(90.0, 220.0), "roam": 80.0}),
-		Species.new("gray", "Gray whale", "Gray whales", 1.8, Vector2i(1, 2), 5.0, 0.4, Behavior.FORAGE, 2.5, true).with(
-			{"keep": 40.0, "depth": -2.0, "patch": Vector2(22.0, 50.0), "roam": 45.0}),
-		Species.new("sea_lion", "Sea lion", "Sea lions", 0.08, Vector2i(3, 12), 10.0, 0.7, Behavior.HAUL_OUT, 3.5, true).with(
+		Species.new("orca", "Orca", "Orcas", 3.0, Vector2i(2, 8), 3.0, 1.0, Behavior.CIRCLE_ISLAND, 13.5, true).with(
+			{"keep": 135.0}),
+		Species.new("humpback", "Humpback whale", "Humpback whales", 2.4, Vector2i(1, 3), 4.0, 0.5, Behavior.FORAGE, 9.0, true).with(
+			{"keep": 150.0, "patch": Vector2(270.0, 660.0), "roam": 240.0}),
+		Species.new("gray", "Gray whale", "Gray whales", 1.8, Vector2i(1, 2), 5.0, 0.4, Behavior.FORAGE, 7.5, true).with(
+			{"keep": 120.0, "depth": -6.0, "patch": Vector2(66.0, 150.0), "roam": 135.0}),
+		Species.new("sea_lion", "Sea lion", "Sea lions", 0.08, Vector2i(3, 12), 10.0, 0.7, Behavior.HAUL_OUT, 10.5, true).with(
 			{"window": Vector2(0.0, 24.0), "haul": Vector3(0.3, 1.0, 1.6), "resident": 2}),
-		Species.new("dalls_porpoise", "Dall's porpoise", "Dall's porpoises", 0.15, Vector2i(3, 9), 1.5, 0.8, Behavior.FORAGE, 7.0, true).with(
-			{"patch": Vector2(120.0, 260.0), "roam": 90.0, "bow_rides": true}),
-		Species.new("harbor_porpoise", "Harbor porpoise", "Harbor porpoises", 0.15, Vector2i(2, 6), 2.0, 0.9, Behavior.FORAGE, 4.0, true).with(
-			{"patch": Vector2(40.0, 120.0), "roam": 50.0}),
-		Species.new("harbor_seal", "Harbor seal", "Harbor seals", 0.03, Vector2i(5, 18), 10.0, 0.9, Behavior.HAUL_OUT, 2.5, true).with(
+		Species.new("dalls_porpoise", "Dall's porpoise", "Dall's porpoises", 0.15, Vector2i(3, 9), 1.5, 0.8, Behavior.FORAGE, 21.0, true).with(
+			{"patch": Vector2(360.0, 780.0), "roam": 270.0, "bow_rides": true}),
+		Species.new("harbor_porpoise", "Harbor porpoise", "Harbor porpoises", 0.15, Vector2i(2, 6), 2.0, 0.9, Behavior.FORAGE, 12.0, true).with(
+			{"patch": Vector2(120.0, 360.0), "roam": 150.0}),
+		Species.new("harbor_seal", "Harbor seal", "Harbor seals", 0.03, Vector2i(5, 18), 10.0, 0.9, Behavior.HAUL_OUT, 7.5, true).with(
 			{"window": Vector2(0.0, 24.0), "haul": Vector3(1.0, 1.4, 0.08), "resident": 3}),
 	]
 	return out
@@ -319,7 +319,7 @@ func start_visit(sp: Species, target: MapData.Island = null, settled := false) -
 	v.length = sp.hours * 60.0 * rng.randf_range(0.75, 1.3)
 	v.seed = rng.randf() * 100.0
 	v.members = _members(sp)
-	v.base_r = target.radius * 1.25 + 18.0
+	v.base_r = target.radius * 1.25 + 54.0
 	v.orbit_r = v.base_r
 	v.orbit_dir = 1.0 if rng.randf() < 0.5 else -1.0
 	var out := target.center.angle()
@@ -384,12 +384,12 @@ func _pick_site(sp: Species, near: MapData.Island) -> MapData.HaulOut:
 ## Where a foraging group feeds: open water of its liking off `isl`.
 func _patch(sp: Species, isl: MapData.Island) -> Vector3:
 	var c := Vector3(isl.center.x, 0.0, isl.center.y)
-	var bound := sim.map.half_size - 40.0
+	var bound := sim.map.half_size - 120.0
 	for attempt in 40:
 		var a := rng.randf() * TAU
 		var d := isl.radius + rng.randf_range(sp.patch.x, sp.patch.y) * (1.0 + attempt * 0.02)
 		var p := c + Vector3(cos(a), 0.0, sin(a)) * d
-		if absf(p.x) < bound and absf(p.z) < bound and _open(p, 14.0, sp.depth):
+		if absf(p.x) < bound and absf(p.z) < bound and _open(p, 42.0, sp.depth):
 			return p
 	return _offshore(isl, rng.randf() * TAU)
 
@@ -499,14 +499,14 @@ func _pod(n: int) -> Array[Member]:
 
 ## A deep-water spot a few hundred metres off `isl`, roughly in direction `ang`.
 func _offshore(isl: MapData.Island, ang: float) -> Vector3:
-	var bound := sim.map.half_size - 30.0
+	var bound := sim.map.half_size - 90.0
 	var c := Vector3(isl.center.x, 0.0, isl.center.y)
 	for attempt in 30:
 		var a := ang + rng.randf_range(-0.5, 0.5) * (1.0 + attempt * 0.1)
-		var p := c + Vector3(cos(a), 0.0, sin(a)) * rng.randf_range(isl.radius + 120.0, isl.radius + 300.0)
-		if absf(p.x) < bound and absf(p.z) < bound and _open(p, 18.0):
+		var p := c + Vector3(cos(a), 0.0, sin(a)) * rng.randf_range(isl.radius + 360.0, isl.radius + 900.0)
+		if absf(p.x) < bound and absf(p.z) < bound and _open(p, 54.0):
 			return p
-	return c + Vector3(cos(ang), 0.0, sin(ang)) * (isl.radius + 110.0)
+	return c + Vector3(cos(ang), 0.0, sin(ang)) * (isl.radius + 330.0)
 
 
 func _open(p: Vector3, r: float, depth := DEEP) -> bool:
@@ -531,17 +531,17 @@ func _tick(v: Visit, dt: float) -> void:
 			if v.site:
 				aim = v.site.water
 				var d := v.pos.distance_to(aim)
-				free = d < 45.0
-				cruise *= clampf(d / 30.0, 0.25, 1.0)
-				if d < 4.0:
+				free = d < 135.0
+				cruise *= clampf(d / 90.0, 0.25, 1.0)
+				if d < 12.0:
 					v.phase = Phase.HAULED
 			elif v.species.behavior == Behavior.FORAGE:
 				aim = v.patch
-				if v.pos.distance_to(aim) < 30.0:
+				if v.pos.distance_to(aim) < 90.0:
 					v.phase = Phase.FORAGE
 			else:
 				aim = _orbit_aim(v, dt) if dist < v.orbit_r * 2.0 else c
-				if dist < v.orbit_r + 25.0:
+				if dist < v.orbit_r + 75.0:
 					v.phase = Phase.CIRCLE
 		Phase.CIRCLE:
 			aim = _orbit_aim(v, dt)
@@ -565,14 +565,14 @@ func _tick(v: Visit, dt: float) -> void:
 	if v.escort:
 		var boat_speed := v.escort.speed if is_instance_valid(v.escort) else cruise
 		aim = _escort_aim(v, dt)
-		cruise = boat_speed + 1.0 if v.escort else cruise
+		cruise = boat_speed + 3.0 if v.escort else cruise
 		free = false
-	elif v.phase == Phase.DEPART and v.site and v.pos.distance_to(v.site.water) < 40.0:
+	elif v.phase == Phase.DEPART and v.site and v.pos.distance_to(v.site.water) < 120.0:
 		free = true
 		cruise *= 0.5
 	# Cruising speed drifts a little.
 	var drift := 1.0 if v.escort else 0.85 + 0.3 * sin(v.age * 0.07 + v.seed)
-	v.speed = move_toward(v.speed, cruise * drift, dt * (3.0 if v.escort else 0.5))
+	v.speed = move_toward(v.speed, cruise * drift, dt * (9.0 if v.escort else 1.5))
 	var want := atan2(aim.x - v.pos.x, aim.z - v.pos.z)
 	if not free:
 		want = _clear_heading(v.pos, want, v.species.depth)
@@ -590,12 +590,12 @@ func _tick(v: Visit, dt: float) -> void:
 ## or after a while anyway. A bow-riding species looks out for boats going by.
 func _forage_aim(v: Visit, dt: float) -> Vector3:
 	v.wander_t -= dt
-	if v.wander_t <= 0.0 or v.pos.distance_to(v.wander) < 12.0:
+	if v.wander_t <= 0.0 or v.pos.distance_to(v.wander) < 36.0:
 		v.wander_t = rng.randf_range(4.0, 12.0)
 		for attempt in 12:
 			var a := rng.randf() * TAU
 			var p := v.patch + Vector3(cos(a), 0.0, sin(a)) * rng.randf_range(0.0, v.species.roam)
-			if _open(p, 6.0, v.species.depth):
+			if _open(p, 18.0, v.species.depth):
 				v.wander = p
 				break
 	if v.species.bow_rides:
@@ -635,8 +635,8 @@ func _escort_aim(v: Visit, dt: float) -> Vector3:
 		v.escort_t = rng.randf_range(BOW_REST.x, BOW_REST.y)
 		return v.wander
 	v.escort_t -= dt
-	var bow := b.pos2() + b.heading2() * (b.half_seg + b.hull_radius + 2.5)
-	var ahead := bow + b.heading2() * 20.0
+	var bow := b.pos2() + b.heading2() * (b.half_seg + b.hull_radius + 7.5)
+	var ahead := bow + b.heading2() * 60.0
 	if v.escort_t <= 0.0 or b.speed < BOW_SPEED * 0.6 \
 			or sim.terrain.height_at(ahead.x, ahead.y) > v.species.depth:
 		var at := Vector3(bow.x, 0.0, bow.y)
@@ -650,7 +650,7 @@ func _drop_escort(v: Visit) -> void:
 		v.escort = null
 		v.escort_t = rng.randf_range(BOW_REST.x, BOW_REST.y)
 		# Feed on from wherever the ride left them.
-		if v.phase == Phase.FORAGE and _open(v.pos, 14.0, v.species.depth):
+		if v.phase == Phase.FORAGE and _open(v.pos, 42.0, v.species.depth):
 			v.patch = v.pos
 			v.wander = v.pos
 
@@ -660,14 +660,14 @@ func _drop_escort(v: Visit) -> void:
 func _orbit_aim(v: Visit, dt: float) -> Vector3:
 	var c := Vector3(v.target.center.x, 0.0, v.target.center.y)
 	var rel := Vector2(v.pos.x - c.x, v.pos.z - c.z)
-	var r := v.orbit_r + 22.0 * sin(v.age * 0.045 + v.seed) + 10.0 * sin(v.age * 0.11 + v.seed * 2.3)
-	r = maxf(r, v.target.radius + 12.0)
+	var r := v.orbit_r + 66.0 * sin(v.age * 0.045 + v.seed) + 30.0 * sin(v.age * 0.11 + v.seed * 2.3)
+	r = maxf(r, v.target.radius + 36.0)
 	var a := rel.angle() + v.orbit_dir * 0.5
 	var aim := c + Vector3(cos(a), 0.0, sin(a)) * r
 	if sim.terrain.height_at(aim.x, aim.z) > DEEP:
-		v.orbit_r += 12.0 * dt
+		v.orbit_r += 36.0 * dt
 	else:
-		v.orbit_r = move_toward(v.orbit_r, v.base_r, 2.0 * dt)
+		v.orbit_r = move_toward(v.orbit_r, v.base_r, 6.0 * dt)
 	return aim
 
 
@@ -706,8 +706,8 @@ func _clear_heading(p: Vector3, want: float, depth := DEEP) -> float:
 
 func _clear(p: Vector3, h: float, depth := DEEP) -> bool:
 	var d := Vector3(sin(h), 0.0, cos(h))
-	var bound := sim.map.half_size - 5.0
-	for step: float in [10.0, 22.0, 36.0]:
+	var bound := sim.map.half_size - 15.0
+	for step: float in [30.0, 66.0, 108.0]:
 		var q := p + d * step
 		if absf(q.x) > bound or absf(q.z) > bound or sim.terrain.height_at(q.x, q.z) > depth:
 			return false
