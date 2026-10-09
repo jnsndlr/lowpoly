@@ -89,8 +89,11 @@ static func _slots_in(queue: Array) -> int:
 ## Moves each car in `lane` up to its place in the queue.
 func _close_up(lane: Dictionary) -> void:
 	var k := 0
+	var ahead: Vehicle = null
 	for c: Vehicle in lane.queue:
 		c.drive(PackedVector3Array([queue_position(lane.v, k, c)]))
+		c.leader = ahead
+		ahead = c
 		k += c.slots
 
 
@@ -154,6 +157,7 @@ func _on_car_reached_lot(car: Vehicle, lane: Dictionary) -> void:
 	lane.enroute -= car.slots
 	var queue: Array = lane.queue
 	var ahead := _slots_in(queue)
+	car.leader = queue.back() if not queue.is_empty() else null
 	queue.append(car)
 	car.lane_v = lane.v
 	car.lot_arrival = sim.minutes

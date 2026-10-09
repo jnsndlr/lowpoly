@@ -44,6 +44,7 @@ var _slots: Array[Vehicle] = []
 var _boarding := 0
 var _unload_queue: Array[Vehicle] = []
 var _dispatch_timer := 0.0
+var _last_sent: Vehicle  # the last car sent on or off, which the next one follows
 var _state_time := 0.0
 var _bob_time := 0.0
 var _thrust := 0.0   # forward prop reverse thrust while braking, 0..1
@@ -234,6 +235,7 @@ func _begin_unloading() -> void:
 	state = State.UNLOADING
 	_state_time = 0.0
 	_dispatch_timer = 0.0
+	_last_sent = null
 	_unload_queue = aboard.duplicate()
 	var exit_sign := -1.0 if at_a else 1.0
 	_unload_queue.sort_custom(func(a: Vehicle, b: Vehicle): return a.position.z * exit_sign > b.position.z * exit_sign)
@@ -245,10 +247,23 @@ func _tick_unloading(delta: float) -> void:
 	_dispatch_timer -= delta
 	if not _unload_queue.is_empty():
 		if _dispatch_timer <= 0.0:
-			_dispatch_timer = DISPATCH_GAP
-			_drive_off(_unload_queue.pop_front())
+			var car: Vehicle = _unload_queue.pop_front()
+			_dispatch_timer = _gap_after(car)
+			_drive_off(car)
 	elif _dispatch_timer < -2.0:
 		_begin_loading()
+
+
+## Seconds before the next car may follow `car`: long enough for it to pull its own
+## length (and a gap) clear. Each car then follows the one before it.
+func _gap_after(car: Vehicle) -> float:
+	return maxf(DISPATCH_GAP, (car.length + Vehicle.FOLLOW_GAP) / car.speed)
+
+
+func _send(car: Vehicle, path: PackedVector3Array, on_arrive: Callable) -> void:
+	car.drive(path, on_arrive)
+	car.leader = _last_sent
+	_last_sent = car
 
 
 func _drive_off(car: Vehicle) -> void:
@@ -262,13 +277,14 @@ func _drive_off(car: Vehicle) -> void:
 	path.append(to_global(Vector3(x, Layout.DECK_Y, exit_z)))
 	car.reparent(sim.traffic)
 	path.append_array(here().exit_path(route.id))
-	car.drive(path, func(c: Vehicle): c.queue_free())
+	_send(car, path, func(c: Vehicle): c.queue_free())
 
 
 func _begin_loading() -> void:
 	state = State.LOADING
 	_state_time = 0.0
 	_dispatch_timer = 0.0
+	_last_sent = null
 	speed = 0.0
 
 
@@ -279,7 +295,7 @@ func _tick_loading(delta: float) -> void:
 	if _dispatch_timer <= 0.0 and _state_time < MAX_DWELL:
 		var car := term.take_car(route.id, func(c: Vehicle): return _free_slot(c) >= 0)
 		if car != null:
-			_dispatch_timer = DISPATCH_GAP
+			_dispatch_timer = _gap_after(car)
 			_drive_on(car, term)
 	# (full: nothing waiting would fit)
 	for lane in term.lanes[route.id]:
@@ -308,7 +324,7 @@ func _drive_on(car: Vehicle, term: Terminal) -> void:
 		# Into a wing lane: in through the apron's opening, then out round the fork's end.
 		path.append(to_global(Vector3(local.x, Layout.DECK_Y, signf(entry_z) * fc.turn_z)))
 	path.append(to_global(local))
-	car.drive(path, _on_boarded.bind(local))
+	_send(car, path, _on_boarded.bind(local))
 	sim.collect_fare(car)
 
 

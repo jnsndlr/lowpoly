@@ -11,6 +11,22 @@ const TALL := 2.2
 ## Spacing of queued and parked vehicles (ferry rows; terminal queues are a little
 ## roomier): a vehicle takes as many as its length needs.
 const SLOT := FerryClass.ROW_SPACING
+## Radius (game units) the corners of a driven path are rounded to; long rigs swing
+## wider. Each corner gives up at most half of either leg, so tight doglegs stay tight.
+const TURN_RADIUS := 6.0
+## Bumper-to-bumper gap (game units) a vehicle keeps behind its leader, and how far
+## to the side of its own line the leader's tail can be and still be in its way.
+const FOLLOW_GAP := 2.0
+const FOLLOW_WIDTH := 2.4
+## Held up this long (a knot of traffic waiting on itself), it edges on regardless
+## for a second.
+const MAX_HOLD := 4.0
+## Any other vehicle under way within this much of its heading (cos) it also keeps
+## behind: traffic on the same road, whoever sent it.
+const SAME_WAY := 0.7
+
+## Every vehicle under way (each looks for one ahead of it among these).
+static var _moving: Array[Vehicle] = []
 
 var path := PackedVector3Array()
 var speed := 24.0
@@ -29,6 +45,14 @@ var _hitch := Vector3.ZERO     # the fifth wheel, in the tractor's frame (model 
 var _trailer_axle := Vector3.ZERO  # the trailer's axle centre, in the parent's space
 var _trailer_reach := 0.0          # fifth wheel to that, in the parent's space
 var _on_arrive := Callable()
+## The vehicle it follows (the one sent off just before it, or the one ahead in its
+## queue): while that is on the move it holds back behind its tail.
+var leader: Vehicle
+var _g_front := Vector3.ZERO   # global bumper, tail and heading as of its last move
+var _g_tail := Vector3.ZERO
+var _g_fwd := Vector3.FORWARD
+var _held := 0.0               # seconds held up behind traffic
+var _creep := 0.0              # seconds left edging on regardless
 
 
 func setup(mesh: Mesh, truck: bool, model_key := "", model_scale := Models.LEGACY_SCALE) -> void:
@@ -114,16 +138,139 @@ func _drag_trailer() -> void:
 
 func _ready() -> void:
 	# Parked and queued cars are most of the traffic; only moving ones need a tick.
-	set_process(not path.is_empty())
+	_set_moving(not path.is_empty())
 
 
 func drive(points: PackedVector3Array, on_arrive := Callable(), start_delay := 0.0) -> void:
-	path = points
+	path = _round_corners(points)
 	_on_arrive = on_arrive
 	delay = start_delay
 	if trailer:
 		_reset_trailer()
-	set_process(not path.is_empty())
+	_set_moving(not path.is_empty())
+
+
+## The global point at the front of the bumper.
+func _front() -> Vector3:
+	var g := global_transform
+	return g * Vector3(0.0, 0.0, (center_offset + length * 0.5) / scale.z)
+
+
+## The global point at the tail (the trailer's, for a rig).
+func _tail() -> Vector3:
+	var p := get_parent() as Node3D
+	var t := p.global_transform if p else Transform3D()
+	if trailer:
+		var td: Dictionary = VehicleData.VARIANTS[trailer_model]
+		return t * trailer_xform() * Vector3(0.0, 0.0, -td.size.z * 0.5)
+	return t * transform * Vector3(0.0, 0.0, (center_offset - length * 0.5) / scale.z)
+
+
+## Caches where its bumper, tail and heading lie (globally) for others to follow.
+func _cache_ends() -> void:
+	_g_front = _front()
+	_g_tail = _tail()
+	var f := global_transform.basis.z
+	f.y = 0.0
+	_g_fwd = f.normalized() if f.length_squared() > 1e-8 else Vector3.FORWARD
+
+
+## How far its bumper can go before closing within FOLLOW_GAP of `o`'s tail (INF when
+## `o` is off its line or not ahead of it). Which is ahead goes by their middles, so of
+## two that overlap (spawned together, say) the one behind waits.
+func _room_to(o: Vehicle) -> float:
+	var right := _g_fwd.cross(Vector3.UP)
+	var rel := o._g_tail - _g_front
+	var mid := (o._g_front + o._g_tail - _g_front - _g_tail) * 0.5
+	if minf(absf(rel.dot(right)), absf(mid.dot(right))) > FOLLOW_WIDTH:
+		return INF
+	# Ahead of it, and (side by side at a merge, each might look ahead of the other)
+	# not also behind it as `o` sees it, or else the older one goes first.
+	if mid.dot(_g_fwd) <= 0.0:
+		return INF
+	if mid.dot(o._g_fwd) <= 0.0 and o.get_instance_id() > get_instance_id():
+		return INF
+	return maxf(0.0, rel.dot(_g_fwd) - FOLLOW_GAP)
+
+
+## How far it can go before closing on the vehicle in front: its leader (whichever
+## way that is heading) or anything else under way heading its way.
+func _room_ahead() -> float:
+	var room := INF
+	if leader != null:
+		if is_instance_valid(leader) and leader.is_processing() and leader.is_inside_tree():
+			room = _room_to(leader)
+		else:
+			leader = null
+	var reach := room if room < INF else 60.0
+	for o in _moving:
+		if o == self or o == leader or o._g_fwd.dot(_g_fwd) < SAME_WAY:
+			continue
+		var d := o._g_tail - _g_front
+		if d.x * d.x + d.z * d.z > reach * reach + 900.0:
+			continue
+		room = minf(room, _room_to(o))
+	return room
+
+
+func _set_moving(on: bool) -> void:
+	set_process(on)
+	_list(on and is_inside_tree())
+
+
+func _list(on: bool) -> void:
+	var i := _moving.find(self)
+	if on and i < 0:
+		_cache_ends()
+		_moving.append(self)
+	elif not on and i >= 0:
+		_moving.remove_at(i)
+
+
+# (Reparenting takes it out of the tree and back.)
+func _enter_tree() -> void:
+	_list(not path.is_empty())
+
+
+func _exit_tree() -> void:
+	_list(false)
+
+
+## The waypoints with each corner (the start included) eased into a curve, so the
+## vehicle steers round it instead of pivoting on the spot. The end point is kept.
+func _round_corners(points: PackedVector3Array) -> PackedVector3Array:
+	var pts := PackedVector3Array([position])
+	for p in points:
+		if p.distance_squared_to(pts[pts.size() - 1]) > 1e-6:
+			pts.append(p)
+	var out := PackedVector3Array()
+	var radius := maxf(TURN_RADIUS, length * 0.5)
+	for i in range(1, pts.size()):
+		var p := pts[i]
+		if i == pts.size() - 1:
+			out.append(p)
+			break
+		var a := pts[i - 1] - p
+		var b := pts[i + 1] - p
+		var la := a.length()
+		var lb := b.length()
+		a /= la
+		b /= lb
+		var turn := PI - a.angle_to(b)
+		var r := minf(radius, minf(la, lb) * 0.5)
+		if turn < 0.05 or r < 0.1:
+			out.append(p)
+			continue
+		# A quadratic Bezier from one leg to the other with the corner as its control.
+		var p0 := p + a * r
+		var p2 := p + b * r
+		var n := maxi(2, ceili(turn / (PI / 16.0)))
+		for k in range(n + 1):
+			var t := float(k) / n
+			out.append(p0.lerp(p, t).lerp(p.lerp(p2, t), t))
+	if out.is_empty() and not points.is_empty():
+		out.append(points[points.size() - 1])  # (already there: still arrive)
+	return out
 
 
 func _process(delta: float) -> void:
@@ -131,6 +278,15 @@ func _process(delta: float) -> void:
 		delay -= delta
 		return
 	var step := speed * delta
+	if _creep > 0.0:
+		_creep -= delta
+	else:
+		var room := _room_ahead()
+		_held = _held + delta if room < step * 0.25 else 0.0
+		if _held > MAX_HOLD:
+			_held = 0.0
+			_creep = 1.0
+		step = minf(step, room)
 	while step > 0.0 and not path.is_empty():
 		var target := path[0]
 		var to := target - position
@@ -140,7 +296,7 @@ func _process(delta: float) -> void:
 			step -= dist
 			path.remove_at(0)
 			if path.is_empty():
-				set_process(false)  # before the callback, which may drive() again
+				_set_moving(false)  # before the callback, which may drive() again
 				var cb := _on_arrive
 				_on_arrive = Callable()
 				if cb.is_valid():
@@ -154,3 +310,4 @@ func _process(delta: float) -> void:
 				rotation.y = lerp_angle(rotation.y, atan2(dir.x, dir.z), minf(1.0, delta * 12.0))
 	if trailer:
 		_drag_trailer()
+	_cache_ends()
