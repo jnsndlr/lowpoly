@@ -784,6 +784,19 @@ static func seagull() -> ArrayMesh:
 		return mb.commit())
 
 
+## A bald eagle at life size, 2.1 m across (+Z forward, wings out along X), modelled
+## in Blender (EAGLE_GLB, built by art/eagle_mid.py) to eagle.gdshader's conventions:
+## wing vertices alpha 0.5 carrying their folded pose in UV / UV2.x, legs 0.93, tail
+## 0.97. Null if the model is missing (then there are no eagles).
+const EAGLE_GLB := "res://assets/models/eagle_mid.glb"
+
+
+static func eagle() -> ArrayMesh:
+	if not ResourceLoader.exists(EAGLE_GLB):
+		return null
+	return _cached("eagle_mid", func(): return _gltf_mesh(EAGLE_GLB, "eagle"))
+
+
 ## Orcas use the mid-poly orca modelled in Blender (MID_ORCA_GLB, built by
 ## art/orca_mid.py into art/orca_mid.blend) to the same rules as the one below: one
 ## unit long, fin base at cetacean.gdshader's FIN_BASE, fin vertex alpha = 1 - t/2 for

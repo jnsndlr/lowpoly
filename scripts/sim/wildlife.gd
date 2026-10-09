@@ -10,7 +10,12 @@ extends Node3D
 ## breaking off to ride a passing boat's bow); seals and sea lions come to one of
 ## the map's haul-outs (MapData.HaulOut) and lie up there for hours. Moving the
 ## group along is done here; drawing the animals is up to the renderers
-## (Cetaceans, Pinnipeds), which also take them in and out of the water.
+## (Cetaceans, Pinnipeds), which also take them in and out of the water. Bald
+## eagles (PERCH) are the exception: a lone bird or a pair holding a territory round
+## an island, flown entirely by Eagles, which keeps the visit's position on them.
+##
+## Only the rarer visitors (`callout`: the whales) are announced in the HUD; the
+## commoner ones still count for sightings, photos and the draw.
 ##
 ## A visit only becomes a *sighting* for an island if people see it in daylight:
 ## the group passes within DOCK_RADIUS of that island's ferry dock, or within
@@ -24,7 +29,7 @@ signal sighted(v: Visit, isl: MapData.Island, seen_from: String)
 signal photographed(v: Visit)
 signal visit_ended(v: Visit)
 
-enum Behavior { CIRCLE_ISLAND, HAUL_OUT, FORAGE, MIGRATE }
+enum Behavior { CIRCLE_ISLAND, HAUL_OUT, FORAGE, MIGRATE, PERCH }
 enum Phase { ARRIVE, CIRCLE, FORAGE, HAULED, DEPART, GONE }
 enum Role { BULL, COW, JUVENILE, CALF, ADULT, PUP }
 
@@ -73,7 +78,8 @@ class Species:
 	var roam := 180.0                    # FORAGE: how far it wanders about there
 	var bow_rides := false
 	var haul := Vector3(1.0, 1.0, 0.0)  # HAUL_OUT: liking for beach, rock, dock
-	var resident := 0                   # HAUL_OUT: groups always lying up somewhere on the map
+	var resident := 0                   # HAUL_OUT, PERCH: groups always about somewhere on the map
+	var callout := false                # announced in the HUD when reported and sighted
 
 	func _init(i: String, n: String, p: String, d: float, g: Vector2i, h: float, c: float,
 			b: Behavior, s: float, on := false) -> void:
@@ -133,6 +139,8 @@ class Visit:
 
 	func title() -> String:
 		var n := members.size()
+		if species.behavior == Behavior.PERCH and n == 2:
+			return "%s pair" % species.name
 		return "%s ×%d" % [species.plural, n] if n > 1 else species.name
 
 	## How far boats keep off the group (0: they don't steer round it). Not while
@@ -150,6 +158,7 @@ class Reputation:
 	var sightings := 0                  # this season
 	var last_day := -1
 	var last_species := ""
+	var callout_day := -100             # last day one of the rarer visitors was seen
 
 
 var sim: Simulation
@@ -183,11 +192,11 @@ func setup(s: Simulation) -> void:
 static func table() -> Array[Species]:
 	var out: Array[Species] = [
 		Species.new("orca", "Orca", "Orcas", 3.0, Vector2i(2, 8), 3.0, 1.0, Behavior.CIRCLE_ISLAND, 13.5, true).with(
-			{"keep": 135.0}),
+			{"keep": 135.0, "callout": true}),
 		Species.new("humpback", "Humpback whale", "Humpback whales", 2.4, Vector2i(1, 3), 4.0, 0.5, Behavior.FORAGE, 9.0, true).with(
-			{"keep": 150.0, "patch": Vector2(270.0, 660.0), "roam": 240.0}),
+			{"keep": 150.0, "patch": Vector2(270.0, 660.0), "roam": 240.0, "callout": true}),
 		Species.new("gray", "Gray whale", "Gray whales", 1.8, Vector2i(1, 2), 5.0, 0.4, Behavior.FORAGE, 7.5, true).with(
-			{"keep": 120.0, "depth": -6.0, "patch": Vector2(66.0, 150.0), "roam": 135.0}),
+			{"keep": 120.0, "depth": -6.0, "patch": Vector2(66.0, 150.0), "roam": 135.0, "callout": true}),
 		Species.new("sea_lion", "Sea lion", "Sea lions", 0.08, Vector2i(3, 12), 10.0, 0.7, Behavior.HAUL_OUT, 10.5, true).with(
 			{"window": Vector2(0.0, 24.0), "haul": Vector3(0.3, 1.0, 1.6), "resident": 2}),
 		Species.new("dalls_porpoise", "Dall's porpoise", "Dall's porpoises", 0.15, Vector2i(3, 9), 1.5, 0.8, Behavior.FORAGE, 21.0, true).with(
@@ -196,6 +205,9 @@ static func table() -> Array[Species]:
 			{"patch": Vector2(120.0, 360.0), "roam": 150.0}),
 		Species.new("harbor_seal", "Harbor seal", "Harbor seals", 0.03, Vector2i(5, 18), 10.0, 0.9, Behavior.HAUL_OUT, 7.5, true).with(
 			{"window": Vector2(0.0, 24.0), "haul": Vector3(1.0, 1.4, 0.08), "resident": 3}),
+		# Lone birds and mated pairs, each holding an island for a day and a half or so.
+		Species.new("bald_eagle", "Bald eagle", "Bald eagles", 0.05, Vector2i(1, 2), 30.0, 0.0, Behavior.PERCH, 0.0, true).with(
+			{"window": Vector2(0.0, 24.0), "resident": 4}),
 	]
 	return out
 
@@ -279,7 +291,7 @@ func _keep_residents(settled: bool) -> void:
 				n += 1
 		for i in sp.resident - n:
 			var v := start_visit(sp, null, settled)
-			if v == null or v.site == null:
+			if v == null or (sp.behavior == Behavior.HAUL_OUT and v.site == null):
 				if v:
 					_end(v)
 				break
@@ -306,6 +318,8 @@ func start_visit(sp: Species, target: MapData.Island = null, settled := false) -
 		site = _pick_site(sp, target)
 		if site:
 			target = sim.map.islands[site.near]
+	if target == null and sp.behavior == Behavior.PERCH:
+		target = _pick_territory(sp)
 	if target == null:
 		target = _pick_target()
 	if target == null:
@@ -342,6 +356,9 @@ func start_visit(sp: Species, target: MapData.Island = null, settled := false) -
 		v.phase = Phase.HAULED
 		v.pos = site.water
 		v.age = rng.randf_range(0.0, 0.7) * v.length
+	elif settled and sp.behavior == Behavior.PERCH:
+		v.age = rng.randf_range(0.0, 0.7) * v.length
+		v.pos = Vector3(target.center.x, 0.0, target.center.y)
 	v.escort_t = rng.randf_range(0.0, BOW_REST.x)
 	v.marker = Node3D.new()
 	v.marker.name = "%s visit" % sp.name
@@ -392,6 +409,19 @@ func _patch(sp: Species, isl: MapData.Island) -> Vector3:
 		if absf(p.x) < bound and absf(p.z) < bound and _open(p, 42.0, sp.depth):
 			return p
 	return _offshore(isl, rng.randf() * TAU)
+
+
+## An island for an eagle territory: one no other eagle holds if there is one.
+func _pick_territory(sp: Species) -> MapData.Island:
+	var held := {}
+	for v in visits:
+		if v.active() and v.species == sp and v.length - v.age > RESIDENT_HANDOVER:
+			held[v.target.id] = true
+	for attempt in 8:
+		var isl := _pick_target()
+		if isl and not held.has(isl.id):
+			return isl
+	return null
 
 
 func _pick_target() -> MapData.Island:
@@ -460,6 +490,15 @@ func _members(sp: Species) -> Array[Member]:
 				m.length = rng.randf_range(1.8, 2.2)
 				out.append(m)
 			return out
+		"bald_eagle":
+			# Pairs are adults; a loner is often a young bird, still brown-headed.
+			for i in n:
+				var m := Member.new()
+				m.length = rng.randf_range(0.8, 0.95)
+				if n == 1 and rng.randf() < 0.4:
+					m.role = Role.JUVENILE
+				out.append(m)
+			return out
 		"harbor_porpoise":
 			for i in n:
 				var m := Member.new()
@@ -520,6 +559,14 @@ func _open(p: Vector3, r: float, depth := DEEP) -> bool:
 
 
 func _tick(v: Visit, dt: float) -> void:
+	if v.species.behavior == Behavior.PERCH:
+		# Eagles fly themselves (Eagles); time to go once it's nearly up.
+		v.age += dt
+		if v.age > v.length - 30.0:
+			v.phase = Phase.DEPART
+		if v.age >= v.length:
+			_end(v)
+		return
 	v.age += dt
 	var c := Vector3(v.target.center.x, 0.0, v.target.center.y)
 	var dist := Vector2(v.pos.x - c.x, v.pos.z - c.z).length()
@@ -744,8 +791,12 @@ func _credit(v: Visit, isl: MapData.Island, seen_from: String) -> void:
 	_spike(isl, v.species.draw * (1.0 + (PHOTO_BONUS if v.photographed else 0.0)))
 	var r: Reputation = _rep[isl.id]
 	r.sightings += 1
+	# A whale seen lately isn't pushed off the island's line by the day's eagles.
+	if v.species.callout or sim.day - r.callout_day > 2:
+		r.last_species = v.species.name
+	if v.species.callout:
+		r.callout_day = sim.day
 	r.last_day = sim.day
-	r.last_species = v.species.name
 	sighted.emit(v, isl, seen_from)
 
 

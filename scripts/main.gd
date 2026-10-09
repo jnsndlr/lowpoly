@@ -26,6 +26,7 @@ var water_mat: ShaderMaterial
 var route_overlay: MeshInstance3D
 var cetaceans: Cetaceans
 var pinnipeds: Pinnipeds
+var eagles: Eagles
 var cam_attr: CameraAttributesPractical
 var _args := {}
 
@@ -89,6 +90,9 @@ func _ready() -> void:
 	var gulls := Seagulls.new()
 	add_child(gulls)
 	gulls.setup(sim, day_cycle, builder.gull_perches)
+	eagles = Eagles.new()
+	add_child(eagles)
+	eagles.setup(sim.wildlife, day_cycle, builder.eagle_perches, gulls)
 	cetaceans = Cetaceans.new()
 	add_child(cetaceans)
 	cetaceans.setup(sim.wildlife, terrain)
@@ -105,7 +109,9 @@ func _ready() -> void:
 ## The wildlife group whose animal is nearest `screen` (and showing), if any.
 func pick_wildlife(screen: Vector2, cam: Camera3D) -> Wildlife.Visit:
 	var v := cetaceans.pick(screen, cam)
-	return v if v else pinnipeds.pick(screen, cam)
+	if v == null:
+		v = pinnipeds.pick(screen, cam)
+	return v if v else eagles.pick(screen, cam)
 
 
 func regenerate() -> void:

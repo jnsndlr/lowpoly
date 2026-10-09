@@ -173,6 +173,9 @@ var day_cycle: DayCycle
 var rng := RandomNumberGenerator.new()
 var _perches: Array[Perch] = []
 var _gulls: Array[Gull] = []
+## Where eagles are sitting on (or coming in to) the gulls' perches: no gull takes a
+## seat within Eagles.GULL_CLEAR of one.
+var eagle_seats: Array[Vector3] = []
 var _wind_yaw := 0.0
 var _bound := 900.0
 var _mm: MultiMesh
@@ -769,9 +772,23 @@ func _find_seat(p: Perch) -> Variant:
 			if o.seat.distance_to(s) < gap:
 				ok = false
 				break
+		if ok and not eagle_seats.is_empty() and p.kind != Kind.WATER:
+			var w := p.to_world(s)
+			for e in eagle_seats:
+				if e.distance_to(w) < Eagles.GULL_CLEAR:
+					ok = false
+					break
 		if ok:
 			return s
 	return null
+
+
+## An eagle coming in (or a big splash): gulls sitting within `r` of `at` get up,
+## not quite all at once.
+func flush(at: Vector3, r: float) -> void:
+	for g in _gulls:
+		if g.state == State.PERCHED and g.pos.distance_squared_to(at) < r * r and g.timer > 0.6:
+			g.timer = rng.randf_range(0.0, 0.6)
 
 
 func _release(g: Gull) -> void:

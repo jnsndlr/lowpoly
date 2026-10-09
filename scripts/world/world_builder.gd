@@ -22,6 +22,9 @@ const LIFT_LANTERN := 3.9
 const DOLPHIN_LANTERN := 3.9
 # Side (m) of the tiles that trees, rocks and houses are batched in for culling.
 const MULTIMESH_TILE := 192.0
+# Eagle trees: within this of the water, the tallest one in each cell this size.
+const EAGLE_SHORE := 45.0
+const EAGLE_CELL := 27.0
 
 var map: MapData
 var terrain: Terrain
@@ -31,8 +34,11 @@ var route_overlay: MeshInstance3D
 var water_material: ShaderMaterial
 var night_lights: MeshInstance3D
 var glows := GlowBuilder.new()
+
 ## Places seagulls can sit (where the feet go, in world space).
 var gull_perches: Array[Seagulls.Perch] = []
+## Eagles' lookouts: shoreline treetops, terminal dolphins, the tops of ramp lifts.
+var eagle_perches: Array[Eagles.Perch] = []
 var _blocked := {}
 
 
@@ -367,6 +373,8 @@ func _build_slip(mb: MeshBuilder, v: float) -> void:
 	for side: float in [-1.0, 1.0]:
 		_perch(mb.xform * Vector3(v + side * 1.35, 16.95, pe - 3.0), mb.xform * Vector3(v + side * 8.7, 16.95, pe - 3.0),
 			0.0, Seagulls.Kind.LIFT)
+		# An eagle on top of each tower, over the post.
+		eagle_perches.append(Eagles.Perch.new(mb.xform * Vector3(v + side * 8.7, 16.95, pe - 3.0), Eagles.Kind.LIFT))
 	for side: float in [-1.0, 1.0]:
 		var ww: Array = Layout.WING_WALL
 		for k in ww.size() - 1:
@@ -375,7 +383,9 @@ func _build_slip(mb: MeshBuilder, v: float) -> void:
 			_wing_wall(mb, Vector2(w0.x, v + side * w0.y), Vector2(w1.x, v + side * w1.y), side)
 		var mark := GlowBuilder.GREEN if side < 0 else GlowBuilder.RED
 		var inner := Layout.DOLPHIN_INNER
-		_dolphin(mb, Vector3(v + side * inner.y, 0, inner.x), inner.z, 6)
+		var inner_cap := _dolphin(mb, Vector3(v + side * inner.y, 0, inner.x), inner.z, 6)
+		# (The outer ones' lanterns leave no room for an eagle.)
+		eagle_perches.append(Eagles.Perch.new(mb.xform * inner_cap, Eagles.Kind.DOLPHIN))
 		# The outer dolphins carry the slip's lanterns.
 		var outer := Layout.DOLPHIN_OUTER
 		var cap := _dolphin(mb, Vector3(v + side * outer.y, 0, outer.x), outer.z, 8)
@@ -438,6 +448,40 @@ func _dolphin(mb: MeshBuilder, c: Vector3, r: float, piles: int) -> Vector3:
 		var seat := mb.xform * (cap + Vector3(cos(ang), 0, sin(ang)) * r * 0.55)
 		_perch(seat, seat, 0.0, Seagulls.Kind.DOLPHIN)
 	return cap
+
+
+## Eagle lookouts: the tallest conifer in each EAGLE_CELL along the shore, its top
+## (the variant's highest point) facing out over the nearest water.
+func _eagle_trees(pines: Array[Transform3D]) -> void:
+	var variants := Models.tree_variants(false)
+	var tops: Array[Vector3] = []
+	for vr: Array in variants:
+		var mesh: Mesh = vr[0]
+		var top := Vector3.ZERO
+		for si in mesh.get_surface_count():
+			for p: Vector3 in mesh.surface_get_arrays(si)[Mesh.ARRAY_VERTEX]:
+				if p.y > top.y:
+					top = p
+		tops.append(top)
+	var best := {}
+	for xf in pines:
+		var o := xf.origin
+		var lowest := INF
+		var away := 0.0
+		for i in 8:
+			var a := TAU * i / 8.0
+			var h := terrain.height_at(o.x + cos(a) * EAGLE_SHORE, o.z + sin(a) * EAGLE_SHORE)
+			if h < lowest:
+				lowest = h
+				away = a
+		if lowest > -1.0:
+			continue
+		var top := xf * tops[Models.tree_variant(o, variants.size())]
+		var key := Vector2i(floori(o.x / EAGLE_CELL), floori(o.z / EAGLE_CELL))
+		if not best.has(key) or top.y > (best[key][0] as Vector3).y:
+			best[key] = [top, atan2(cos(away), sin(away))]
+	for key: Vector2i in best:
+		eagle_perches.append(Eagles.Perch.new(best[key][0], Eagles.Kind.TREE, best[key][1]))
 
 
 # --- Roads & towns ------------------------------------------------------------------
@@ -697,6 +741,7 @@ func _build_vegetation() -> void:
 				var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s * rng.randf_range(0.8, 1.4), s, s) * Models.LEGACY_SCALE)
 				rocks.append(Transform3D(basis, Vector3(px, h, pz)))
 		z += step
+	_eagle_trees(pines)
 	_forest(Models.tree_variants(false), pines, pine_cols, "Pines")
 	_forest(Models.tree_variants(true), rounds, round_cols, "RoundTrees")
 	var no_colors: Array[Color] = []

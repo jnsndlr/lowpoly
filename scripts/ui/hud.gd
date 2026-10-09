@@ -757,7 +757,12 @@ func follow_visit(v: Wildlife.Visit) -> void:
 
 
 func _group_word(v: Wildlife.Visit) -> String:
-	return "group" if v.species.behavior == Wildlife.Behavior.HAUL_OUT else "pod"
+	match v.species.behavior:
+		Wildlife.Behavior.HAUL_OUT:
+			return "group"
+		Wildlife.Behavior.PERCH:
+			return "pair" if v.members.size() == 2 else "bird"
+	return "pod"
 
 
 func _draw_text(isl: MapData.Island) -> String:
@@ -775,7 +780,13 @@ func _appeal_text(a: float) -> String:
 	return "Rare"
 
 
+## Only the rarer visitors (Species.callout) are announced; the rest just show up in
+## the sightings list.
 func _on_visit_started(v: Wildlife.Visit) -> void:
+	if _wild_panel.visible:
+		_rebuild_wildlife()
+	if not v.species.callout:
+		return
 	var what := "A %s of %d is heading for %s." % [_group_word(v), v.members.size(), v.target.name]
 	if v.members.size() == 1:
 		what = "One is heading for %s." % v.target.name
@@ -784,11 +795,11 @@ func _on_visit_started(v: Wildlife.Visit) -> void:
 		what = "A %s of %d is coming in to haul out on %s at %s." % [_group_word(v), v.members.size(), where, v.target.name]
 	show_toast("%s REPORTED" % v.species.plural.to_upper(),
 		what + " Seen from a dock or a ferry in daylight, it draws tourists. Click one for a photo bonus.", 8.0)
-	if _wild_panel.visible:
-		_rebuild_wildlife()
 
 
 func _on_sighted(v: Wildlife.Visit, isl: MapData.Island, seen_from: String) -> void:
+	if not v.species.callout:
+		return
 	show_toast("%s SIGHTING · %s" % [v.species.name.to_upper(), isl.name.to_upper()],
 		"Spotted from %s. Wildlife draw at %s is now +%.1f." % [seen_from, isl.name, wildlife.reputation(isl)])
 
