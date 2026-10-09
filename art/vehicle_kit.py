@@ -8,7 +8,9 @@
 # window; flat sides carrying the window decals), wheels, and details laid on as thin
 # decals over the surfaces: lamps, grilles, seams, trim. A three-box body (sedan) has a
 # trunk deck behind the rear window; a two-box body (`twobox`: SUV, minivan, van) runs
-# its roof back to a steep tailgate window just ahead of the rear fascia.
+# its roof back to a steep tailgate window just ahead of the rear fascia. A pickup
+# (`bed`) is a three-box whose cab ends in a near-upright back, and whose lower body
+# behind it is a U section (rails, inner walls, floor) open on top: the load bed.
 #
 # Parts per variant, named <model>_<variant>_<role>: `body` (painted per car in the
 # game), `accent` (a two-tone band, painted a darker shade of the body's paint), `head`
@@ -137,6 +139,11 @@ class Body:
         else:
             s.zr = s.zw - p["roof"]; s.zd = s.zr - p["rw"]
         s.R = p["r"] + p["arch"]
+        if p["bed"]:
+            # The bed's front bulkhead just behind the cab, the tailgate's inside face.
+            s.zbed = s.zd - p["bed_gap"]; s.ztg = s.zR + p["tg"]
+            s.floor = p["bed_floor"] or p["r"] + s.R + 0.03
+            assert s.floor < p["belt"] - 0.15, "no bed left"
         s.stations = s._stations()
 
     # Profiles along the car.
@@ -154,7 +161,7 @@ class Body:
             return p["nose_top"] + (p["hood_front"] - p["nose_top"]) * (1 - (1 - t) ** 2)
         if z >= s.zc:
             return lerp(s.belt(s.zc), p["hood_front"], (z - s.zc) / (zn - s.zc))
-        if z >= s.zd:
+        if z >= s.zd or p["bed"]:
             return s.belt(z)
         if z >= zt:
             return lerp(deck_end, s.belt(s.zd), (z - zt) / (s.zd - zt))
@@ -187,6 +194,9 @@ class Body:
         if flare and p["flare"]:
             for za in (s.zfa, s.zra):
                 w += p["flare"] * max(0.0, 1 - ((z - za) / (s.R + 0.3)) ** 2)
+        if flare and p["rflare"]:
+            # A dually's wide rear fenders over the twin wheels.
+            w += p["rflare"] * max(0.0, 1 - ((z - s.zra) / (s.R + 0.14)) ** 2) ** 0.5
         return w
 
     def hwg(s):
@@ -200,8 +210,17 @@ class Body:
         return [V(w - tuck, yb, z), V(w, s.crease(z), z), V(w - p["sh_in"], yt, z),
                 V((w - p["sh_in"]) * 0.5, yt + p["crown"] * 0.75, z), V(0, yt + p["crown"], z)]
 
-    def ring(s, z):
+    def ring(s, z, bed=False):
         r = s.sec(z)
+        if s.p["bed"]:
+            # Seven points a side (the shoulder repeated) to match the bed's sections.
+            if bed:
+                p = s.p
+                # (the walls stand straight inside any flares)
+                sh = r[2]; xi = min(sh.x, s.hw(z, flare=False) - p["sh_in"]) - p["bed_wall"]
+                r = r[:3] + [V(xi, sh.y, z), V(xi, s.floor, z), V(xi * 0.5, s.floor, z), V(0, s.floor, z)]
+            else:
+                r = r[:3] + [r[2], r[2]] + r[3:]
         return r + [mx(q) for q in r[-2::-1]]
 
     def _stations(s):
@@ -213,10 +232,16 @@ class Body:
             zs += [za + s.R * math.sin(math.radians(a)) for a in (-90, -60, -30, 0, 30, 60, 90)]
             zs += [za - s.R - 0.04, za + s.R + 0.04]
         zs += [s.zc, s.zd, (s.zc + s.zd) / 2, (s.zF - p["nose_set"] + s.zc) / 2]
+        if p["rflare"]:
+            zs += [s.zra + s.R + 0.14, s.zra - s.R - 0.14]
         zs = sorted(set(round(z, 4) for z in zs if s.zR <= z <= s.zF), reverse=True)
         out = [zs[0]]
         for z in zs[1:]:
             if out[-1] - z > 0.02 or z == zs[-1]: out.append(z)
+        if p["bed"]:
+            # The bed's ends exactly (the sections step there).
+            out = [z for z in out if min(abs(z - s.zbed), abs(z - s.ztg)) > 0.02] + [s.zbed, s.ztg]
+            out.sort(reverse=True)
         return out
 
     # Surface points for decals.
@@ -286,8 +311,21 @@ def build(p):
     zF, zR = s.zF, s.zR
 
     # Lower body, its fascias as end caps.
-    rings = [s.ring(z) for z in s.stations]
-    loft(rings, "body", closed_ring=False, caps=False)
+    if p["bed"]:
+        # Full sections over the cab, U sections along the bed: two at each end of the
+        # bed, so the bulkhead and the tailgate's inside are flat steps.
+        kinds = []
+        for z in s.stations:
+            if z == s.zbed: kinds += [(z, False), (z, True)]
+            elif z == s.ztg: kinds += [(z, True), (z, False)]
+            else: kinds.append((z, s.ztg < z < s.zbed))
+        rings = [s.ring(z, b) for z, b in kinds]
+        # (the inside of the bed in black bedliner)
+        key = lambda i, j: "trim" if (kinds[i][1] or kinds[i + 1][1]) and 3 <= j <= 8 else "body"
+        loft(rings, key, closed_ring=False, caps=False)
+    else:
+        rings = [s.ring(z) for z in s.stations]
+        loft(rings, "body", closed_ring=False, caps=False)
     for r, out in ((rings[0], V(0, 0, 1)), (rings[-1], V(0, 0, -1))):
         poly(r, "body", out)
     # Underside and wheel wells.
@@ -296,10 +334,14 @@ def build(p):
     for za in (s.zfa, s.zra):
         # (inside the tyres' inner faces, so it can't swallow the rims)
         wx = s.hw(za) - p["tuck"] - 0.025 - p["tw"] - 0.01
+        if p["dually"] and za == s.zra: wx -= p["tw"] + 0.03
+        if p["lift"]: wx -= 0.2  # (room for the coilovers on show)
         box(V(0, (p["r"] + s.R + p["sill"]) / 2, za), (2 * wx, s.R + p["r"] - p["sill"], 2 * s.R + 0.02), "black")
         # Arch liners over the tyres, out to the body side (no seeing into the hollow body).
-        xo = s.hw(za, flare=False) + p["flare"] - 0.004
+        xo = s.hw(za) - 0.004
         arc = [V(0, p["r"] + s.R * math.cos(a), za + s.R * math.sin(a)) for a in [math.radians(-90 + 15 * i) for i in range(13)]]
+        # (not hanging below a lifted body)
+        arc = [q for q in arc if q.y >= p["sill"] - 0.02]
         for a, b in zip(arc, arc[1:]):
             m = (a + b) * 0.5
             poly([a + V(wx, 0, 0), b + V(wx, 0, 0), b + V(xo, 0, 0), a + V(xo, 0, 0)], "black", V(0, p["r"], za) - m, both=True)
@@ -309,11 +351,15 @@ def build(p):
     tail_end(s)
     if p["twobox"]:
         tailgate(s)
+    if p["bed"]:
+        bed_tailgate(s)
     side_details(s)
     roof_kit(s)
     for za in (s.zfa, s.zra):
         for sx in (1, -1):
             wheel(s, za, sx)
+            if p["dually"] and za == s.zra:
+                wheel(s, za, sx, p["tw"] + 0.03)
     extras(s)
     return s
 
@@ -352,7 +398,7 @@ def greenhouse(s):
     def key(i, j):
         if j in (0, 5): return p["upper"]
         kind = tops[i][3]
-        if kind == "rw" and p["twobox"]: return p["upper"]  # the tailgate, glazed below
+        if kind == "rw" and (p["twobox"] or p["bed"]): return p["upper"]  # tailgate / cab back, glazed below
         if kind == "cap": return p["upper"] if p["roof_key"] == "body" else p["roof_key"]
         return p["roof_key"] if kind == "roof" else "glass"
     loft(rings, key, closed_ring=False, caps=False)
@@ -368,6 +414,10 @@ def greenhouse(s):
         if p["rear_glass"]:
             patch(s.rw_rings, 0.07, 0.93, v0, v1, "glass", V(0, s.belt(s.zd), s.zw))
         s.rw_v = (v0, v1)
+    if p["bed"]:
+        # The cab's back window, in its upper part.
+        ir = next(i for i, t in enumerate(tops) if t[3] == "rw")
+        patch([r[1:-1] for r in rings[ir:]], 0.15, 0.85, 0.08, 0.66, "glass", V(0, s.belt(s.zd), s.zw))
     s.tops, s.rings = tops, rings
 
     # Side windows: the opening inset from the side's outline, framed, a black B pillar.
@@ -385,7 +435,12 @@ def greenhouse(s):
                 return lerp(za, zb, (y - ya) / (yb - ya)) if abs(yb - ya) > 1e-6 else za
         return edge[0][0] if abs(y - edge[0][1]) < abs(y - edge[-1][1]) else edge[-1][0]
 
-    if p["twobox"]:
+    if p["bed"]:
+        # A pickup's doors end a little ahead of the cab's back: one a side (regular
+        # cab), a short rear-hinged one behind it (extended) or two full ones (crew).
+        s.zrd = s.zd + p["cab_corner"]
+        s.zB = s.zrd if p["cab"] == "regular" else lerp(s.zc - 0.04, s.zrd, p["b_at"])
+    elif p["twobox"]:
         # Doors from the body, not the glass (which runs on over the load space): the
         # rear door ends over the rear arch, the B pillar a little behind halfway, and
         # a third window's pillar stands on the rear door's shut line.
@@ -414,7 +469,7 @@ def greenhouse(s):
     put(opening(-0.0 + 0.02 if p["frame"] == "chrome" else 0.012), p["frame"], 0.004)
     win = opening(0.0)
     put(win, "glass", 0.008)
-    if p["twobox"]:
+    if p["twobox"] or p["bed"]:
         zB, zq = s.zB, s.zrd
     else:
         # A sedan's doors too: the rear one runs back over the arch, its shut line
@@ -424,8 +479,10 @@ def greenhouse(s):
         s.zrd = s.zra + s.R * p["rd_end"]
         zB = lerp(s.zc - 0.04, s.zrd, p["b_at"])
         zq = s.zrd
-    pillars = [(zB, 0.05, H - p["rail"] - 0.005)]
-    if p["twobox"]:
+    pillars = [(zB, 0.05, H - p["rail"] - 0.005)] if not (p["bed"] and p["cab"] == "regular") else []
+    if p["bed"]:
+        pass
+    elif p["twobox"]:
         if p["quarter"] and p["glass"] != "front":
             pillars.append((zq, p["q_w"], H - p["rail"] - 0.005))
     else:
@@ -599,7 +656,11 @@ def lamps_and_face(s):
     py = (it["y0"] + it["y1"]) / 2 if it else p["plate_y"]
     if p["bumper"] in ("black", "chrome", "clad"):
         py = p["plate_y"] - 0.12
-    s.front(rect2(-0.16, 0.16, py - 0.07, py + 0.07), "plate", 0.03 if p["bumper"] != "body" else 0.016, both=False)
+    eps = 0.03 if p["bumper"] != "body" else 0.016
+    if p["bed"] and p["bumper"] != "body":
+        # (on the face of the bumper, which stands well out)
+        py, eps = p["bump_bot"] + 0.11, 0.065
+    s.front(rect2(-0.16, 0.16, py - 0.07, py + 0.07), "plate", eps, both=False)
 
     bumpers(s, s.zF, 1)
 
@@ -650,7 +711,10 @@ def tail_end(s):
     if t["wrap"] > 0:
         s.side_decal(zR + t["wrap"], zR, y0, y1, "tail", 0.006)
     py = p["plate_y"] if p["bumper"] == "body" else p["plate_y"] + 0.05
-    s.front(rect2(-0.16, 0.16, py - 0.075, py + 0.075), "plate", 0.012, both=False, rear=True)
+    eps = 0.012
+    if p["bed"] and p["bumper"] != "body":
+        py, eps = p["bump_bot"] + 0.11, 0.065
+    s.front(rect2(-0.16, 0.16, py - 0.075, py + 0.075), "plate", eps, both=False, rear=True)
     bumpers(s, zR, -1)
 
 
@@ -661,7 +725,12 @@ def side_details(s):
     zr3 = s.zrd
     for z in (s.zc - 0.04, s.zB, zr3):
         s.side_decal(z + 0.007, z - 0.007, 0.0, s.belt(z) - 0.012, "seam", 0.008)
-    for z in (s.zB + 0.1, zr3 + 0.1):
+    handles = [s.zB + 0.1, zr3 + 0.1]
+    if p["bed"]:
+        # (an extended cab's rear doors open from inside)
+        handles = handles if p["cab"] == "crew" else handles[:1]
+        s.side_decal(s.zbed + 0.025, s.zbed, 0.0, s.belt(s.zbed) - 0.004, "seam", 0.008)
+    for z in handles:
         yh = s.belt(z) - 0.1
         s.side_decal(z + 0.12, z, yh, yh + 0.028, "seam" if p["mirror"] == "body" else p["mirror"], 0.006)
     if p["hinges"]:
@@ -707,8 +776,22 @@ def side_details(s):
     zm = s.zc - 0.16
     ym = s.belt(zm) + 0.1
     for sx in (1, -1):
+        if p["tow_mirrors"]:
+            # Tall towing mirrors on long arms.
+            box(V(sx * (xm + 0.11), ym - 0.02, zm), (0.22, 0.035, 0.04), "black")
+            box(V(sx * (xm + 0.24), ym + 0.06, zm - 0.01), (0.1, 0.3, 0.08), "black")
+            continue
         box(V(sx * (xm + 0.05), ym - 0.04, zm), (0.1, 0.04, 0.06), "black")
         box(V(sx * (xm + 0.12), ym, zm - 0.01), (0.13, 0.1, 0.07), mk)
+    if p["steps"]:
+        # Running boards under the doors, between the arches, on brackets.
+        z0, z1 = s.zfa - s.R - 0.1, max(s.zra + s.R + 0.1, s.zd - 0.1)
+        y = p["sill"] - 0.06
+        for sx in (1, -1):
+            xs = sx * (s.hw((z0 + z1) / 2, flare=False) + 0.03)
+            box(V(xs, y, (z0 + z1) / 2), (0.16, 0.045, z0 - z1), p["steps"])
+            for z in (lerp(z0, z1, 0.2), lerp(z0, z1, 0.8)):
+                box(V(xs - sx * 0.12, y + 0.03, z), (0.16, 0.04, 0.05), "black")
 
 
 def roof_y(s, z, x):
@@ -814,6 +897,21 @@ def tailgate(s):
         box(V(0, c.y, zR + 0.0), (0.12, 0.12, 0.08), "black")
 
 
+def bed_tailgate(s):
+    """A pickup's tailgate: shut lines round it (inside the corner lamps) and a handle."""
+    p = s.p
+    top = s.top(s.zR)
+    xg = p["tail"]["x0"] - 0.03
+    yb = s.floor - 0.05
+    for x in (xg, -xg):
+        s.front(rect2(x - 0.007, x + 0.007, yb, top - 0.01), "seam", 0.01, both=False, rear=True)
+    s.front(rect2(-xg, xg, yb - 0.007, yb + 0.007), "seam", 0.01, both=False, rear=True)
+    s.front(rect2(-0.12, 0.12, top - 0.12, top - 0.07), "black", 0.012, both=False, rear=True)
+    if p["tg_key"]:
+        # A trim panel across the tailgate (a chrome or black applique).
+        s.front(rect2(-xg + 0.05, xg - 0.05, top - 0.22, top - 0.16), p["tg_key"], 0.011, both=False, rear=True)
+
+
 WHEELS = {
     # rim colour, pocket colour, pockets, pocket inner/outer radius (of the rim), spoke share
     "alloy5": ("silver", "black", 5, 0.3, 0.88, 0.45),
@@ -825,13 +923,15 @@ WHEELS = {
     "aero": ("gunmetal", "silver", 5, 0.25, 0.9, 0.75),
     "offroad": ("gunmetal", "black", 6, 0.36, 0.84, 0.55),
     "turbine": ("silver", "gunmetal", 12, 0.3, 0.9, 0.35),
+    "dually": ("silver", "grey", 8, 0.55, 0.78, 0.5),
+    "chrome": ("chrome", "gunmetal", 8, 0.42, 0.86, 0.4),
 }
 
 
-def wheel(s, za, sx):
+def wheel(s, za, sx, inset=0.0):
     p = s.p
     r, tw = p["r"], p["tw"]
-    xo = s.hw(za) - p["tuck"] - 0.025
+    xo = s.hw(za) - p["tuck"] - 0.025 - inset
     xi = xo - tw
     n = 12
     c_out, c_in = V(xo, r, za), V(xi, r, za)
@@ -872,6 +972,10 @@ def wheel(s, za, sx):
         quad = [cr + e * 2 + V(0, rr * f * math.cos(a), -rr * f * math.sin(a)) for f, a in ((0.45, a0), (0.8, a0), (0.8, a1), (0.45, a1))]
         poly([W_(q) for q in quad], "caliper", side)
     poly([W_(q) for q in disc_pts(cr + e * 2, rr * 0.18, 6)], "silver" if rim != "silver" else "grey", side)
+    if p["dually"] and not inset:
+        # A dually's hubs stand out of the dished wheels.
+        hub = [disc_pts(cr + V(-0.01, 0, 0), rr * 0.36, 8), disc_pts(cr + V(0.05 if za == s.zra else 0.03, 0, 0), rr * 0.24, 8)]
+        loft([[W_(q) for q in rg] for rg in hub], "chrome")
 
 
 def extras(s):
@@ -922,8 +1026,68 @@ def extras(s):
     if p["scoop"]:
         z = s.zc + 0.5
         y = s.top(z) + p["crown"]
-        box(V(0, y + 0.01, z), (0.46, 0.07, 0.34), "body")
+        box(V(0, y + 0.01, z), (0.46, 0.07, 0.34), p["scoop"] if isinstance(p["scoop"], str) else "body")
         poly([V(x, yy, z + 0.172) for x, yy in rect2(-0.2, 0.2, y - 0.01, y + 0.035)], "black", V(0, 0, 1))
+    if p["roof_lamps"]:
+        # Amber clearance lamps along the roof's front edge (wide trucks).
+        z = s.zw - 0.08
+        for x in (-0.36, -0.18, 0.0, 0.18, 0.36):
+            y = roof_y(s, z, x)
+            box(V(x, y + 0.012, z), (0.08, 0.035, 0.05), "amber")
+    if p["rollbar"]:
+        # A sport bar standing in the bed behind the cab, a pod of lamps on top.
+        z0 = s.zbed - 0.18
+        xr = s.hw(z0) - p["sh_in"] - p["bed_wall"] / 2
+        yb, yt = s.top(z0), p["H"] + 0.06
+        for sx in (1, -1):
+            box(V(sx * xr, (yb + yt) / 2, z0), (0.07, yt - yb, 0.07), "black")
+            bar(V(sx * xr, yt - 0.25, z0 - 0.02), V(sx * xr, yb - 0.03, z0 - 0.75), 0.06, 0.06, "black")
+        bar(V(xr + 0.035, yt - 0.035, z0), V(-xr - 0.035, yt - 0.035, z0), 0.07, 0.07, "black")
+        for x in (-0.33, -0.11, 0.11, 0.33):
+            box(V(x, yt + 0.1, z0), (0.17, 0.14, 0.1), "black")
+            poly([V(xx, yy, z0 + 0.052) for xx, yy in rect2(x - 0.07, x + 0.07, yt + 0.04, yt + 0.16)], "aux", V(0, 0, 1))
+    if p["lift"]:
+        # A lift kit on show: the frame rails and axles in the daylight under the body,
+        # blocks between them, and coilovers in a loud colour in the arch gaps.
+        for x in (-0.48, 0.48):
+            box(V(x, p["sill"] - 0.2, (s.zfa + s.zra) / 2), (0.1, 0.2, s.zfa - s.zra + 0.9), "black")
+        for za in (s.zfa, s.zra):
+            xi = s.hw(za, flare=False) - p["tuck"] - p["tw"] - 0.03
+            if p["dually"] and za == s.zra: xi -= p["tw"] + 0.03
+            box(V(0, p["r"], za), (2 * xi, 0.13, 0.13), "under")
+            box(V(0, p["r"] + 0.03, za), (0.36, 0.3, 0.3), "under")
+            loud = p["shocks"] or "grey"
+            for sx in (1, -1):
+                box(V(sx * 0.48, (p["r"] + p["sill"] - 0.3) / 2 + 0.03, za), (0.16, p["sill"] - 0.3 - p["r"], 0.16), loud)
+                box(V(sx * (xi - 0.1), (p["r"] + p["sill"]) / 2, za + 0.18), (0.1, p["sill"] - p["r"], 0.1), loud)
+        # (and the kit's crossmember under the front bumper)
+        box(V(0, p["bump_bot"] - 0.12, s.zfa + 0.45), (1.1, 0.12, 0.14), p["shocks"] or "black")
+    if p["lightbar"]:
+        # A full-width LED bar on the roof's front edge, ditch lights on the A pillars.
+        z = s.zw - 0.1
+        y = roof_y(s, z, 0) + 0.09
+        xb = s.hwg() - p["tumble"] - 0.08
+        box(V(0, y, z), (2 * xb, 0.1, 0.09), "black")
+        poly([V(x, yy, z + 0.047) for x, yy in rect2(-xb + 0.03, xb - 0.03, y - 0.035, y + 0.035)], "aux", V(0, 0, 1))
+        for sx in (1, -1):
+            box(V(sx * (xb + 0.02), y - 0.06, z + 0.02), (0.04, 0.1, 0.04), "black")
+            zc, yc = s.zc - 0.02, s.belt(s.zc) + 0.07
+            xc = s.hwg() + 0.03
+            box(V(sx * xc, yc, zc), (0.1, 0.1, 0.08), "black")
+            poly([V(sx * xc + xx, yy, zc + 0.042) for xx, yy in rect2(-0.035, 0.035, yc - 0.035, yc + 0.035)], "aux", V(0, 0, 1))
+    if p["stacks"]:
+        # Twin chrome exhaust stacks up the bed's front corners, well over the roof.
+        z = s.zbed - 0.16
+        xs = s.hw(z, flare=False) - p["sh_in"] - p["bed_wall"] - 0.11
+        for sx in (1, -1):
+            c0, c1 = V(sx * xs, s.floor, z), V(sx * xs, p["H"] + 0.32, z)
+            ring = lambda c, rad: [c + V(rad * math.cos(math.tau * i / 8), 0, rad * math.sin(math.tau * i / 8)) for i in range(8)]
+            loft([ring(c0, 0.065), ring(c1, 0.065)], "chrome")
+            loft([ring(c1 + V(0, -0.02, 0), 0.075), ring(c1 + V(0, 0.04, 0), 0.075)], "black")
+    if p["hooks"]:
+        # Red tow hooks under the front bumper.
+        for x in (-0.6, 0.6):
+            box(V(x, p["bump_bot"] + 0.08, s.zF + 0.06), (0.05, 0.1, 0.12), "caliper")
     if p["wing"]:
         zt = s.zR + 0.16
         yd = s.top(zt) + p["crown"]

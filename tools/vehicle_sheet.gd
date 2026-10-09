@@ -20,6 +20,9 @@ var paints := {
 	"minivan_compact": 5, "minivan_ev": 0, "minivan_boxy": 9, "minivan_suvish": 13,
 	"van_cargo": 0, "van_passenger": 5, "van_hightop": 12, "van_retro": 10,
 	"van_camper": 9, "van_shuttle": 3, "van_compact": 7, "van_overland": 9,
+	"pickup_midsize": 0, "pickup_squarebody": 7, "pickup_trail": 5, "pickup_dually": 0,
+	"pickup_rock": 9, "pickup_sport": 12, "pickup_compact": 11, "pickup_fullsize": 2,
+	"pickup_princess": 1,
 }
 var cam: Camera3D
 var holder: Node3D

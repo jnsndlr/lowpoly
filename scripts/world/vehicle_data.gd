@@ -37,4 +37,13 @@ const VARIANTS := {
 	"van_shuttle": {"size": Vector3(2.020, 2.760, 5.900), "head": Vector3(0.730, 0.940, 2.950), "tail": Vector3(0.895, 0.960, -2.950)},
 	"van_compact": {"size": Vector3(1.840, 1.900, 4.750), "head": Vector3(0.630, 0.780, 2.375), "tail": Vector3(0.800, 0.800, -2.375)},
 	"van_overland": {"size": Vector3(2.050, 2.830, 5.550), "head": Vector3(0.770, 1.030, 2.775), "tail": Vector3(0.902, 1.030, -2.775)},
+	"pickup_fullsize": {"size": Vector3(2.030, 1.970, 5.880), "head": Vector3(0.725, 1.080, 2.940), "tail": Vector3(0.913, 1.085, -2.940)},
+	"pickup_midsize": {"size": Vector3(1.860, 1.800, 5.300), "head": Vector3(0.630, 0.920, 2.650), "tail": Vector3(0.840, 0.960, -2.650)},
+	"pickup_squarebody": {"size": Vector3(2.000, 1.810, 5.600), "head": Vector3(0.740, 0.950, 2.800), "tail": Vector3(0.895, 0.950, -2.800)},
+	"pickup_trail": {"size": Vector3(1.940, 1.880, 5.400), "head": Vector3(0.660, 0.950, 2.700), "tail": Vector3(0.870, 1.005, -2.700)},
+	"pickup_dually": {"size": Vector3(2.430, 2.020, 5.900), "head": Vector3(0.760, 1.130, 2.950), "tail": Vector3(0.913, 1.130, -2.950)},
+	"pickup_rock": {"size": Vector3(2.000, 2.230, 5.500), "head": Vector3(0.680, 1.050, 2.750), "tail": Vector3(0.895, 1.120, -2.750)},
+	"pickup_sport": {"size": Vector3(1.960, 1.670, 5.350), "head": Vector3(0.660, 0.830, 2.675), "tail": Vector3(0.875, 0.910, -2.675)},
+	"pickup_compact": {"size": Vector3(1.760, 1.680, 5.100), "head": Vector3(0.640, 0.860, 2.550), "tail": Vector3(0.785, 0.880, -2.550)},
+	"pickup_princess": {"size": Vector3(2.430, 2.720, 5.900), "head": Vector3(0.760, 1.490, 2.950), "tail": Vector3(0.913, 1.490, -2.950)},
 }

@@ -18,7 +18,11 @@
 #   a light bar, a 90s square-cut one in black plastic and an SUV-styled one;
 # - vans (two-box, high roofs, barn doors): a medium-roof cargo van, a long-nosed
 #   passenger van, a high-roof cargo van, an 80s long-nose in two-tone, a camper with a
-#   high top, a high-roof minibus, a compact cargo van and an overlander on a rack.
+#   high top, a high-roof minibus, a compact cargo van and an overlander on a rack;
+# - pickups (a cab and an open bed): a midsize extended cab, an 80s square-body, a
+#   crew-cab trail truck, a crew-cab dually, a lifted off-roader with a light bar, a
+#   lowered sport truck, a 90s compact and a modern full-size crew cab; and one not on
+#   the sheet, the pavement princess (see PICKUPS).
 import bpy, os
 
 ART = os.path.dirname(bpy.data.filepath) or "/Users/jon/Documents/GitHub/lowpoly/art"
@@ -54,6 +58,10 @@ SEDAN = dict(
     upper="body", ws_top=None, cap=0.45, win_top=None, glass="all", slide=False,
     rear_doors=None, rear_glass=True, accent=None, markers=False,
     bullbar=False, ladder=False, hightop=None, vent=False,
+    # (pickup options)
+    bed=False, bed_gap=0.06, tg=0.05, bed_floor=None, bed_wall=0.05, tg_key=None,
+    cab="crew", cab_corner=0.1, dually=False, rflare=0.0, steps=None, tow_mirrors=False,
+    roof_lamps=False, rollbar=False, hooks=False, shocks=None, lightbar=False, stacks=False, lift=False,
 )
 
 SEDANS = {
@@ -394,7 +402,117 @@ VANS = {
                      paint=(0.33, 0.4, 0.22)),
 }
 
-MODELS = {"sedan": (SEDAN, SEDANS), "suv": (SUV, SUVS), "minivan": (MINIVAN, MINIVANS), "van": (VAN, VANS)}
+# --- Pickup (cab and open bed) -------------------------------------------------------------
+# The cab is a three-box greenhouse whose "rear window" run (rw) is its near-upright back;
+# the bed runs from just behind it to the tailgate. Kept to <= 5.9 m like the vans (the
+# ferries' slot pitch), so the crew cabs carry short beds.
+
+PICKUP = dict(SUV,
+    L=5.88, W=2.03, H=1.95, wb=3.6, fo=0.95, r=0.41, tw=0.27, arch=0.06,
+    sill=0.5, bump_bot=0.42, tuck=0.03,
+    nose_top=1.2, nose_set=0.06, hood_front=1.25, belt=1.31, belt_rise=0.0, crease=1.12,
+    tail_top=1.31, tail_set=0.03, hood=1.62, ws=0.38, roof=1.62, rw=0.06,
+    df=0.03, dr=0.03, crown=0.02, ws_bulge=0.0, rw_bulge=0.0,
+    tumble=0.1, sh_in=0.05, gh_in=0.02, cf=0.07, cfl=0.32, cr=0.02, crl=0.1, flare=0.0,
+    a_w=0.07, c_w=0.12, rail=0.06, b_at=0.5, quarter=0.0, twobox=False,
+    lamp=dict(style="rect", x0=0.5, x1=0.95, y0=1.02, y1=1.14, wrap=0.1),
+    grille=dict(style="slats", w=0.52, y0=0.7, y1=1.12, n=3, key="chrome", surround="chrome"),
+    intake=None, tail=dict(style="rect", x0=0.86, x1=0.98, y0=0.92, y1=1.25, wrap=0.03),
+    bumper="chrome", plate_y=0.8, mirror="black", c_key=None, clad=None, rails=None, spoiler=None,
+    wheel="alloy6", bed=True, cab="crew", steps="black", tg_key="chrome",
+)
+
+PICKUPS = {
+    # Modern full-size crew cab (Silverado/F-150): chrome grille and bumpers, steps.
+    "fullsize": dict(paint=(0.1, 0.1, 0.11)),
+    # Midsize extended cab (Tacoma Access Cab): swept lamps, a hex grille, a dark bumper.
+    "midsize": dict(L=5.3, W=1.86, H=1.78, wb=3.24, fo=0.88, r=0.38, tw=0.25, sill=0.44, bump_bot=0.36,
+                    nose_top=0.98, nose_set=0.14, hood_front=1.04, belt=1.16, crease=1.0, tail_top=1.16,
+                    hood=1.4, ws=0.5, roof=1.3, cf=0.12, cfl=0.4, tumble=0.12, cab="ext", b_at=0.74,
+                    lamp=dict(style="swept", x0=0.38, x1=0.88, y0=0.86, y1=0.98, wrap=0.3),
+                    grille=dict(style="hex", w=0.4, y0=0.62, y1=0.92),
+                    intake=dict(w=0.58, y0=0.4, y1=0.52, fogs=True),
+                    tail=dict(style="rect", x0=0.8, x1=0.91, y0=0.82, y1=1.1, wrap=0.03),
+                    bumper="black", steps=None, tg_key=None, wheel="alloy6", paint=(0.88, 0.86, 0.8)),
+    # 80s square-body (C10): regular cab, long bed, chrome bumpers and trim, hubcaps.
+    "squarebody": dict(L=5.6, W=2.0, H=1.8, wb=3.3, fo=0.86, r=0.37, tw=0.24, sill=0.46, bump_bot=0.38,
+                       nose_top=1.08, nose_set=0.04, hood_front=1.1, belt=1.2, crease=1.05, tail_top=1.2,
+                       hood=1.72, ws=0.34, roof=1.06, rw=0.05, crown=0.01, tumble=0.07, sh_in=0.04, cf=0.03,
+                       cfl=0.15, cab="regular", c_w=0.16, cab_corner=0.14, frame="chrome",
+                       lamp=dict(style="rect", x0=0.6, x1=0.88, y0=0.86, y1=1.04, wrap=0.02),
+                       grille=dict(style="slats", w=0.56, y0=0.84, y1=1.05, n=3, key="grey", surround="chrome"),
+                       tail=dict(style="rect", x0=0.84, x1=0.96, y0=0.8, y1=1.1, wrap=0.03),
+                       mirror="chrome", steps=None, tg_key=None, wheel="hubcap", paint=(0.78, 0.15, 0.1)),
+    # Crew-cab trail truck (Tacoma TRD Off-Road): flares, cladding, knobbly tyres.
+    "trail": dict(L=5.4, W=1.94, H=1.86, wb=3.3, fo=0.9, r=0.42, tw=0.28, arch=0.07, sill=0.5, bump_bot=0.42,
+                  nose_top=1.04, nose_set=0.14, hood_front=1.1, belt=1.21, crease=1.04, tail_top=1.21,
+                  hood=1.42, ws=0.48, roof=1.58, cf=0.12, cfl=0.42, flare=0.05, tumble=0.13,
+                  lamp=dict(style="swept", x0=0.42, x1=0.9, y0=0.9, y1=1.0, wrap=0.3),
+                  grille=dict(style="hex", w=0.46, y0=0.66, y1=1.0),
+                  intake=dict(w=0.56, y0=0.46, y1=0.56, fogs=True),
+                  tail=dict(style="rect", x0=0.82, x1=0.93, y0=0.86, y1=1.15, wrap=0.03),
+                  bumper="clad", clad=dict(key="black", arch=0.09, sill=0.07), steps=None, tg_key=None,
+                  wheel="offroad", tread=True, paint=(0.15, 0.32, 0.72)),
+    # Crew-cab dually (Silverado HD): twin rear wheels under wide fenders, roof lamps,
+    # tow mirrors, a big two-tier chrome grille.
+    "dually": dict(L=5.9, W=2.03, rflare=0.2, H=2.0, wb=3.55, fo=0.95, r=0.42, tw=0.24, sill=0.52, bump_bot=0.44,
+                   nose_top=1.22, nose_set=0.05, hood_front=1.25, belt=1.36, crease=1.18, tail_top=1.36,
+                   hood=1.65, ws=0.38, roof=1.66, rw=0.05,
+                   lamp=dict(style="rect", x0=0.56, x1=0.96, y0=1.06, y1=1.2, wrap=0.08),
+                   grille=dict(style="slats", w=0.54, y0=0.72, y1=1.2, n=2, key="chrome", surround="chrome"),
+                   tail=dict(style="rect", x0=0.86, x1=0.98, y0=0.96, y1=1.3, wrap=0.03),
+                   dually=True, steps="silver", roof_lamps=True, tow_mirrors=True, tg_key=None,
+                   wheel="dually", paint=(0.9, 0.9, 0.88)),
+    # Lifted off-roader (TRD Pro/Raptor): big knobbly tyres, flares, a black hood scoop,
+    # a sport bar with a lamp pod, red tow hooks.
+    "rock": dict(L=5.5, W=2.0, H=2.0, wb=3.3, fo=0.82, r=0.48, tw=0.32, arch=0.07, sill=0.6, bump_bot=0.5,
+                 nose_top=1.16, nose_set=0.12, hood_front=1.22, belt=1.33, crease=1.15, tail_top=1.33,
+                 hood=1.4, ws=0.46, roof=1.58, rw=0.05, cf=0.1, cfl=0.42, flare=0.08, tumble=0.13,
+                 lamp=dict(style="swept", x0=0.44, x1=0.92, y0=1.0, y1=1.1, wrap=0.3),
+                 grille=dict(style="hex", w=0.46, y0=0.76, y1=1.1),
+                 intake=None, tail=dict(style="rect", x0=0.84, x1=0.95, y0=0.98, y1=1.26, wrap=0.03),
+                 bumper="black", clad=dict(key="black", arch=0.13, sill=0.1), steps=None, tg_key=None,
+                 scoop="black", rollbar=True, hooks=True, wheel="offroad", tread=True,
+                 paint=(0.33, 0.4, 0.22)),
+    # Sport truck (Lightning/SRT-10): lowered, regular cab, hood scoop, big intakes,
+    # sport wheels with red calipers.
+    "sport": dict(L=5.35, W=1.96, H=1.64, wb=3.1, fo=0.95, r=0.38, tw=0.3, arch=0.04, sill=0.3, bump_bot=0.16,
+                  nose_top=0.92, nose_set=0.22, hood_front=0.99, belt=1.1, crease=0.92, tail_top=1.1,
+                  hood=1.55, ws=0.58, roof=1.16, rw=0.07, crown=0.03, cf=0.14, cfl=0.45, flare=0.03, tumble=0.14,
+                  cab="regular", c_w=0.16, cab_corner=0.14,
+                  lamp=dict(style="swept", x0=0.42, x1=0.9, y0=0.78, y1=0.88, wrap=0.32),
+                  grille=dict(style="hex", w=0.4, y0=0.56, y1=0.82),
+                  intake=dict(w=0.7, y0=0.2, y1=0.48, fogs=False, vents=True),
+                  tail=dict(style="rect", x0=0.82, x1=0.94, y0=0.78, y1=1.04, wrap=0.03),
+                  bumper="body", plate_y=0.34, mirror="body", steps=None, tg_key=None, scoop=True,
+                  wheel="sport", paint=(0.92, 0.75, 0.12)),
+    # 90s compact (Ranger/S-10) extended cab: small, plain, a black grille.
+    "compact": dict(L=5.1, W=1.76, H=1.66, wb=3.2, fo=0.82, r=0.35, tw=0.22, sill=0.4, bump_bot=0.34,
+                    nose_top=0.94, nose_set=0.1, hood_front=0.98, belt=1.08, crease=0.95, tail_top=1.08,
+                    hood=1.45, ws=0.44, roof=1.34, rw=0.05, tumble=0.09, cf=0.08, cfl=0.3, cab="ext", b_at=0.76,
+                    lamp=dict(style="rect", x0=0.46, x1=0.82, y0=0.8, y1=0.92, wrap=0.06),
+                    grille=dict(style="slats", w=0.42, y0=0.76, y1=0.93, n=3, key="trim", surround="trim"),
+                    tail=dict(style="rect", x0=0.74, x1=0.84, y0=0.76, y1=1.0, wrap=0.03),
+                    bumper="black", mirror="black", steps=None, tg_key=None, wheel="alloy5",
+                    paint=(0.15, 0.55, 0.58)),
+    # The pavement princess: a crew-cab dually on a towering lift and mud tyres that
+    # have never met mud, chrome wheels, chrome everything, coilovers in a loud colour
+    # on show in the arch gaps, an LED light bar and ditch lights for the mall car
+    # park, and twin chrome stacks in a spotless bed. Too tall for the ordinary lanes.
+    "princess": dict(L=5.9, W=2.03, rflare=0.2, H=2.36, wb=3.55, fo=0.95, r=0.5, tw=0.33, arch=0.2,
+                     sill=1.0, bump_bot=0.74, nose_top=1.56, nose_set=0.05, hood_front=1.6, belt=1.72,
+                     crease=1.54, tail_top=1.72, hood=1.65, ws=0.38, roof=1.66, rw=0.05,
+                     frame="chrome",
+                     lamp=dict(style="rect", x0=0.56, x1=0.96, y0=1.42, y1=1.56, wrap=0.08),
+                     grille=dict(style="slats", w=0.54, y0=1.08, y1=1.56, n=2, key="chrome", surround="chrome"),
+                     tail=dict(style="rect", x0=0.86, x1=0.98, y0=1.32, y1=1.66, wrap=0.03),
+                     dually=True, steps="chrome", roof_lamps=True, tow_mirrors=True, tg_key="chrome",
+                     lift=True, shocks="caliper", lightbar=True, stacks=True, wheel="chrome", tread=True,
+                     paint=(0.9, 0.9, 0.88)),
+}
+
+MODELS = {"sedan": (SEDAN, SEDANS), "suv": (SUV, SUVS), "minivan": (MINIVAN, MINIVANS), "van": (VAN, VANS),
+          "pickup": (PICKUP, PICKUPS)}
 
 
 # --- Build and export -----------------------------------------------------------------
@@ -412,7 +530,7 @@ for row, (model, (base, variants)) in enumerate(MODELS.items()):
         tris[name] = sum(len(o.data.polygons) for o in obs)
         # (the height overall: high tops and racks count, for the ferries' headroom)
         top = max(max((v.co.z for v in o.data.vertices), default=0.0) for o in obs)
-        data[name] = dict(size=(prm["W"], max(prm["H"], top), prm["L"]), head=s.head, tail=s.tail)
+        data[name] = dict(size=(prm["W"] + 2 * prm["rflare"], max(prm["H"], top), prm["L"]), head=s.head, tail=s.tail)
 
 _glb = os.path.normpath(os.path.join(ART, "..", "assets", "models", "vehicles.glb"))
 for o in bpy.data.objects: o.select_set(o in built)
