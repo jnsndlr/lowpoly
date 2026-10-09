@@ -8,9 +8,11 @@ extends RefCounted
 ## State): an open deck of three lanes, the house down the starboard side, the
 ## port lane's +Z end slot taken by the port engine room's box, its cars turning in
 ## round it (`--classic-ferry` keeps the code-built open-deck boat with the
-## wheelhouse up on one side); size 2 (after the M/V Hiyu) runs its cars through a
-## portal: passenger cabins over the two outer lanes, a bridge over the tall centre
-## lane, and one double-ended pilothouse on top; 3 to 5 carry their passenger
+## wheelhouse up on one side); size 2 is WSF's M/V Hiyu, from the mid-poly model
+## (art/hiyu_mid.py, likewise): her cars drive through her, down a tall tunnel
+## between the stair casings and a lane each side under the passenger cabins, a
+## bridge over the tunnel carrying the double-ended pilothouse (`--classic-ferry`
+## keeps the code-built portal boat after her); 3 to 5 carry their passenger
 ## decks over the cars. Size 4 is the WSF Evergreen State class, from the mid-poly
 ## model (art/ferry_mid.py, real scale, shown at MID_SCALE to match the game's cars):
 ## a two-lane tunnel between the stair casings and a lane in each wing, the wing
@@ -44,6 +46,21 @@ const SMALL_CAR_DECK := 2.5  # art/guemes_mid.py CAR_DECK
 const SMALL_DROP := SMALL_CAR_DECK * MID_SCALE - Layout.DECK_Y
 static var small := not "--classic-ferry" in OS.get_cmdline_user_args() and ResourceLoader.exists(SMALL_GLB)
 
+# The mid-poly M/V Hiyu (size 2), shown and dropped the same way, her freeboard
+# raised to match.
+const HIYU_GLB := "res://assets/models/hiyu_mid.glb"
+const HIYU_CAR_DECK := 2.5  # art/hiyu_mid.py CAR_DECK
+const HIYU_DROP := HIYU_CAR_DECK * MID_SCALE - Layout.DECK_Y
+static var hiyu_model := not "--classic-ferry" in OS.get_cmdline_user_args() and ResourceLoader.exists(HIYU_GLB)
+
+# The rescue boat (art/rib_mid.py -> RIB_GLB), a sub model shared by the mid-poly
+# ferries: Models._mid_ferry sets it in her cradle, sling hooked on her davit's fall.
+# Each entry is [origin in the ferry model's metres, yaw about +Y]; keep them in step
+# with RIB_AT / RIB_YAW in the ferry's script (art/ferry_mid.py, art/hiyu_mid.py).
+const RIB_GLB := "res://assets/models/rib_mid.glb"
+const MID_RIBS := [[Vector3(7.2, 7.3 + 0.78, -34.6), 0.0]]
+const HIYU_RIBS := [[Vector3(6.6, 8.1 + 0.78, -4.0), PI]]
+
 # size: [lanes, rows, half length, half beam, cruise, label]
 const TABLE := {
 	1: [2, 5, 25.5, 8.7, 19.5, "Open-deck ferry"],
@@ -67,6 +84,8 @@ var open_deck := false
 var portal := false
 var evergreen := false             # the mid-poly Evergreen State (size 4, `mid`)
 var guemes := false                # the mid-poly M/V Guemes (size 1, `small`)
+var hiyu := false                  # the mid-poly M/V Hiyu (size 2, `hiyu_model`)
+var ribs: Array = []               # her rescue boats ([model-metre origin, yaw], see MID_RIBS)
 # Slots no car may take (index row * lanes + lane): the Guemes' engine room box.
 var blocked := PackedInt32Array()
 # Lanes outboard of throat_x can't run straight out over the end: they turn in to it
@@ -171,7 +190,8 @@ func _init(s: int) -> void:
 	capacity = lanes * rows
 	guemes = s == 1 and small
 	open_deck = s == 1 and not guemes
-	portal = s == 2
+	hiyu = s == 2 and hiyu_model
+	portal = s == 2 and not hiyu
 	evergreen = s == 4 and mid
 	if guemes:
 		lanes = 3
@@ -179,6 +199,12 @@ func _init(s: int) -> void:
 		half_length = 18.9 * MID_SCALE
 		half_beam = 7.93 * MID_SCALE
 		label = "Guemes"
+	if hiyu:
+		lanes = 4
+		rows = 8
+		half_length = 26.5 * MID_SCALE
+		half_beam = 9.6 * MID_SCALE
+		label = "Hiyu"
 	if evergreen:
 		lanes = 4
 		rows = 11
@@ -210,6 +236,13 @@ func _init(s: int) -> void:
 		lantern_scale = 2.7
 		lamp_scale = 2.1
 		_lay_out_guemes()
+	elif hiyu:
+		chamfer = 12.1
+		end_in = 7.1
+		sidelight_scale = 2.7
+		lantern_scale = 2.7
+		lamp_scale = 2.1
+		_lay_out_hiyu()
 	elif evergreen:
 		chamfer = 21.0
 		end_in = 7.2
@@ -241,6 +274,19 @@ func _place_nets() -> void:
 
 ## Whether lane `c` suits a truck (`truck`) or a car: trucks want the headroom,
 ## cars leave it to them.
+## Whether cars in the lane at `x` follow an arc (arc_x) rather than turning in at
+## turn_z: the Hiyu's wings, which curve in with her side.
+func arcs(x: float) -> bool:
+	return hiyu and absf(x) > throat_x
+
+
+## Where the arcing lane at `x` runs at `z` (both in the hull's frame): its own x
+## amidships, then in with the hull's side, HIYU_WING_INSET in from it.
+func arc_x(x: float, z: float) -> float:
+	var k := MID_SCALE
+	return signf(x) * minf(absf(x), (_hiyu_beam(z / k) - HIYU_WING_INSET) * k)
+
+
 func lane_suits(c: int, truck: bool) -> bool:
 	return tall.is_empty() or tall.has(c) == truck
 
@@ -322,6 +368,7 @@ static func _mid_beam(z: float) -> float:
 
 
 func _lay_out_evergreen() -> void:
+	ribs = MID_RIBS
 	# Wing, tunnel, tunnel, wing; trucks keep to the tunnel.
 	cols = PackedFloat32Array([-8.45 * MID_SCALE, -1.9 * MID_SCALE, 1.9 * MID_SCALE, 8.45 * MID_SCALE])
 	tall = PackedInt32Array([1, 2])
@@ -418,6 +465,98 @@ func _lay_out_guemes() -> void:
 				_small(x * (_small_beam(14.8) - 0.1), d + 2.2, e * 14.8), 0.0])
 	perches.append([_small(-6.25, d + 7.97, 13.4), _small(-6.25, d + 7.97, 13.5), 0.0])
 	perches.append([_small(6.35, d + 7.97, -12.4), _small(6.35, d + 7.97, -12.5), 0.0])
+
+
+## A point in the Hiyu model (metres, waterline at 0) in the hull's frame.
+static func _hiyu(x: float, y: float, z: float) -> Vector3:
+	return Vector3(x, y, z) * MID_SCALE - Vector3(0, HIYU_DROP, 0)
+
+
+# The Hiyu model's half beam at the deck every 0.5 m of |z| from midships (the
+# user's deck outline, art/hiyu_mid.py deck_x); it closes to her nose at 26.5.
+const HIYU_BEAM := [
+	9.6, 9.6, 9.6, 9.6, 9.6, 9.6, 9.6, 9.6, 9.6, 9.59,
+	9.57, 9.55, 9.52, 9.49, 9.45, 9.41, 9.36, 9.31, 9.25, 9.19,
+	9.12, 9.04, 8.96, 8.88, 8.78, 8.68, 8.57, 8.46, 8.33, 8.19,
+	8.05, 7.89, 7.72, 7.54, 7.34, 7.13, 6.92, 6.69, 6.46, 6.22,
+	5.97, 5.72, 5.45, 5.18, 4.89, 4.6, 4.29, 3.97, 3.63, 3.26,
+	2.87, 2.42, 1.83,
+]
+
+
+## How far in from the Hiyu's side (metres) her wing lanes run where she tapers.
+const HIYU_WING_INSET := 1.6
+
+
+## The Hiyu model's half beam at the deck at |z| (metres).
+static func _hiyu_beam(z: float) -> float:
+	var f := absf(z) / 0.5
+	var i := mini(floori(f), HIYU_BEAM.size() - 1)
+	if i == HIYU_BEAM.size() - 1:
+		return lerpf(HIYU_BEAM[i], 0.0, clampf((absf(z) - i * 0.5) / (26.5 - i * 0.5), 0.0, 1.0))
+	return lerpf(HIYU_BEAM[i], HIYU_BEAM[i + 1], f - i)
+
+
+func _lay_out_hiyu() -> void:
+	ribs = HIYU_RIBS
+	var k := MID_SCALE
+	var d := HIYU_CAR_DECK
+	# Wing, the tunnel's two, wing; trucks keep to the tunnel, the wings having only
+	# 2.75 m under the cabins. Her ends taper too far in for the wings' end rows, so those
+	# slots stay empty, and the wing lanes arc in with her side to the nose (arc_x; the
+	# bulwark stops a metre short of the nets to let them).
+	cols = PackedFloat32Array([-6.6 * k, -2.0 * k, 2.0 * k, 6.6 * k])
+	tall = PackedInt32Array([1, 2])
+	blocked = PackedInt32Array([0, 3, (rows - 1) * lanes, (rows - 1) * lanes + 3])
+	throat_x = 3.0 * k
+	net_z = 23.6 * k
+	net_half_w = (_hiyu_beam(23.6) - 0.17) * k
+	var cab_bot := d + 2.75
+	var upper := d + 5.6
+	var sill := upper + 1.35
+	var roof := upper + 2.85
+	# Masthead lanterns on the two masts (set diagonally), sidelights on the
+	# pilothouse's sides toward each end.
+	for e: float in [-1.0, 1.0]:
+		lanterns.append(_hiyu(-e * 1.4, d + 14.05, e * 1.2))
+		for x: float in [-1.0, 1.0]:
+			sidelights.append([_hiyu(x * 3.95, sill - 0.45, e * 1.5), x, e])
+	# Deck lamps on the cabins' ends over the wings, and on the bridge's over the tunnel.
+	for e: float in [-1.0, 1.0]:
+		for x: float in [-1.0, 1.0]:
+			lamps.append([_hiyu(x * 6.6, cab_bot + 0.6, e * 8.87), Vector3(0, 0, e)])
+			lamps.append([_hiyu(x * 1.6, d + 4.65 + 0.75, e * 4.62), Vector3(0, 0, e)])
+	# Lights filling the tunnel under the bridge and the wings under the cabins.
+	deck_lights.append(_hiyu(0, d + 4.25, 0))
+	for x: float in [-1.0, 1.0]:
+		for z: float in [-4.5, 4.5]:
+			deck_lights.append(_hiyu(x * 6.6, cab_bot - 0.4, z))
+	# Lit windows: the cabins' down the sides and on the ends, the pilothouse's.
+	for x: float in [-1.0, 1.0]:
+		for z: float in [-6.0, -2.0, 2.0, 6.0]:
+			windows.append([_hiyu(x * (_hiyu_beam(z) - 0.05), cab_bot + 1.5, z), 1.0, 2.0, Vector3(x, 0, 0)])
+		for e: float in [-1.0, 1.0]:
+			for cx: float in [5.3, 7.6]:
+				windows.append([_hiyu(x * cx, cab_bot + 1.5, e * 8.95), 0.95, 2.0, Vector3(0, 0, e)])
+			windows.append([_hiyu(x * 2.0, sill + 0.6, e * 2.65), 0.9, 1.4, Vector3(0, 0, e)])
+		windows.append([_hiyu(x * 4.05, sill + 0.6, 0), 0.9, 1.4, Vector3(x, 0, 0)])
+	# Perches: the pilothouse roof, the upper deck's rails (outboard and at the
+	# cabins' ends), the rails on the bulwark's corners, the stack tops.
+	perches.append([_hiyu(0, roof + 0.02, -1.8), _hiyu(0, roof + 0.02, 1.8), 3.0 * k])
+	for x: float in [-1.0, 1.0]:
+		var zs := [-8.5, -4.5, 4.5, 8.5]
+		for j in zs.size() - 1:
+			var z0: float = zs[j]
+			var z1: float = zs[j + 1]
+			perches.append([_hiyu(x * (_hiyu_beam(z0) - 0.17), upper + 1.0, z0),
+				_hiyu(x * (_hiyu_beam(z1) - 0.17), upper + 1.0, z1), 0.0])
+		perches.append([_hiyu(x * 4.85, roof + 1.0, -0.1), _hiyu(x * 4.85, roof + 1.0, 0.1), 0.0])
+		for e: float in [-1.0, 1.0]:
+			perches.append([_hiyu(x * 3.7, upper + 1.0, e * 8.83),
+				_hiyu(x * (_hiyu_beam(8.83) - 0.17), upper + 1.0, e * 8.83), 0.0])
+			for zz: Array in [[11.5, 16.5], [16.5, 21.5]]:
+				perches.append([_hiyu(x * (_hiyu_beam(zz[0]) - 0.1), d + 1.7, e * zz[0]),
+					_hiyu(x * (_hiyu_beam(zz[1]) - 0.1), d + 1.7, e * zz[1]), 0.0])
 
 
 func _lay_out_open() -> void:

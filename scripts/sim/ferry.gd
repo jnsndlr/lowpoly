@@ -85,6 +85,12 @@ func setup(s: Simulation, r: MapData.Route, nm: String, size: int) -> void:
 	hull.material_override = Models.hull_material()
 	hull.set_instance_shader_parameter("room_seed", randf_range(1.0, 1000.0))
 	add_child(hull)
+	var thin_shadow := Models.ferry_thin_shadow(fc)
+	if thin_shadow:
+		var mi := MeshInstance3D.new()
+		mi.mesh = thin_shadow
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+		hull.add_child(mi)
 	for e: float in [-1.0, 1.0]:
 		var net := MeshInstance3D.new()
 		net.mesh = Models.ferry_net(fc)
@@ -110,9 +116,7 @@ func start_staggered(i: int) -> void:
 					car.queue_free()
 					break
 				_take_slots(slot, car)
-				car.position = _park_local(slot, car)
-				car.rotation.y = 0.0 if at_a else PI
-				car.straighten()
+				_set_parked(car, _park_xform(slot, car))
 				aboard.append(car)
 			_place(_route_s(traveled))
 		2:
@@ -172,6 +176,36 @@ func _park_local(slot: int, car: Vehicle) -> Vector3:
 	p.z -= fwd * (car.slots - 1) * 0.5 * FerryClass.ROW_SPACING
 	p.z -= fwd * car.center_offset
 	return p
+
+
+## Where and which way `car` parks from `slot`: as _park_local, facing along the hull,
+## or in an arcing lane laid along the arc between its two ends.
+func _park_xform(slot: int, car: Vehicle) -> Transform3D:
+	var fwd := 1.0 if at_a else -1.0
+	var p := _park_local(slot, car)
+	var yaw := 0.0 if at_a else PI
+	if fc.arcs(p.x):
+		var mid := p.z + fwd * car.center_offset
+		var front := _arc_point(p.x, mid + fwd * car.length * 0.5)
+		var back := _arc_point(p.x, mid - fwd * car.length * 0.5)
+		var dir := (front - back).normalized()
+		yaw = atan2(dir.x, dir.z)
+		p = (front + back) * 0.5 - dir * car.center_offset
+	return Transform3D(Basis(Vector3.UP, yaw), p)
+
+
+## A point on the arcing lane at `x`, at z (the hull's frame).
+func _arc_point(x: float, z: float) -> Vector3:
+	return Vector3(fc.arc_x(x, z), Layout.DECK_Y, z)
+
+
+## Waypoints (global) along the arcing lane at `x` from z0 (not included) to z1.
+func _arc_path(x: float, z0: float, z1: float) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	var n := maxi(1, ceili(absf(z1 - z0) / 2.0))
+	for i in range(1, n + 1):
+		out.append(to_global(_arc_point(x, lerpf(z0, z1, float(i) / n))))
+	return out
 
 
 ## The slots of `car`'s run from `slot`, going back toward the end it boards from.
@@ -270,7 +304,18 @@ func _drive_off(car: Vehicle) -> void:
 	var exit_z := -fc.end_z if at_a else fc.end_z
 	var path := PackedVector3Array()
 	var x := car.position.x
-	if absf(x) > fc.throat_x:
+	if fc.arcs(x):
+		# Out of a wing: ahead to the car's nose, then round the hull's curve to the end.
+		var lane: float = fc.cols[0]
+		for c in fc.cols:
+			if absf(c - x) < absf(lane - x):
+				lane = c
+		var ahead := Vector3(sin(car.rotation.y), 0.0, cos(car.rotation.y))
+		var nose := car.position + ahead * (car.center_offset + car.length * 0.5)
+		path.append(to_global(_arc_point(lane, nose.z)))
+		path.append_array(_arc_path(lane, nose.z, exit_z))
+		x = fc.arc_x(lane, exit_z)
+	elif absf(x) > fc.throat_x:
 		# Out of a wing lane: turn in to the apron's opening past the fork's end.
 		path.append(to_global(Vector3(x, Layout.DECK_Y, signf(exit_z) * fc.turn_z)))
 		x = clampf(x, -fc.throat_x, fc.throat_x)
@@ -315,26 +360,39 @@ func _drive_on(car: Vehicle, term: Terminal) -> void:
 	var slot := _free_slot(car)
 	_take_slots(slot, car)
 	_boarding += 1
-	var local := _park_local(slot, car)
+	var park := _park_xform(slot, car)
+	var local := park.origin
 	var entry_z := -fc.end_z if at_a else fc.end_z
 	var path := term.boarding_path(car, route.id)
-	var mouth := clampf(local.x, -fc.throat_x, fc.throat_x)
-	path.append(to_global(Vector3(mouth, Layout.DECK_Y, entry_z)))
-	if mouth != local.x:
-		# Into a wing lane: in through the apron's opening, then out round the fork's end.
-		path.append(to_global(Vector3(local.x, Layout.DECK_Y, signf(entry_z) * fc.turn_z)))
+	var lane := fc.cols[slot % fc.lanes]
+	if fc.arcs(lane):
+		# Into a wing: in over the end and round the hull's curve to the car's tail,
+		# then on along its heading into place.
+		var tail := local - park.basis.z * (car.length * 0.5 - car.center_offset)
+		path.append(to_global(_arc_point(lane, entry_z)))
+		path.append_array(_arc_path(lane, entry_z, tail.z))
+	else:
+		var mouth := clampf(local.x, -fc.throat_x, fc.throat_x)
+		path.append(to_global(Vector3(mouth, Layout.DECK_Y, entry_z)))
+		if mouth != local.x:
+			# Into a wing lane: in through the apron's opening, then out round the fork's end.
+			path.append(to_global(Vector3(local.x, Layout.DECK_Y, signf(entry_z) * fc.turn_z)))
 	path.append(to_global(local))
-	_send(car, path, _on_boarded.bind(local))
+	_send(car, path, _on_boarded.bind(park))
 	sim.collect_fare(car)
 
 
-func _on_boarded(car: Vehicle, local: Vector3) -> void:
+func _on_boarded(car: Vehicle, park: Transform3D) -> void:
 	car.reparent(self)
-	car.position = local
-	car.rotation = Vector3(0.0, 0.0 if at_a else PI, 0.0)
-	car.straighten()
+	_set_parked(car, park)
 	aboard.append(car)
 	_boarding -= 1
+
+
+func _set_parked(car: Vehicle, park: Transform3D) -> void:
+	car.position = park.origin
+	car.rotation = Vector3(0.0, park.basis.get_euler().y, 0.0)
+	car.straighten()
 
 
 func _tick_sailing(delta: float) -> void:

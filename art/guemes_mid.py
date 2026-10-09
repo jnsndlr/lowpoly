@@ -61,10 +61,11 @@ _attr.name = "Attr"; _attr.layer_name = "Col"
 _nt.links.new(_attr.outputs["Color"], _nt.nodes["Principled BSDF"].inputs["Base Color"])
 
 BMS = {}
+THIN_PART = [None]  # set while thin() draws: the part its faces go to
 
 
 def bm_for(key):
-    role = key if key in ROLES else "fixed"
+    role = THIN_PART[0] or (key if key in ROLES else "fixed")
     if role not in BMS:
         bm = bmesh.new(); bm.loops.layers.color.new("Col"); BMS[role] = bm
     return BMS[role]
@@ -158,13 +159,36 @@ def circle(c, ax, r, n, a0=0.0):
     return [c + (e1 * math.cos(a0 + math.tau * i / n) + e2 * math.sin(a0 + math.tau * i / n)) * r for i in range(n)]
 
 
+THIN = 0.035  # least pipe radius (m) that casts a clean shadow: ~2 shadow map texels across
+
+
+def thin(r, key, draw):
+    """Draws a pipe of radius `r` by draw(k), its radii scaled by k. One thinner than
+    THIN would cast a shadow of broken dashes that crawl as she moves, so it goes to
+    the "thin" part (drawn, casting no shadow), and a copy thickened to THIN to
+    "thinshadow" (casting its shadow, never drawn)."""
+    if r >= THIN or key in ROLES or THIN_PART[0]:
+        draw(1.0); return
+    for part, k in (("thin", 1.0), ("thinshadow", THIN / r)):
+        THIN_PART[0] = part; draw(k)
+    THIN_PART[0] = None
+
+
 def cyl(a, b, r0, r1, n, key, a0=None):
+    thin(max(r0, r1), key, lambda k: _cyl(a, b, r0 * k, r1 * k, n, key, a0))
+
+
+def _cyl(a, b, r0, r1, n, key, a0=None):
     ax = (b - a).normalized()
     a0 = math.pi / n if a0 is None else a0
     loft([circle(a, ax, r0, n, a0), circle(b, ax, r1, n, a0)], key)
 
 
 def tube(path, r, n, key, closed=False):
+    thin(r, key, lambda k: _tube(path, r * k, n, key, closed))
+
+
+def _tube(path, r, n, key, closed=False):
     """A round pipe along a polyline (rings square to the mean tangent)."""
     rings, prev = [], None
     for i, p in enumerate(path):

@@ -375,7 +375,8 @@ def roof():
         cyl(g + V(0, 0.2, 0), g + V(0, 0.28, 0), 0.07, 0.04, 6, "white")
         for z in (-1.35, -0.85):
             box(V(s * 0.55, r + 0.06, z), (0.36, 0.12, 0.08), "steel")
-        cyl(V(s * 0.55, r + 0.28, -1.5), V(s * 0.55, r + 0.28, -0.7), 0.19, 0.19, 8, "white")
+        # Body stops short of the end bands so their caps aren't coplanar (z-fighting).
+        cyl(V(s * 0.55, r + 0.28, -1.48), V(s * 0.55, r + 0.28, -0.72), 0.19, 0.19, 8, "white")
         for z in (-1.5, -0.7):
             cyl(V(s * 0.55, r + 0.28, z), V(s * 0.55, r + 0.28, z + (0.04 if z < -1 else -0.04)), 0.2, 0.2, 8, "dark")
         # Whip aerials at the after corners.

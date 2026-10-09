@@ -7,6 +7,9 @@ var xform := Transform3D.IDENTITY
 var verts := PackedVector3Array()
 var normals := PackedVector3Array()
 var colors := PackedColorArray()
+## Vertex ranges [from, to) left out of the shadow mesh: parts thinner than a shadow
+## map texel (rails, stays) only cast broken, crawling dashes.
+var no_shadow: Array[Vector2i] = []
 
 
 ## Adds a triangle. `outward` (local space) picks which side is the front face.
@@ -163,15 +166,21 @@ func _shadow_mesh() -> ArrayMesh:
 	var index := {}
 	var welded := PackedVector3Array()
 	var tris := PackedInt32Array()
-	tris.resize(verts.size())
+	var skip := PackedByteArray()
+	skip.resize(verts.size())
+	for r in no_shadow:
+		for i in range(r.x, r.y):
+			skip[i] = 1
 	for i in verts.size():
+		if skip[i]:
+			continue
 		var p := verts[i]
 		var k: int = index.get(p, -1)
 		if k < 0:
 			k = welded.size()
 			index[p] = k
 			welded.append(p)
-		tris[i] = k
+		tris.append(k)
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = welded

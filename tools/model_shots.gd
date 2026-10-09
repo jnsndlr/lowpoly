@@ -107,6 +107,20 @@ func _initialize() -> void:
 		models["guemes"] = [guemes, Vector3(0, 3, 0), 48.0]
 		models["guemes_end"] = [guemes, Vector3(0, 3, 14), 18.0]
 		models["guemes_house"] = [guemes, Vector3(5.5, 6.5, 0), 14.0]
+	if ResourceLoader.exists("res://assets/models/hiyu_mid.glb"):
+		var hiyu: ArrayMesh = Models._gltf_parts("res://assets/models/hiyu_mid.glb", ["fixed", "glass", "window"]).commit()
+		models["hiyu"] = [hiyu, Vector3(0, 5, 0), 62.0]
+		models["hiyu_end"] = [hiyu, Vector3(0, 5, 16), 24.0]
+		models["hiyu_tunnel"] = [hiyu, Vector3(0, 4.5, 14), 9.0]
+		models["hiyu_top"] = [hiyu, Vector3(0, 9, 0), 18.0]
+		models["hiyu_gusset"] = [hiyu, Vector3(8.0, 4.5, 15.5), 9.0]
+	if ResourceLoader.exists("res://assets/models/rib_mid.glb"):
+		var rib: ArrayMesh = Models._gltf_parts("res://assets/models/rib_mid.glb", ["fixed", "sling"]).commit()
+		models["rib"] = [rib, Vector3(0, 0.6, -0.2), 7.5]
+		models["rib_helm"] = [rib, Vector3(0, 0.8, -0.6), 3.2]
+		# Each mid-poly ferry with it in her cradle (the full game mesh, at MID_SCALE).
+		models["hiyu_rib"] = [Models.ferry(FerryClass.of(2)), Vector3(8.3, 12.0, -5.0), 13.0]
+		models["evergreen_rib"] = [Models.ferry(FerryClass.of(4)), Vector3(9.1, 10.6, -43.6), 13.0]
 	for n: String in Models.PINE_VARIANTS + Models.BROAD_VARIANTS:
 		models[n] = [Models._tree_part(n), Vector3(0, 4.6, 0), 13.0]
 		models[n + "_lod"] = [Models._tree_part(n + "_lod"), Vector3(0, 3.6, 0), 13.0]

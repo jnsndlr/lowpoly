@@ -181,8 +181,18 @@ func _notification(what: int) -> void:
 
 
 func _process(_delta: float) -> void:
-	# Keep shadows crisp and fog sensible at every zoom level.
-	sun.directional_shadow_max_distance = clampf(rig.distance * 2.6, 360.0, 3600.0)
+	# Keep shadows crisp and fog sensible at every zoom level. Zoomed in, the first
+	# cascade reaches just past the point looked at, so whatever the player is looking
+	# at gets the finest shadow texels (~3 cm: fine enough for rails); zoomed out,
+	# Godot's default splits.
+	var d := rig.distance
+	var shadow_far := clampf(d * 2.6, 360.0, 3600.0)
+	var close := smoothstep(320.0, 160.0, d)
+	var near := lerpf(0.1, clampf(d * 1.3 / shadow_far, 0.1, 0.3), close)
+	sun.directional_shadow_max_distance = shadow_far
+	sun.directional_shadow_split_1 = near
+	sun.directional_shadow_split_2 = lerpf(0.2, near * 2.0, close)
+	sun.directional_shadow_split_3 = lerpf(0.5, maxf(0.5, near * 3.5), close)
 	env.fog_depth_begin = rig.distance * 1.6 + 600.0
 	env.fog_depth_end = rig.distance * 4.0 + 2100.0
 	RenderingServer.global_shader_parameter_set("fog_range", Vector2(env.fog_depth_begin, env.fog_depth_end))

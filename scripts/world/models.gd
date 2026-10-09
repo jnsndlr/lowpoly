@@ -354,10 +354,13 @@ static func truck(color_index: int) -> ArrayMesh:
 static func ferry(fc: FerryClass) -> ArrayMesh:
 	if fc.evergreen:
 		return _cached("ferry_%d" % fc.size, func():
-			return _mid_ferry(fc, FerryClass.MID_GLB, FerryClass.MID_DROP, ["fixed", "glass", "window", "lamp"]).commit())
+			return _mid_ferry(fc, FerryClass.MID_GLB, FerryClass.MID_DROP, ["fixed", "thin", "glass", "window", "lamp"]).commit())
 	if fc.guemes:
 		return _cached("ferry_%d" % fc.size, func():
-			return _mid_ferry(fc, FerryClass.SMALL_GLB, FerryClass.SMALL_DROP, ["fixed", "glass", "window"]).commit())
+			return _mid_ferry(fc, FerryClass.SMALL_GLB, FerryClass.SMALL_DROP, ["fixed", "thin", "glass", "window"]).commit())
+	if fc.hiyu:
+		return _cached("ferry_%d" % fc.size, func():
+			return _mid_ferry(fc, FerryClass.HIYU_GLB, FerryClass.HIYU_DROP, ["fixed", "thin", "glass", "window"]).commit())
 	return _cached("ferry_%d" % fc.size, func():
 		var mb := MeshBuilder.new()
 		var b := fc.half_beam
@@ -483,10 +486,30 @@ const CAR_DECK_POOL_ENERGY := 0.2
 
 
 ## A mid-poly ferry: the Evergreen State (FerryClass.MID_GLB, source
-## art/ferry_mid.py) or the Guemes (SMALL_GLB, art/guemes_mid.py), scaled and dropped
+## art/ferry_mid.py), the Guemes (SMALL_GLB, art/guemes_mid.py) or the Hiyu
+## (HIYU_GLB, art/hiyu_mid.py), scaled and dropped
 ## into the hull's frame; its `glass` (pilothouse, cabin) lit, its `window`s lit room
-## by room, the Evergreen State's car deck ceiling `lamp`s glowing. Then the class's
-## lanterns, sidelights and deck lamps.
+## by room, the Evergreen State's car deck ceiling `lamp`s glowing. Then her rescue
+## boats (FerryClass.ribs) in their cradles, and the class's lanterns, sidelights and
+## deck lamps.
+## Stout stand-ins that cast the shadows of a mid-poly ferry's rails, stays and other
+## thin pipes (those are thinner than a shadow map texel and cast none), or null.
+static func ferry_thin_shadow(fc: FerryClass) -> ArrayMesh:
+	var src: Array = [FerryClass.MID_GLB, FerryClass.MID_DROP] if fc.evergreen \
+		else [FerryClass.SMALL_GLB, FerryClass.SMALL_DROP] if fc.guemes \
+		else [FerryClass.HIYU_GLB, FerryClass.HIYU_DROP] if fc.hiyu else []
+	if src.is_empty():
+		return null
+	return _cached("ferry_thin_shadow_%d" % fc.size, func():
+		var p := _gltf_parts(src[0], ["thinshadow"])
+		var mb := MeshBuilder.new()
+		for i in p.verts.size():
+			mb.verts.append(p.verts[i] * FerryClass.MID_SCALE - Vector3(0, src[1], 0))
+			mb.normals.append(p.normals[i])
+		mb.colors = p.colors
+		return mb.commit())
+
+
 static func _mid_ferry(fc: FerryClass, glb: String, drop_y: float, parts: Array) -> MeshBuilder:
 	var mb := MeshBuilder.new()
 	var k := FerryClass.MID_SCALE
@@ -494,15 +517,26 @@ static func _mid_ferry(fc: FerryClass, glb: String, drop_y: float, parts: Array)
 	var lens := lamp_glass(CAR_DECK_LIGHT)
 	for part: String in parts:
 		var p := _gltf_parts(glb, [part])
+		if part == "thin":
+			mb.no_shadow.append(Vector2i(mb.verts.size(), mb.verts.size() + p.verts.size()))
 		for i in p.verts.size():
 			mb.verts.append(p.verts[i] * k - drop)
 			mb.normals.append(p.normals[i])
-		if part == "fixed":
+		if part == "fixed" or part == "thin":
 			mb.colors.append_array(p.colors)
 		else:
 			var c: Color = {"glass": WINDOW_LIT, "window": WINDOW, "lamp": lens}[part]
 			for i in p.verts.size():
 				mb.colors.append(c)
+	if not fc.ribs.is_empty() and ResourceLoader.exists(FerryClass.RIB_GLB):
+		var rib := _gltf_parts(FerryClass.RIB_GLB, ["fixed", "sling"])
+		for r: Array in fc.ribs:
+			var b := Basis(Vector3.UP, r[1])
+			var at: Vector3 = r[0]
+			for i in rib.verts.size():
+				mb.verts.append((b * rib.verts[i] + at) * k - drop)
+				mb.normals.append(b * rib.normals[i])
+			mb.colors.append_array(rib.colors)
 	for p in fc.lanterns:
 		add_lantern(mb, p, GlowBuilder.LED, fc.lantern_scale)
 	for sl: Array in fc.sidelights:

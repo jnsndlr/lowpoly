@@ -62,10 +62,11 @@ _attr.name = "Attr"; _attr.layer_name = "Col"
 _nt.links.new(_attr.outputs["Color"], _nt.nodes["Principled BSDF"].inputs["Base Color"])
 
 BMS = {}
+THIN_PART = [None]  # set while thin() draws: the part its faces go to
 
 
 def bm_for(key):
-    role = key if key in ROLES else "fixed"
+    role = THIN_PART[0] or (key if key in ROLES else "fixed")
     if role not in BMS:
         bm = bmesh.new(); bm.loops.layers.color.new("Col"); BMS[role] = bm
     return BMS[role]
@@ -159,13 +160,36 @@ def circle(c, ax, r, n, a0=0.0):
     return [c + (e1 * math.cos(a0 + math.tau * i / n) + e2 * math.sin(a0 + math.tau * i / n)) * r for i in range(n)]
 
 
+THIN = 0.035  # least pipe radius (m) that casts a clean shadow: ~2 shadow map texels across
+
+
+def thin(r, key, draw):
+    """Draws a pipe of radius `r` by draw(k), its radii scaled by k. One thinner than
+    THIN would cast a shadow of broken dashes that crawl as she moves, so it goes to
+    the "thin" part (drawn, casting no shadow), and a copy thickened to THIN to
+    "thinshadow" (casting its shadow, never drawn)."""
+    if r >= THIN or key in ROLES or THIN_PART[0]:
+        draw(1.0); return
+    for part, k in (("thin", 1.0), ("thinshadow", THIN / r)):
+        THIN_PART[0] = part; draw(k)
+    THIN_PART[0] = None
+
+
 def cyl(a, b, r0, r1, n, key, a0=None):
+    thin(max(r0, r1), key, lambda k: _cyl(a, b, r0 * k, r1 * k, n, key, a0))
+
+
+def _cyl(a, b, r0, r1, n, key, a0=None):
     ax = (b - a).normalized()
     a0 = math.pi / n if a0 is None else a0
     loft([circle(a, ax, r0, n, a0), circle(b, ax, r1, n, a0)], key)
 
 
 def tube(path, r, n, key, closed=False):
+    thin(r, key, lambda k: _tube(path, r * k, n, key, closed))
+
+
+def _tube(path, r, n, key, closed=False):
     """A round pipe along a polyline (rings square to the mean tangent)."""
     rings, prev = [], None
     for i, p in enumerate(path):
@@ -564,6 +588,45 @@ def rail_loop(pts, h, key, step=2.4, closed=True, posts=True):
             cyl(p, p + UP * h, 0.03, 0.03, 4, key)
 
 
+# --- The rescue boat --------------------------------------------------------------
+# The boat itself is the shared sub model art/rib_mid.py (assets/models/rib_mid.glb),
+# which the game places with its origin at RIB_AT (model metres) turned RIB_YAW about
+# +Y (FerryClass keeps a copy: keep them in step). Here only her cradle, and the davit
+# with its fall hooked onto her sling's master link.
+RIB_HOOK = (0.0, 2.65, -0.4)   # rib_mid.py HOOK, in the boat's frame
+RIB_LIFT = 0.78                # her origin above the deck, sat in the cradle
+
+
+def rib_cradle(at, yaw, davit):
+    """Two saddles under her (a keel chock and padded posts under the V either side),
+    the davit's pedestal at `davit` (x, z on deck) with its winch, the boom curving up
+    and over to a sheave above the hook, the fall down to the master link."""
+    c, s = math.cos(yaw), math.sin(yaw)
+    def P(x, y, z): return at + V(x * c + z * s, y, -x * s + z * c)
+    for z in (-1.4, 0.2):
+        cyl(P(-0.75, -RIB_LIFT + 0.07, z), P(0.75, -RIB_LIFT + 0.07, z), 0.08, 0.08, 4, "dark", math.pi / 4)
+        cyl(P(0, -RIB_LIFT, z), P(0, -0.36, z), 0.07, 0.07, 4, "dark", math.pi / 4)
+        for x in (-0.5, 0.5):
+            cyl(P(x, -RIB_LIFT, z), P(x, -0.2, z), 0.05, 0.05, 4, "dark", math.pi / 4)
+            box(P(x, -0.18, z), (0.2, 0.05, 0.22), "black")
+    d0 = V(davit[0], at.y - RIB_LIFT, davit[1])
+    h = P(*RIB_HOOK)
+    cyl(d0, d0 + UP * 0.12, 0.3, 0.3, 8, "dark")
+    cyl(d0 + UP * 0.12, d0 + UP * 3.2, 0.17, 0.13, 8, "white")
+    box(d0 + V(0, 1.1, 0), (0.42, 0.42, 0.42), "dark")
+    cyl(d0 + V(-0.24, 1.1, 0), d0 + V(0.24, 1.1, 0), 0.16, 0.16, 8, "dark")
+    tip = V(h.x, h.y + 0.85, h.z)
+    def over(t, y): return V(lerp(d0.x, tip.x, t), y, lerp(d0.z, tip.z, t))
+    tube([d0 + UP * 3.05, over(0.12, h.y + 0.95), over(0.45, h.y + 1.12), over(0.85, h.y + 1.02), tip],
+         0.1, 6, "white")
+    box(tip + V(0, -0.06, 0), (0.16, 0.24, 0.16), "dark")
+    cyl(tip + V(0, -0.18, 0), h + UP * 0.08, 0.014, 0.014, 3, "black")
+    box(h + UP * 0.13, (0.06, 0.1, 0.05), "orange")
+
+
+RIB_AT, RIB_YAW = V(7.2, PAX_TOP + RIB_LIFT, -34.6), 0.0   # bow toward amidships
+
+
 def end_decks():
     """The forks and the walkway: railed all round in green with mesh panels; the
     rescue boat and its davit out on one fork, vents and life rings."""
@@ -590,25 +653,8 @@ def end_decks():
         for s in (1, -1):
             torus(V(s * (FORK_X - 0.05), PAX_TOP + 0.6, e * (WALK_Z + 1.2)), V(1, 0, 0), 0.38, 0.09, 10, 4, "orange")
             torus(V(s * (half_beam(36.0) + 0.12), PAX_TOP + 0.6, e * 36.0), V(1, 0, 0), 0.38, 0.09, 10, 4, "orange")
-    # The rescue boat in its cradle on the -Z end, and its davit.
-    bz, bx = -34.6, half_beam(-34.6) - 2.3
-    rings = []
-    for t, w, hgt in ((-2.5, 0.35, 0.5), (-2.1, 0.8, 0.75), (-1.0, 1.0, 0.8), (1.2, 1.0, 0.8), (2.2, 0.85, 0.8), (2.5, 0.6, 0.75)):
-        c = V(bx, PAX_TOP + 1.15, bz + t)
-        rings.append([c + V(w, 0.3, 0), c + V(w * 0.8, -0.2, 0), c + V(0, -0.35, 0) * (hgt / 0.8),
-                      c + V(-w * 0.8, -0.2, 0), c + V(-w, 0.3, 0)])
-    # (The open top, the segment closing each ring, is her cockpit floor.)
-    loft(rings, lambda i, j, c: "dark" if j == 4 else "orange", cap_key="orange")
-    box(V(bx, PAX_TOP + 1.65, bz + 0.6), (1.1, 0.5, 1.0), "white")
-    box(V(bx, PAX_TOP + 1.95, bz + 0.6), (1.0, 0.12, 0.9), "orange")
-    tube([V(bx + s * 1.0, PAX_TOP + 1.5, bz + t) for s, t in ((1, -2.0), (1, 2.1), (-1, 2.1), (-1, -2.0))] +
-         [V(bx + 1.0, PAX_TOP + 1.5, bz - 2.0)], 0.2, 6, "dark")
-    for t in (-1.5, 1.5):
-        box(V(bx, PAX_TOP + 0.45, bz + t), (1.6, 0.9, 0.25), "steel")
-    dv = V(bx + 1.5, PAX_TOP, bz + 3.0)
-    cyl(dv, dv + UP * 2.6, 0.22, 0.18, 8, "dark")
-    cyl(dv + UP * 2.4, V(bx, PAX_TOP + 3.3, bz), 0.15, 0.1, 6, "dark")
-    cyl(V(bx, PAX_TOP + 3.3, bz), V(bx, PAX_TOP + 1.9, bz), 0.02, 0.02, 3, "black")
+    # The rescue boat's cradle on the -Z end, and its davit (the boat is rib_mid.glb).
+    rib_cradle(RIB_AT, RIB_YAW, (half_beam(RIB_AT.z + RIB_HOOK[2]) - 0.6, RIB_AT.z + RIB_HOOK[2]))
 
 
 # --- Sun deck -----------------------------------------------------------------------
