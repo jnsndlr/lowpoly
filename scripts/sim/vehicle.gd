@@ -3,10 +3,15 @@ extends Node3D
 ## A car or truck that follows a list of waypoints (in its parent's space) and calls
 ## back when it arrives. Terminals and ferries decide where it goes next.
 
+## Height (m, real size) over which a vehicle goes in the tall lanes (WSF's oversize
+## line is 7'2").
+const TALL := 2.2
+
 var path := PackedVector3Array()
 var speed := 24.0
 var delay := 0.0
 var is_truck := false
+var is_tall := false       # wants a ferry lane with headroom: trucks and high-roof vans
 var model := ""            # VehicleData key ("" for the code-built car and truck)
 var lane_v := 0.0          # lateral lane position while queued at a terminal
 var lot_arrival := 0.0     # sim minutes when it joined the queue
@@ -16,6 +21,7 @@ var _on_arrive := Callable()
 func setup(mesh: Mesh, truck: bool, model_key := "", model_scale := Models.LEGACY_SCALE) -> void:
 	is_truck = truck
 	model = model_key
+	is_tall = truck or (model_key != "" and VehicleData.VARIANTS[model_key].size.y > TALL)
 	# (Its lights, drawn by NightLights from its transform, scale with it.)
 	scale = Vector3.ONE * model_scale
 	var mi := MeshInstance3D.new()

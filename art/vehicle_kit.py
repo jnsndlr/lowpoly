@@ -11,8 +11,8 @@
 # its roof back to a steep tailgate window just ahead of the rear fascia.
 #
 # Parts per variant, named <model>_<variant>_<role>: `body` (painted per car in the
-# game), `head` and `tail` (lamp glass, lit at night) and `fixed` (everything else, in
-# its own colours).
+# game), `accent` (a two-tone band, painted a darker shade of the body's paint), `head`
+# and `tail` (lamp glass, lit at night) and `fixed` (everything else, in its own colours).
 import bpy, bmesh, math, os
 from mathutils import Vector
 
@@ -24,8 +24,10 @@ PAL = {
     "plate": (0.9, 0.9, 0.86), "caliper": (0.75, 0.08, 0.06), "amber": (0.95, 0.55, 0.1),
     "reverse": (0.88, 0.88, 0.86), "under": (0.08, 0.08, 0.09),
     "head": (0.97, 0.94, 0.82), "tail": (0.72, 0.05, 0.04),
+    "cream": (0.9, 0.87, 0.77), "aux": (0.95, 0.88, 0.55),
+    "accent": (0.4, 0.4, 0.4),  # set per variant for the preview; the game repaints it
 }
-ROLES = ("body", "head", "tail")
+ROLES = ("body", "accent", "head", "tail")
 
 
 def V(x, y, z): return Vector((x, y, z))
@@ -280,6 +282,7 @@ def rect2(x0, x1, y0, y1): return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
 def build(p):
     s = Body(p)
     PAL["body"] = p["paint"]
+    PAL["accent"] = tuple(c * 0.55 for c in p["paint"])
     zF, zR = s.zF, s.zR
 
     # Lower body, its fascias as end caps.
@@ -333,7 +336,12 @@ def greenhouse(s):
     if p["ws_bulge"]:
         tops.append((lerp(s.zc, s.zw, 0.5) + p["ws_bulge"], lerp(s.belt(s.zc), H - p["df"], 0.5) + p["ws_bulge"],
                      p["crown"] * 0.5, "ws"))
-    tops += [(s.zw, H - p["df"], p["crown"], "roof"), ((s.zw + s.zr) / 2, H, p["crown"], "roof"),
+    zw = s.zw
+    if p["ws_top"]:
+        # A high roof: the windscreen stops short of it and a cap rises back to the roof.
+        tops.append((zw, p["ws_top"], p["crown"] * 0.5, "cap"))
+        zw -= p["cap"]
+    tops += [(zw, H - p["df"], p["crown"], "roof"), ((zw + s.zr) / 2, H, p["crown"], "roof"),
              (s.zr, H - p["dr"], p["crown"], "rw")]
     if p["rw_bulge"]:
         tops.append((lerp(s.zr, s.zd, 0.5) - p["rw_bulge"] * 0.4, lerp(H - p["dr"], s.belt(s.zd), 0.5) + p["rw_bulge"],
@@ -342,15 +350,24 @@ def greenhouse(s):
     rings = [gring(z, y, c) for z, y, c, _ in tops]
 
     def key(i, j):
-        if j in (0, 5): return "body"
+        if j in (0, 5): return p["upper"]
         kind = tops[i][3]
-        if kind == "rw" and p["twobox"]: return "body"  # the tailgate, glazed below
+        if kind == "rw" and p["twobox"]: return p["upper"]  # the tailgate, glazed below
+        if kind == "cap": return p["upper"] if p["roof_key"] == "body" else p["roof_key"]
         return p["roof_key"] if kind == "roof" else "glass"
     loft(rings, key, closed_ring=False, caps=False)
     if p["twobox"]:
         # Tailgate glass inset in the hatch, D pillars and a roof lip round it.
         ir = next(i for i, t in enumerate(tops) if t[3] == "rw")
-        patch([r[1:-1] for r in rings[ir:]], 0.07, 0.93, 0.08, 0.96, "glass", V(0, s.belt(s.zd), s.zw))
+        s.rw_rings = [r[1:-1] for r in rings[ir:]]
+        v0, v1 = 0.08, 0.96
+        if p["win_top"]:
+            # (a van's rear door windows: from its window line down to the beltline)
+            span = tops[ir][1] - s.belt(s.zd)
+            v0, v1 = max(0.04, (tops[ir][1] - p["win_top"]) / span), 1.0 - 0.1 / span
+        if p["rear_glass"]:
+            patch(s.rw_rings, 0.07, 0.93, v0, v1, "glass", V(0, s.belt(s.zd), s.zw))
+        s.rw_v = (v0, v1)
     s.tops, s.rings = tops, rings
 
     # Side windows: the opening inset from the side's outline, framed, a black B pillar.
@@ -368,14 +385,27 @@ def greenhouse(s):
                 return lerp(za, zb, (y - ya) / (yb - ya)) if abs(yb - ya) > 1e-6 else za
         return edge[0][0] if abs(y - edge[0][1]) < abs(y - edge[-1][1]) else edge[-1][0]
 
+    if p["twobox"]:
+        # Doors from the body, not the glass (which runs on over the load space): the
+        # rear door ends over the rear arch, the B pillar a little behind halfway, and
+        # a third window's pillar stands on the rear door's shut line.
+        s.zrd = s.zra + s.R * p["rd_end"]
+        s.zB = lerp(s.zc - 0.04, s.zrd, p["b_at"])
+    wt = p["win_top"]
+
     def opening(inset):
         a, c, rail = p["a_w"] - inset, p["c_w"] - inset, p["rail"] - inset
         y0 = p["belt"] + 0.03 - inset
         yf, yr = tops[fi][1] - rail, tops[ri - 1][1] - rail
+        cap = (lambda y: min(y, wt + inset)) if wt else (lambda y: y)
+        yf, yr = cap(yf), cap(yr)
         pts = [(z_on(front_edge, y0) - a, y0), (z_on(front_edge, yf) - a, yf)]
-        pts += [(z, y - rail) for z, y, _, kd in tops[fi + 1:ri - 1]]
+        pts += [(z, cap(y - rail)) for z, y, _, kd in tops[fi + 1:ri - 1]]
         yb = s.belt(s.zd) + 0.03 - inset
         pts += [(z_on(rear_edge, yr) + c, yr), (z_on(rear_edge, yb) + c, yb)]
+        if p["glass"] == "front":
+            # A cargo van: glass in the front doors only, panels behind the B pillar.
+            pts = clip_z(pts, s.zB - 0.02 - inset)
         return pts
 
     def put(pts, key, eps):
@@ -385,28 +415,55 @@ def greenhouse(s):
     win = opening(0.0)
     put(win, "glass", 0.008)
     if p["twobox"]:
-        # Doors from the body, not the glass (which runs on over the load space): the
-        # rear door ends over the rear arch, the B pillar a little behind halfway, and
-        # a third window's pillar stands on the rear door's shut line.
+        zB, zq = s.zB, s.zrd
+    else:
+        # A sedan's doors too: the rear one runs back over the arch, its shut line
+        # stepping up round it, and where its window stops short of the side glass a
+        # fixed quarter light fills the corner (the divider stands on the shut line,
+        # up only as far as the glass reaches there).
         s.zrd = s.zra + s.R * p["rd_end"]
         zB = lerp(s.zc - 0.04, s.zrd, p["b_at"])
         zq = s.zrd
+    pillars = [(zB, 0.05, H - p["rail"] - 0.005)]
+    if p["twobox"]:
+        if p["quarter"] and p["glass"] != "front":
+            pillars.append((zq, p["q_w"], H - p["rail"] - 0.005))
     else:
-        s.zrd = s.zra + s.R + 0.04
-        zB = lerp(win[0][0], win[-1][0], p["b_at"])
-        zq = lerp(win[0][0], win[-1][0], p["quarter"])
-    pillars = [(zB, 0.05)]
-    if p["quarter"]:
-        pillars.append((zq, p["q_w"]))
-    for zp, w in pillars:
+        (zt, yt), (zb, yb) = win[-2], win[-1]
+        if zq >= zt:
+            pillars.append((zq, p["q_w"], H - p["rail"] - 0.005))
+        elif zq > zb + 0.06:
+            # The divider meets the glass's sloping rear edge.
+            pillars.append((zq, p["q_w"], lerp(yb, yt, (zq - zb) / (zt - zb)) + 0.005))
+    for zp, w, ytop in pillars:
+        if wt: ytop = min(ytop, wt + 0.02)
         put([(zp + w, s.belt(zp) + 0.02), (zp - w, s.belt(zp) + 0.02),
-             (zp - w, H - p["rail"] - 0.005), (zp + w, H - p["rail"] - 0.005)], "black", 0.012)
-    if p["c_key"]:
+             (zp - w, ytop), (zp + w, ytop)], "black", 0.012)
+    if p["twobox"] and wt:
+        # A van's sliding door shut line up its side (under the glass where there is
+        # some), and the drip rail along the door tops.
+        put([(s.zrd + 0.007, s.belt(s.zrd)), (s.zrd - 0.007, s.belt(s.zrd)),
+             (s.zrd - 0.007, wt + 0.1), (s.zrd + 0.007, wt + 0.1)], "seam", 0.005)
+        zf = z_on(front_edge, wt + 0.1) - 0.05
+        put([(zf, wt + 0.1), (s.zr + 0.15, wt + 0.1), (s.zr + 0.15, wt + 0.12), (zf, wt + 0.12)], "seam", 0.005)
+    if p["c_key"] and p["glass"] != "front":
         # The rearmost pillar blacked out (the "floating roof").
         yb, yr = win[-1][1], win[-2][1]
         put([win[-2], win[-1], (z_on(rear_edge, yb) + 0.012, yb), (z_on(rear_edge, yr) + 0.012, yr)], p["c_key"], 0.006)
     s.zB = zB
     s.win = win
+
+
+def clip_z(pts, zc):
+    """The (z, y) polygon cut to z >= zc."""
+    out = []
+    for i in range(len(pts)):
+        a, b = pts[i], pts[(i + 1) % len(pts)]
+        if a[0] >= zc: out.append(a)
+        if (a[0] >= zc) != (b[0] >= zc):
+            t = (zc - a[0]) / (b[0] - a[0])
+            out.append((zc, lerp(a[1], b[1], t)))
+    return out
 
 
 def ring_at(ring, u):
@@ -616,6 +673,22 @@ def side_details(s):
                     q, nrm = hit
                     for sx in (1, -1):
                         box(V(sx * (q.x + 0.012), q.y, q.z), (0.03, 0.05, 0.1), "black")
+    if p["slide"]:
+        # The sliding door's rail, along the body behind it under the rear windows.
+        s.side_decal(s.zrd - 0.02, s.zR + 0.3, lambda z: s.belt(z) - 0.05, lambda z: s.belt(z) - 0.025, "seam", 0.009)
+    a = p["accent"]
+    if a:
+        # Two-tone: a band in a darker shade of the paint, maybe a pinstripe over it.
+        s.side_decal(s.zF, s.zR, a["y0"], a["y1"], "accent", 0.007)
+        if a.get("stripe"):
+            s.side_decal(s.zF, s.zR, a["y1"], a["y1"] + 0.03, a["stripe"], 0.009)
+    if p["markers"]:
+        # Amber side marker lamps at the front corners, red at the back.
+        ym = p["bump_bot"] + 0.3
+        s.side_decal(s.zF - 0.12, s.zF - 0.2, ym, ym + 0.04, "amber", 0.011)
+        s.side_decal(s.zR + 0.2, s.zR + 0.12, ym, ym + 0.04, "tail", 0.011)
+        zm = (s.zfa + s.zra) / 2
+        s.side_decal(zm + 0.04, zm - 0.04, ym, ym + 0.04, "amber", 0.011)
     if p["rub"]:
         s.side_decal(s.zF, s.zR, p["rub_y"], p["rub_y"] + 0.06, "black", 0.01)
     c = p["clad"]
@@ -679,6 +752,22 @@ def roof_kit(s):
         for z in (lerp(z0, z1, 0.3), lerp(z0, z1, 0.75)):
             y = roof_y(s, z, xr) + lift + 0.03
             bar(V(xr + 0.02, y, z), V(-xr - 0.02, y, z), 0.04, 0.025, "black")
+    if kind == "basket":
+        # A full-length tray: a raised frame round it, slats across, lamps at the front.
+        y = max(roof_y(s, z, 0) for z in zs) + 0.03
+        ys = y + 0.09
+        for sx in (1, -1):
+            bar(V(sx * xr, ys, z0 + 0.05), V(sx * xr, ys, z1), 0.035, 0.03, "black")
+            for z in zs:
+                box(V(sx * xr, (y + ys) / 2 + 0.015, z), (0.03, ys - y + 0.03, 0.03), "black")
+        for z in (z0 + 0.05, z1):
+            bar(V(xr + 0.02, ys, z), V(-xr - 0.02, ys, z), 0.035, 0.03, "black")
+        for i in range(9):
+            z = lerp(z0 + 0.05, z1, i / 8)
+            bar(V(xr, y, z), V(-xr, y, z), 0.03, 0.02, "black")
+        for x in (-0.45, -0.15, 0.15, 0.45):
+            box(V(x, ys + 0.06, z0 + 0.06), (0.22, 0.09, 0.07), "black")
+            poly([V(xx, yy, z0 + 0.1) for xx, yy in rect2(x - 0.095, x + 0.095, ys + 0.025, ys + 0.095)], "aux", V(0, 0, 1))
 
 
 def tailgate(s):
@@ -688,9 +777,25 @@ def tailgate(s):
     top = s.top(zR)
     hw = s.hw(zR) - 0.07
     yb = p["tail"]["y0"] - 0.03
-    for x in (hw, -hw):
-        s.front(rect2(x - 0.006, x + 0.006, yb, top - 0.02), "seam", 0.01, both=False, rear=True)
-    s.front(rect2(-hw, hw, yb - 0.006, yb + 0.006), "seam", 0.01, both=False, rear=True)
+    if p["rear_doors"] == "barn":
+        # Two side-hinged doors from the bumper to the roof: shut lines up the corners
+        # and down the middle, the glass split by the doors' frames.
+        yb = p["bump_bot"] + 0.22
+        for x in (hw, -hw):
+            s.front(rect2(x - 0.006, x + 0.006, yb, top - 0.02), "seam", 0.01, both=False, rear=True)
+        s.front(rect2(-0.006, 0.006, yb, top - 0.02), "seam", 0.01, both=False, rear=True)
+        v0, v1 = s.rw_v
+        patch(s.rw_rings, 0.494, 0.506, 0.0, 1.0, "seam", V(0, top, s.zw), eps=0.012, nu=1)
+        if p["rear_glass"]:
+            patch(s.rw_rings, 0.47, 0.53, v0 - 0.01, v1 + 0.01, "black", V(0, top, s.zw), eps=0.009, nu=1)
+        for u in (0.04, 0.96):
+            patch(s.rw_rings, u - 0.004, u + 0.004, 0.0, 1.0, "seam", V(0, top, s.zw), eps=0.01, nu=1)
+        # Door handle.
+        s.front(rect2(0.03, 0.13, p["tail"]["y0"] - 0.06, p["tail"]["y0"] - 0.03), "black", 0.012, both=False, rear=True)
+    else:
+        for x in (hw, -hw):
+            s.front(rect2(x - 0.006, x + 0.006, yb, top - 0.02), "seam", 0.01, both=False, rear=True)
+        s.front(rect2(-hw, hw, yb - 0.006, yb + 0.006), "seam", 0.01, both=False, rear=True)
     if p["spoiler"]:
         y = p["H"] - p["dr"] + p["crown"] * 0.5
         xs = s.hwg() - p["tumble"] - 0.02
@@ -771,6 +876,49 @@ def wheel(s, za, sx):
 
 def extras(s):
     p = s.p
+    if p["bullbar"]:
+        # A tubular bull bar ahead of the bumper, lamps on its hoop.
+        z = s.zF + 0.12
+        y0, y1 = p["bump_bot"] + 0.05, p["nose_top"] + 0.04
+        for x in (-0.38, 0.38):
+            box(V(x, (y0 + y1) / 2, z), (0.05, y1 - y0, 0.05), "black")
+            box(V(x, p["bump_bot"] + 0.15, z - 0.07), (0.05, 0.05, 0.14), "black")
+        bar(V(0.42, y1 - 0.04, z - 0.02), V(-0.42, y1 - 0.04, z - 0.02), 0.05, 0.05, "black")
+        bar(V(0.7, p["bump_bot"] + 0.18, z - 0.06), V(-0.7, p["bump_bot"] + 0.18, z - 0.06), 0.05, 0.05, "black")
+        for x in (-0.24, 0.24):
+            box(V(x, y1 + 0.06, z), (0.14, 0.11, 0.06), "black")
+            poly([V(xx, yy, z + 0.032) for xx, yy in rect2(x - 0.055, x + 0.055, y1 + 0.02, y1 + 0.1)], "aux", V(0, 0, 1))
+    if p["ladder"]:
+        # A ladder up the right-hand rear door to the rack.
+        z = s.zR - 0.05
+        x0, x1 = s.hw(s.zR) - 0.42, s.hw(s.zR) - 0.12
+        y0, y1 = p["bump_bot"] + 0.3, p["H"] + 0.15
+        for x in (x0, x1):
+            box(V(x, (y0 + y1) / 2, z), (0.035, y1 - y0, 0.035), "black")
+        for i in range(8):
+            yy = lerp(y0 + 0.1, y1 - 0.1, i / 7)
+            box(V((x0 + x1) / 2, yy, z), (x1 - x0, 0.025, 0.025), "black")
+    if p["hightop"]:
+        # A fibreglass high top on a camper: sloped at the front, a long window down
+        # each side.
+        ht = p["hightop"]
+        xt = s.hwg() - p["tumble"] - 0.04
+        y = min(roof_y(s, z, xt) for z in (s.zw - p["cap"], s.zr)) - 0.03
+        za, zb = s.zw - p["cap"] + 0.1, s.zr + 0.02
+        h = ht["h"]
+        prof = [V(0, y, za), V(0, y + h * 0.6, za - 0.08), V(0, y + h, za - 0.45), V(0, y + h, zb + 0.12), V(0, y + h * 0.7, zb), V(0, y, zb)]
+        rg = lambda x, dy: [V(x, q.y + dy, q.z) for q in prof]
+        loft([rg(xt, 0), rg(xt - 0.08, 0.03), rg(0, 0.05), rg(-(xt - 0.08), 0.03), rg(-xt, 0)], ht["key"], closed_ring=False, caps=False)
+        poly([V(xt, q.y, q.z) for q in prof], ht["key"], V(1, 0, 0), both=True)
+        zw0, zw1 = za - 0.6, zb + 0.4
+        poly([V(xt + 0.006, yy, zz) for zz, yy in ((zw0, y + h * 0.35), (zw1, y + h * 0.35), (zw1, y + h * 0.78), (zw0, y + h * 0.78))],
+             "glass", V(1, 0, 0), both=True)
+    if p["vent"]:
+        # A roof vent or air conditioner.
+        z = lerp(s.zw, s.zr, 0.6)
+        y = roof_y(s, z, 0) + (p["hightop"]["h"] + 0.0 if p["hightop"] else 0.0)
+        box(V(0, y + 0.05, z), (0.6, 0.12, 0.65), "cream" if p["hightop"] else "grey")
+        poly([V(x, y + 0.112, zz) for x, zz in ((-0.2, z + 0.2), (0.2, z + 0.2), (0.2, z - 0.2), (-0.2, z - 0.2))], "black", V(0, 1, 0))
     if p["scoop"]:
         z = s.zc + 0.5
         y = s.top(z) + p["crown"]

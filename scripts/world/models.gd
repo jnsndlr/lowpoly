@@ -246,22 +246,25 @@ static func car(color_index: int) -> ArrayMesh:
 
 
 ## Cars use the ones modelled in Blender (VEHICLES_GLB, built by art/vehicles.py into
-## art/vehicles.blend, their sizes and lamps in VehicleData): eight sedans and eight
-## SUVs, each car
-## painted from PAINTS. They're modelled at real size and drawn at VEHICLE_SCALE to
+## art/vehicles.blend, their sizes and lamps in VehicleData): eight each of sedans,
+## SUVs, minivans and vans, each painted from PAINTS. They're modelled at real size and drawn at VEHICLE_SCALE to
 ## match the ferries until the world is real scale. The code-built car above is the
 ## fallback: with `--classic-cars`, or if the model is missing.
 const VEHICLES_GLB := "res://assets/models/vehicles.glb"
 static var mid_cars := not "--classic-cars" in OS.get_cmdline_user_args() \
 	and ResourceLoader.exists(VEHICLES_GLB)
 const VEHICLE_SCALE := FerryClass.MID_SCALE
-# The cars (VehicleData keys) and how common each is on the road: about half sedans,
-# half SUVs (each set of weights sums to 100).
+# The cars (VehicleData keys) and how common each is on the road: sedans and SUVs
+# (100 each), then minivans (25) and vans (20), work vans first.
 const VEHICLES := {
 	"sedan_modern": 25, "sedan_compact": 18, "sedan_nineties": 15, "sedan_ev": 10,
 	"sedan_boxy": 8, "sedan_exec": 8, "sedan_luxury": 8, "sedan_sport": 8,
 	"suv_crossover": 30, "suv_threerow": 20, "suv_nineties": 10, "suv_offroad": 10,
-	"suv_luxury": 9, "suv_ev": 9, "suv_cherokee": 8, "suv_coupe": 4}
+	"suv_luxury": 9, "suv_ev": 9, "suv_cherokee": 8, "suv_coupe": 4,
+	"minivan_family": 6, "minivan_modern": 5, "minivan_bold": 4, "minivan_nineties": 3,
+	"minivan_suvish": 3, "minivan_boxy": 2, "minivan_compact": 1, "minivan_ev": 1,
+	"van_cargo": 6, "van_hightop": 3, "van_compact": 3, "van_passenger": 2, "van_shuttle": 2,
+	"van_camper": 2, "van_retro": 1, "van_overland": 1}
 # Paint and how common: whites, blacks, greys and silvers first, as in any car park.
 const PAINTS := [
 	[Color(0.9, 0.9, 0.88), 20], [Color(0.86, 0.84, 0.78), 5], [Color(0.1, 0.1, 0.11), 16],
@@ -304,7 +307,11 @@ static func vehicle(model: String, paint: int) -> ArrayMesh:
 		var key := model.replace("_", "")
 		var mb := MeshBuilder.new()
 		_append_part(mb, lib[key + "fixed"], Transform3D.IDENTITY)
-		_append_part(mb, lib[key + "body"], Transform3D.IDENTITY, Color.WHITE, PAINTS[paint % PAINTS.size()][0])
+		var col: Color = PAINTS[paint % PAINTS.size()][0]
+		_append_part(mb, lib[key + "body"], Transform3D.IDENTITY, Color.WHITE, col)
+		if lib.has(key + "accent"):
+			# A two-tone band: a darker shade of the paint.
+			_append_part(mb, lib[key + "accent"], Transform3D.IDENTITY, Color.WHITE, col.darkened(0.45))
 		_append_part(mb, lib[key + "head"], Transform3D.IDENTITY, Color.WHITE, lamp_glass(GlowBuilder.HEADLIGHT))
 		_append_part(mb, lib[key + "tail"], Transform3D.IDENTITY, Color.WHITE, lamp_glass(GlowBuilder.TAIL))
 		return mb.commit())

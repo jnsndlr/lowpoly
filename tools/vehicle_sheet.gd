@@ -16,6 +16,10 @@ var paints := {
 	"suv_cherokee": 5, "suv_offroad": 9, "suv_nineties": 11,
 	"sedan_modern": 1, "sedan_sport": 5, "sedan_boxy": 7, "sedan_nineties": 9,
 	"sedan_luxury": 10, "sedan_ev": 12, "sedan_compact": 11, "sedan_exec": 2,
+	"minivan_family": 10, "minivan_nineties": 11, "minivan_modern": 4, "minivan_bold": 8,
+	"minivan_compact": 5, "minivan_ev": 0, "minivan_boxy": 9, "minivan_suvish": 13,
+	"van_cargo": 0, "van_passenger": 5, "van_hightop": 12, "van_retro": 10,
+	"van_camper": 9, "van_shuttle": 3, "van_compact": 7, "van_overland": 9,
 }
 var cam: Camera3D
 var holder: Node3D

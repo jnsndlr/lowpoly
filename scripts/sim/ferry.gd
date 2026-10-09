@@ -104,7 +104,7 @@ func start_staggered(i: int) -> void:
 			speed = fc.cruise
 			for k in sim.rng.randi_range(fc.capacity / 3, fc.capacity - fc.capacity / 9):
 				var car := sim.make_vehicle(self)
-				var slot := _free_slot(car.is_truck)
+				var slot := _free_slot(car.is_tall)
 				car.position = _slot_local(slot)
 				_slots[slot] = car
 				aboard.append(car)
@@ -158,16 +158,16 @@ func _slot_local(i: int) -> Vector3:
 
 
 ## Fills from the far end first so cars drive in past the ones already parked, and
-## sends trucks to the lanes with the headroom (cars to the others) while there's
-## room there.
-func _free_slot(truck := false) -> int:
+## sends trucks and high-roofed vans to the lanes with the headroom (cars to the
+## others) while there's room there.
+func _free_slot(tall := false) -> int:
 	var fallback := -1
 	for r in fc.rows:
 		var row := r if at_a else fc.rows - 1 - r
 		for c in fc.lanes:
 			var idx := row * fc.lanes + c
 			if _slots[idx] == null and not fc.blocked.has(idx):
-				if fc.lane_suits(c, truck):
+				if fc.lane_suits(c, tall):
 					return idx
 				if fallback < 0:
 					fallback = idx
@@ -256,7 +256,7 @@ func _tick_loading(delta: float) -> void:
 
 
 func _drive_on(car: Vehicle, term: Terminal) -> void:
-	var slot := _free_slot(car.is_truck)
+	var slot := _free_slot(car.is_tall)
 	_slots[slot] = car
 	_boarding += 1
 	var local := _slot_local(slot)
