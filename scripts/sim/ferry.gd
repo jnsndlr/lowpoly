@@ -104,9 +104,14 @@ func start_staggered(i: int) -> void:
 			speed = fc.cruise
 			for k in sim.rng.randi_range(fc.capacity / 3, fc.capacity - fc.capacity / 9):
 				var car := sim.make_vehicle(self)
-				var slot := _free_slot(car.is_tall)
-				car.position = _slot_local(slot)
-				_slots[slot] = car
+				var slot := _free_slot(car)
+				if slot < 0:
+					car.queue_free()
+					break
+				_take_slots(slot, car)
+				car.position = _park_local(slot, car)
+				car.rotation.y = 0.0 if at_a else PI
+				car.straighten()
 				aboard.append(car)
 			_place(_route_s(traveled))
 		2:
@@ -157,17 +162,48 @@ func _slot_local(i: int) -> Vector3:
 	return Vector3(fc.cols[i % fc.lanes], Layout.DECK_Y, fc.row_z[floori(i / float(fc.lanes))])
 
 
+## Where `car` parks with its slots starting at `slot` (the far end of its run of
+## rows): the run's middle, its tractor ahead of that for a rig. Cars face +Z boarding
+## at A, -Z at B.
+func _park_local(slot: int, car: Vehicle) -> Vector3:
+	var fwd := 1.0 if at_a else -1.0
+	var p := _slot_local(slot)
+	p.z -= fwd * (car.slots - 1) * 0.5 * FerryClass.ROW_SPACING
+	p.z -= fwd * car.center_offset
+	return p
+
+
+## The slots of `car`'s run from `slot`, going back toward the end it boards from.
+func _run(slot: int, car: Vehicle) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var step := fc.lanes if at_a else -fc.lanes
+	for k in car.slots:
+		out.append(slot + k * step)
+	return out
+
+
+func _take_slots(slot: int, car: Vehicle) -> void:
+	for i in _run(slot, car):
+		_slots[i] = car
+
+
 ## Fills from the far end first so cars drive in past the ones already parked, and
 ## sends trucks and high-roofed vans to the lanes with the headroom (cars to the
-## others) while there's room there.
-func _free_slot(tall := false) -> int:
+## others) while there's room there. A long vehicle needs a run of free rows in one
+## lane. -1 if there's no room for `car`.
+func _free_slot(car: Vehicle) -> int:
 	var fallback := -1
-	for r in fc.rows:
+	for r in fc.rows - car.slots + 1:
 		var row := r if at_a else fc.rows - 1 - r
 		for c in fc.lanes:
 			var idx := row * fc.lanes + c
-			if _slots[idx] == null and not fc.blocked.has(idx):
-				if fc.lane_suits(c, tall):
+			var free := true
+			for i in _run(idx, car):
+				if _slots[i] != null or fc.blocked.has(i):
+					free = false
+					break
+			if free:
+				if fc.lane_suits(c, car.is_tall):
 					return idx
 				if fallback < 0:
 					fallback = idx
@@ -239,12 +275,16 @@ func _begin_loading() -> void:
 func _tick_loading(delta: float) -> void:
 	_dispatch_timer -= delta
 	var term := here()
-	if _dispatch_timer <= 0.0 and _state_time < MAX_DWELL and aboard.size() + _boarding < fc.capacity:
-		var car := term.take_car(route.id)
+	var full := true
+	if _dispatch_timer <= 0.0 and _state_time < MAX_DWELL:
+		var car := term.take_car(route.id, func(c: Vehicle): return _free_slot(c) >= 0)
 		if car != null:
 			_dispatch_timer = DISPATCH_GAP
 			_drive_on(car, term)
-	var full := aboard.size() + _boarding >= fc.capacity
+	# (full: nothing waiting would fit)
+	for lane in term.lanes[route.id]:
+		if lane.queue.size() > 0 and _free_slot(lane.queue[0]) >= 0:
+			full = false
 	var queue_empty := term.queued_for(route.id) == 0
 	if _boarding == 0 and _state_time >= MIN_DWELL and (full or queue_empty or _state_time >= MAX_DWELL):
 		state = State.SAILING
@@ -256,10 +296,10 @@ func _tick_loading(delta: float) -> void:
 
 
 func _drive_on(car: Vehicle, term: Terminal) -> void:
-	var slot := _free_slot(car.is_tall)
-	_slots[slot] = car
+	var slot := _free_slot(car)
+	_take_slots(slot, car)
 	_boarding += 1
-	var local := _slot_local(slot)
+	var local := _park_local(slot, car)
 	var entry_z := -fc.end_z if at_a else fc.end_z
 	var path := term.boarding_path(car, route.id)
 	var mouth := clampf(local.x, -fc.throat_x, fc.throat_x)
@@ -268,14 +308,15 @@ func _drive_on(car: Vehicle, term: Terminal) -> void:
 		# Into a wing lane: in through the apron's opening, then out round the fork's end.
 		path.append(to_global(Vector3(local.x, Layout.DECK_Y, signf(entry_z) * fc.turn_z)))
 	path.append(to_global(local))
-	car.drive(path, _on_boarded.bind(slot))
+	car.drive(path, _on_boarded.bind(local))
 	sim.collect_fare(car)
 
 
-func _on_boarded(car: Vehicle, slot: int) -> void:
+func _on_boarded(car: Vehicle, local: Vector3) -> void:
 	car.reparent(self)
-	car.position = _slot_local(slot)
+	car.position = local
 	car.rotation = Vector3(0.0, 0.0 if at_a else PI, 0.0)
+	car.straighten()
 	aboard.append(car)
 	_boarding -= 1
 

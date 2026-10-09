@@ -22,12 +22,20 @@
 # - pickups (a cab and an open bed): a midsize extended cab, an 80s square-body, a
 #   crew-cab trail truck, a crew-cab dually, a lifted off-roader with a light bar, a
 #   lowered sport truck, a 90s compact and a modern full-size crew cab; and one not on
-#   the sheet, the pavement princess (see PICKUPS).
+#   the sheet, the pavement princess (see PICKUPS);
+# - trucks (art/truck_kit.py): straight trucks on a medium-duty conventional cab (box,
+#   reefer, fuel tank) and a step van; Class 8 tractors (aero high-roof and mid-roof
+#   sleepers, an aero day cab, a long-nose day cab and a long-nose flat-top sleeper);
+#   and semi-trailers (dry van, reefer, container chassis, flatbed, logs, tanker, end
+#   dump, car hauler). Tractors export their fifth wheel (`hitch`), trailers their
+#   kingpin (`pin`) and tandem centre (`axle`), for coupling and articulating in game.
 import bpy, os
 
 ART = os.path.dirname(bpy.data.filepath) or "/Users/jon/Documents/GitHub/lowpoly/art"
 _kit = os.path.join(ART, "vehicle_kit.py")
 exec(compile(open(_kit).read(), _kit, "exec"))
+_tkit = os.path.join(ART, "truck_kit.py")
+exec(compile(open(_tkit).read(), _tkit, "exec"))
 
 
 # --- Sedan ---------------------------------------------------------------------------
@@ -511,8 +519,103 @@ PICKUPS = {
                      paint=(0.9, 0.9, 0.88)),
 }
 
+# --- Trucks (art/truck_kit.py) ---------------------------------------------------------
+
+# A medium-duty conventional (Freightliner M2 / International MV) with a body behind.
+TRUCK = dict(
+    kind="straight", L=10.3, W=2.5, H=3.6, wb=6.1, fo=1.12,   # body width and height
+    r=0.5, tw=0.27, track=1.22,                                # tyres; outer tyre face from the centre
+    hood=1.3, hood_y0=1.5, hood_y1=1.7, fender_y=1.16, grille_w=1.0,
+    ws=0.48, cab=1.42, cab_w=2.3, roof=2.68, door_back=0.18,
+    grille="chrome", bumper="gunmetal", steps="silver", hooks=False,
+    hood_hw=(0.58, 0.74), nose_round=0.1, fender_round=0.14, fender_run=0.32, bump=(0.39, 0.73),
+    cab_y0=0.98, grille_top=0.14, grille_bars="horizontal", lamp_y=(0.92, 1.08), lamp_set=0.0,
+    step_set=0.18, tanks=1, tank_r=0.27, tank_len=0.9, skirts=False, air_cleaners=False, stacks=0,
+    sleeper=0.0, sl_roof=0.0, rise=1.0, extenders=False, visor=None,
+    body="box", body_gap=0.16, floor=1.2, door="roll", reefer=False, tandem=False,
+    tank_h=1.45, stripe="orange", tank_y0=1.1, tank_key="tankw", bearer_y=1.0, band=1.4,
+    # (step van)
+    sill=0.62, hood_y=1.32,
+)
+
+TRUCKS = {
+    # 24' dry box on a single rear axle, roll-up door (the rental/delivery box truck).
+    "box": dict(paint=(0.9, 0.9, 0.88)),
+    # 20' reefer box with its unit over the cab, swing doors (sheet: the white reefer).
+    "reefer": dict(L=9.3, wb=5.3, H=3.7, door="swing", reefer=True, paint=(0.88, 0.88, 0.86)),
+    # Fuel delivery tank truck on a tandem (sheet: white cab, orange-striped tank).
+    "tank": dict(L=9.4, wb=5.2, H=2.7, body="tank", tandem=True, grille="silver", paint=(0.9, 0.9, 0.88)),
+    # Walk-in step van (sheet: the yellow one): one body, short nose, barn doors.
+    "step": dict(kind="step", L=7.2, W=2.36, H=3.0, wb=4.1, fo=1.0, r=0.43, tw=0.24, hood=0.82,
+                 paint=(0.93, 0.72, 0.14)),
+}
+
+# A Class 8 tractor: a bigger conventional on a tandem with a fifth wheel.
+TRACTOR = dict(TRUCK)
+TRACTOR.update(
+    kind="tractor", L=7.0, W=2.5, H=3.0, wb=4.7, fo=1.1, r=0.52, tw=0.28, track=1.25,
+    hood=1.95, hood_y0=1.66, hood_y1=1.98, fender_y=1.3, grille_w=1.05, hood_hw=(0.62, 0.86),
+    nose_round=0.18, fender_round=0.25, fender_run=0.6, bump=(0.45, 0.82), cab_y0=1.25,
+    grille_top=0.12, lamp_y=(1.02, 1.18), ws=0.55, cab=1.5, cab_w=2.36, roof=3.0,
+    tanks=2, tank_r=0.33, tank_len=1.3, step_set=0.12, fw_ahead=0.2, fw_y=1.22, frame_y=1.05,
+)
+
+TRACTORS = {
+    # Aero high-roof sleeper (sheet: the blue Cascadia): roof fairing, side extenders,
+    # chassis skirts.
+    "aero": dict(L=9.2, wb=6.4, sleeper=1.9, sl_roof=4.0, rise=1.2, extenders=True, skirts=True,
+                 paint=(0.12, 0.3, 0.72)),
+    # Mid-roof sleeper (sheet: the green one hauling the dry van).
+    "midroof": dict(L=8.8, wb=6.0, sleeper=1.5, sl_roof=3.45, rise=0.9, extenders=True, skirts=True,
+                    paint=(0.22, 0.5, 0.2)),
+    # Aero day cab: drayage, the port and container work.
+    "day": dict(L=6.9, wb=4.6, tank_len=1.0, paint=(0.9, 0.9, 0.88)),
+    # Long-nose day cab (sheet: the red Peterbilt 389): square hood, set-back lamps,
+    # air cleaners, a chrome stack, chrome bumper.
+    "longnose": dict(L=7.9, wb=5.4, fo=1.05, hood=2.3, hood_y0=1.88, hood_y1=1.92, nose_round=0.03,
+                     hood_hw=(0.6, 0.66), fender_y=1.22, fender_round=0.4, fender_run=0.9, grille_w=1.12,
+                     grille_bars="vertical", grille_top=0.08, lamp_set=0.5, lamp_y=(1.04, 1.2), ws=0.45,
+                     roof=2.95, air_cleaners=True, stacks=1, bumper="chrome", tank_len=1.1,
+                     paint=(0.75, 0.13, 0.08)),
+    # Long-nose flat-top sleeper (W900 kind): twin stacks, a visor.
+    "classic": dict(L=9.4, wb=6.6, fo=1.05, hood=2.3, hood_y0=1.88, hood_y1=1.92, nose_round=0.03,
+                    hood_hw=(0.6, 0.66), fender_y=1.22, fender_round=0.4, fender_run=0.9, grille_w=1.12,
+                    grille_bars="vertical", grille_top=0.08, lamp_set=0.5, lamp_y=(1.04, 1.2), ws=0.45,
+                    roof=2.95, sleeper=1.6, air_cleaners=True, stacks=2, visor="body", bumper="chrome",
+                    paint=(0.38, 0.08, 0.12)),
+}
+
+# Semi-trailers: the kingpin kp behind the nose at the fifth wheels' height, the tandem's
+# centre ro ahead of the back. Two axles on all (US practice), tyres as the tractors'.
+TRAILER = dict(TRUCK)
+TRAILER.update(
+    kind="trailer", L=16.15, W=2.6, H=4.1, r=0.5, tw=0.27, track=1.28, kp=0.9, ro=1.6, fw_y=1.22,
+    body="van", floor=1.32, roof=2.5, bearer_y=0.95, door="swing", skirts=True, stripe=None,
+)
+
+TRAILERS = {
+    # 53' dry van, side skirts (sheet: the white one).
+    "van": dict(paint=(0.9, 0.9, 0.88)),
+    # 53' reefer, its unit on the nose (sheet).
+    "reefer": dict(reefer=True, paint=(0.88, 0.88, 0.86)),
+    # 40' container on a skeletal chassis (sheet: the red one).
+    "container": dict(L=12.5, H=3.92, body="container", ro=1.4, floor=1.33, paint=(0.72, 0.18, 0.1)),
+    # 48' flatbed, wood deck (sheet).
+    "flatbed": dict(L=14.6, H=1.6, body="flatbed", floor=1.5, ro=1.5, paint=(0.2, 0.2, 0.22)),
+    # Log trailer: bunks and stakes on a pole frame, long logs (sheet, PNW style).
+    "logs": dict(L=13.0, H=3.4, body="logs", floor=1.45, ro=2.4, paint=(0.2, 0.2, 0.22)),
+    # Polished aluminium fuel tanker (sheet).
+    "tank": dict(L=13.0, H=3.1, body="tank", tank_h=2.0, tank_y0=1.02, tank_key="chrome", stripe=None, ro=1.5, band=3.0,
+                 paint=(0.2, 0.2, 0.22)),
+    # End dump (sheet: the dark ribbed tub).
+    "dump": dict(L=11.0, H=3.4, body="dump", floor=1.4, ro=1.4, paint=(0.2, 0.21, 0.24)),
+    # Two-level car hauler (sheet).
+    "carhauler": dict(L=16.0, H=3.95, body="carhauler", ro=1.3, paint=(0.15, 0.17, 0.25)),
+}
+
 MODELS = {"sedan": (SEDAN, SEDANS), "suv": (SUV, SUVS), "minivan": (MINIVAN, MINIVANS), "van": (VAN, VANS),
-          "pickup": (PICKUP, PICKUPS)}
+          "pickup": (PICKUP, PICKUPS), "truck": (TRUCK, TRUCKS),
+          "tractor": (TRACTOR, TRACTORS), "trailer": (TRAILER, TRAILERS)}
 
 
 # --- Build and export -----------------------------------------------------------------
@@ -521,16 +624,19 @@ built, data, tris = [], {}, {}
 for row, (model, (base, variants)) in enumerate(MODELS.items()):
     for i, (vname, over) in enumerate(variants.items()):
         prm = dict(base); prm.update(over)
-        s = build(prm)
+        s = build_truck(prm) if model in ("truck", "tractor", "trailer") else build(prm)
         name = model + "_" + vname
         obs = finish(name)
         for ob in obs:
-            ob.location = (i * 3.0, row * 7.0, 0)
+            ob.location = (i * (12.0 if model in ("truck", "tractor", "trailer") else 3.0), row * 7.0, 0)
         built += obs
         tris[name] = sum(len(o.data.polygons) for o in obs)
         # (the height overall: high tops and racks count, for the ferries' headroom)
         top = max(max((v.co.z for v in o.data.vertices), default=0.0) for o in obs)
-        data[name] = dict(size=(prm["W"] + 2 * prm["rflare"], max(prm["H"], top), prm["L"]), head=s.head, tail=s.tail)
+        data[name] = dict(size=(prm["W"] + 2 * prm.get("rflare", 0.0), max(prm["H"], top), prm["L"]), head=s.head, tail=s.tail)
+        for k in ("hitch", "pin", "axle"):
+            if getattr(s, k, None) is not None:
+                data[name][k] = getattr(s, k)
 
 _glb = os.path.normpath(os.path.join(ART, "..", "assets", "models", "vehicles.glb"))
 for o in bpy.data.objects: o.select_set(o in built)
@@ -549,7 +655,8 @@ with open(_gd, "w") as f:
     f.write("## the right-hand head and tail lamps (+Z front; mirror x for the left).\n")
     f.write("const VARIANTS := {\n")
     for name, d in data.items():
-        f.write('\t"%s": {"size": %s, "head": %s, "tail": %s},\n' % (name, v3(d["size"]), v3(d["head"]), v3(d["tail"])))
+        extra = "".join(', "%s": %s' % (k, v3(d[k])) for k in ("hitch", "pin", "axle") if k in d)
+        f.write('\t"%s": {"size": %s, "head": %s, "tail": %s%s},\n' % (name, v3(d["size"]), v3(d["head"]), v3(d["tail"]), extra))
     f.write("}\n")
 result = tris
 

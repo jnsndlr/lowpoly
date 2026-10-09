@@ -5,7 +5,11 @@ extends Node3D
 ## One real second = one game minute at 1x speed (Engine.time_scale scales it).
 
 const FARE_CAR := 18.5
-const FARE_TRUCK := 42.0
+const FARE_TRUCK := 42.0   # (the code-built truck)
+# Fares go by length, as WSF's do: a car's fare up to 22 ft (6.7 m), then this much
+# more of it for every metre over.
+const CAR_FARE_LENGTH := 6.7
+const FARE_PER_METRE := 0.3
 const SEASON_DAYS := 30
 const SEASONS := ["Spring", "Summer", "Autumn", "Winter"]
 const FERRY_NAMES := ["Cedar Star", "Orca Spirit", "Madrona Belle", "Tidewater", "Salish Dawn",
@@ -102,9 +106,19 @@ func _process(delta: float) -> void:
 func make_vehicle(parent: Node3D = null) -> Vehicle:
 	var v := Vehicle.new()
 	var truck := rng.randf() < 0.12
-	if truck or not Models.mid_cars:
+	if not Models.mid_cars:
 		var col := rng.randi_range(0, Models.CAR_COLORS.size() - 1)
 		v.setup(Models.truck(col) if truck else Models.car(col), truck)
+	elif truck:
+		var model := Models.pick_weighted(Models.TRUCKS, rng.randf())
+		var rig := model == "rig"
+		if rig:
+			model = Models.pick_weighted(Models.TRACTORS, rng.randf())
+		v.setup(Models.vehicle(model, Models.pick_paint(rng.randf())), true, model, Models.VEHICLE_SCALE)
+		v.speed = 20.0
+		if rig:
+			var trailer := Models.pick_weighted(Models.TRAILERS, rng.randf())
+			v.attach_trailer(trailer, Models.vehicle(trailer, Models.pick_paint(rng.randf())))
 	else:
 		var model := Models.pick_vehicle(rng.randf())
 		v.setup(Models.vehicle(model, Models.pick_paint(rng.randf())), false, model, Models.VEHICLE_SCALE)
@@ -113,7 +127,12 @@ func make_vehicle(parent: Node3D = null) -> Vehicle:
 
 
 func collect_fare(car: Vehicle) -> void:
-	var fare := FARE_TRUCK if car.is_truck else FARE_CAR
+	var fare := FARE_CAR
+	if car.model == "":
+		fare = FARE_TRUCK if car.is_truck else FARE_CAR
+	else:
+		var metres := car.length / Models.VEHICLE_SCALE
+		fare *= 1.0 + FARE_PER_METRE * maxf(metres - CAR_FARE_LENGTH, 0.0)
 	revenue_today += fare
 	revenue_total += fare
 	cars_today += 1

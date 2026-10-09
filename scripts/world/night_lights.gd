@@ -136,6 +136,10 @@ func _update_cars() -> void:
 		if not groups.has(v.model):
 			groups[v.model] = []
 		groups[v.model].append(v)
+		if v.trailer:
+			if not groups.has(v.trailer_model):
+				groups[v.trailer_model] = []
+			groups[v.trailer_model].append(v)
 	for model: String in _cars:
 		if not groups.has(model):
 			(_cars[model] as MultiMesh).visible_instance_count = 0
@@ -148,7 +152,7 @@ func _update_cars() -> void:
 			buf.resize(mm.instance_count * 16)
 		var k := 0
 		for v: Vehicle in cars:
-			var t := v.transform
+			var t := v.transform if v.model == model else v.trailer_xform()
 			var b := t.basis
 			var o := k * 16
 			buf[o] = b.x.x

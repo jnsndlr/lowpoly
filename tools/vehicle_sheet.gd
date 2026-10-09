@@ -3,6 +3,7 @@ extends SceneTree
 ## front three-quarters (long lens), two to a row, in one PNG.
 ##   godot --path . --script tools/vehicle_sheet.gd -- --out=FILE.png [--only=suv_] [--rear]
 ##     [--yaw=DEG] [--pitch=DEG] [--view=M] [--look=X,Y,Z] [--cell=WxH]  (pass --resolution to match the cell)
+##     [--hitch=tractor_aero]  (draws each trailer coupled to that tractor)
 
 var out := "user://vehicle_sheet.png"
 var only := "suv_"
@@ -11,6 +12,7 @@ var pitch := 18.0
 var cell := Vector2i(720, 440)
 var view := 4.4             # metres the frame spans vertically
 var look := Vector3.ZERO    # shift of the framing centre (m)
+var hitch := ""             # tractor to couple trailers to
 var paints := {
 	"suv_crossover": 1, "suv_threerow": 7, "suv_luxury": 4, "suv_coupe": 12, "suv_ev": 3,
 	"suv_cherokee": 5, "suv_offroad": 9, "suv_nineties": 11,
@@ -23,6 +25,9 @@ var paints := {
 	"pickup_midsize": 0, "pickup_squarebody": 7, "pickup_trail": 5, "pickup_dually": 0,
 	"pickup_rock": 9, "pickup_sport": 12, "pickup_compact": 11, "pickup_fullsize": 2,
 	"pickup_princess": 1,
+	"truck_box": 0, "truck_reefer": 0, "truck_tank": 0, "truck_step": 12,
+	"trailer_container": 7, "trailer_dump": 3, "trailer_carhauler": 6,
+	"tractor_aero": 5, "tractor_midroof": 9, "tractor_day": 0, "tractor_longnose": 7, "tractor_classic": 8,
 }
 var cam: Camera3D
 var holder: Node3D
@@ -49,6 +54,8 @@ func _initialize() -> void:
 		elif a.begins_with("--look="):
 			var xyz := a.substr(7).split(",")
 			look = Vector3(float(xyz[0]), float(xyz[1]), float(xyz[2]))
+		elif a.begins_with("--hitch="):
+			hitch = a.substr(8)
 		elif a.begins_with("--cell="):
 			var wh := a.substr(7).split("x")
 			cell = Vector2i(int(wh[0]), int(wh[1]))
@@ -65,7 +72,7 @@ func _initialize() -> void:
 	root.add_child(sun)
 	var ground := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
-	pm.size = Vector2(40, 40)
+	pm.size = Vector2(120, 120)
 	ground.mesh = pm
 	var gm := StandardMaterial3D.new()
 	gm.albedo_color = Color(0.96, 0.95, 0.92)
@@ -99,6 +106,18 @@ func _process(_delta: float) -> bool:
 		holder.add_child(mi)
 		var size: Vector3 = VehicleData.VARIANTS[n]["size"]
 		var target := Vector3(0, size.y * 0.45, 0) + look
+		if hitch != "" and VehicleData.VARIANTS[n].has("pin"):
+			# The tractor ahead, its fifth wheel under the kingpin; frame the whole rig.
+			var tr := MeshInstance3D.new()
+			tr.mesh = Models.vehicle(hitch, paints.get(hitch, 0))
+			tr.material_override = Models.vc_material()
+			var pin: Vector3 = VehicleData.VARIANTS[n]["pin"]
+			var hp: Vector3 = VehicleData.VARIANTS[hitch]["hitch"]
+			tr.position = Vector3(0, 0, pin.z - hp.z)
+			holder.add_child(tr)
+			var tsize: Vector3 = VehicleData.VARIANTS[hitch]["size"]
+			var front := tr.position.z + tsize.z * 0.5
+			target.z += (front - size.z * 0.5) * 0.5
 		var y := deg_to_rad(yaw)
 		var p := deg_to_rad(pitch)
 		cam.position = target + Vector3(sin(y) * cos(p), sin(p), cos(y) * cos(p)) * 20.0
