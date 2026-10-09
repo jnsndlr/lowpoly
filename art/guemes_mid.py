@@ -5,7 +5,8 @@
 # up, waterline at y = 0 (Blender: +Z end to -Y, Z up). 37.8 m over the rim and 15.85 m
 # in the beam (124 x 52 ft, the county's figures); 21 cars. The plan, after the user's
 # photos: straight sides and broad, full oval ends, a rusty steel rim round the deck
-# edge. One open car deck (three lanes, for the game's cars), the house a long narrow block along the
+# edge. The deck is cantilevered out over a narrower hull on knee brackets (the hull
+# inset 1.4 m at the sides, 2.6 m at the ends). One open car deck (three lanes, for the game's cars), the house a long narrow block along the
 # starboard side, the passenger cabin in it under an open upper deck; on that, a short
 # tower and the flared pilothouse with its mast. Tall white panels guard the deck's
 # four corners (her name on them), low bulwarks with a pipe rail between, yellow bands
@@ -296,15 +297,15 @@ def deck_x(z, hb=HB, hz=HZ):
     return hb * max(0.0, 1.0 - t ** OVAL_P) ** (1.0 / OVAL_P)
 
 
-def oval(y, hb=HB, hz=HZ, n_end=14, n_side=4):
+def oval(y, hb=HB, hz=HZ, n_end=14, n_side=4, p=OVAL_P):
     """Closed plan ring at height y: up the starboard side, round the +z end, down the
-    port side and round the -z end (same vertex count for any hb, hz)."""
+    port side and round the -z end (same vertex count for any hb, hz, p)."""
     L = hz - OVAL_Z
     q = []
     for i in range(n_end + 1):
         a = (math.pi / 2) * i / n_end
         c, s = math.cos(a), math.sin(a)
-        q.append((hb * c ** (2 / OVAL_P), OVAL_Z + L * s ** (2 / OVAL_P)))
+        q.append((hb * c ** (2 / p), OVAL_Z + L * s ** (2 / p)))
     pts = [(hb, lerp(-OVAL_Z, OVAL_Z, i / n_side)) for i in range(n_side)]
     pts += q
     pts += [(-x, z) for x, z in reversed(q)][1:]
@@ -331,16 +332,42 @@ def side_normal(s, z):
 
 # --- Hull ---------------------------------------------------------------------------
 
+# The deck is cantilevered out over a narrower hull, as built: the hull proper is
+# inset under it (HULL_HB, HULL_HZ at its top, HULL_Y), its ends raked up from a flat
+# bottom over a hard chine, a white boot top over the red bottom. The deck's underside
+# runs near level from the rim in to the hull, carried on knee brackets all round.
+HULL_HB, HULL_HZ, HULL_P = HB - 1.4, HZ - 2.6, 2.2
+HULL_Y = CAR_DECK - 0.6   # the hull's top, where the deck's underside meets it
+
+
 def hull():
-    """A shallow scow-ended hull: the ends rake up from a flat bottom; the rusty rim
-    round the deck edge stands proud of the sides."""
-    rings = [oval(-2.0, HB - 1.3, HZ - 3.4), oval(-1.2, HB - 0.5, HZ - 1.7),
-             oval(-0.3, HB - 0.12, HZ - 0.5), oval(0.6, HB - 0.02, HZ - 0.1),
-             oval(CAR_DECK - 0.45, HB, HZ)]
-    loft(rings, lambda i, j, c: "antifoul" if c.y < -0.05 else "hull", cap_key="hull")
+    hb, hz, p = HULL_HB, HULL_HZ, HULL_P
+    rings = [oval(-2.0, hb - 0.6, hz - 3.9, p=p), oval(-1.5, hb - 0.08, hz - 3.0, p=p),
+             oval(0.18, hb, hz - 1.15, p=p), oval(0.42, hb, hz - 0.98, p=p),
+             oval(HULL_Y, hb, hz, p=p)]
+    loft(rings, lambda i, j, c: "antifoul" if i < 2 else "white" if i == 2 else "hull", cap_key="hull")
+    # the deck's underside, rim to hull
     y0, y1 = CAR_DECK - 0.45, CAR_DECK + 0.06
+    under, top = oval(y0), rings[-1]
+    loft([under, top], "black", caps=False)
+    knees(under, rings[-2], top)
     r = lambda y, o: oval(y, HB + o, HZ + o)
     loft([r(y0, 0), r(y0 + 0.1, RIM), r(y1, RIM), r(y1, 0)], "rim", caps=False)
+
+
+def knees(under, low, top, t=0.14):
+    """A triangular knee under the overhang at every station: down the hull side (the
+    `low` ring to the `top` one) and out along the underside to near the rim."""
+    n = len(top)
+    for i in range(n):
+        a, b = top[i], under[i]
+        L = V(b.x - a.x, 0, b.z - a.z).length
+        if L < 0.3: continue
+        tan = (top[(i + 1) % n] - top[i - 1]); tan.y = 0; tan.normalize()
+        y = a.y - min(1.0, 0.3 + 0.25 * L)
+        h = lerp(low[i], a, (y - low[i].y) / (a.y - low[i].y))
+        tri = [h, a, lerp(a, b, 0.85)]
+        loft([[q - tan * (t / 2) for q in tri], [q + tan * (t / 2) for q in tri]], "dkwall")
 
 
 def car_deck():

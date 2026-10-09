@@ -107,6 +107,7 @@ func _initialize() -> void:
 		models["guemes"] = [guemes, Vector3(0, 3, 0), 48.0]
 		models["guemes_end"] = [guemes, Vector3(0, 3, 14), 18.0]
 		models["guemes_house"] = [guemes, Vector3(5.5, 6.5, 0), 14.0]
+		models["guemes_hull"] = [guemes, Vector3(0, 0.5, 8), 30.0]
 	if ResourceLoader.exists("res://assets/models/hiyu_mid.glb"):
 		var hiyu: ArrayMesh = Models._gltf_parts("res://assets/models/hiyu_mid.glb", ["fixed", "glass", "window"]).commit()
 		models["hiyu"] = [hiyu, Vector3(0, 5, 0), 62.0]
