@@ -106,7 +106,7 @@ func make_vehicle(parent: Node3D = null) -> Vehicle:
 		var col := rng.randi_range(0, Models.CAR_COLORS.size() - 1)
 		v.setup(Models.truck(col) if truck else Models.car(col), truck)
 	else:
-		var model := Models.pick_sedan(rng.randf())
+		var model := Models.pick_vehicle(rng.randf())
 		v.setup(Models.vehicle(model, Models.pick_paint(rng.randf())), false, model, Models.VEHICLE_SCALE)
 	(parent if parent else traffic).add_child(v)
 	return v

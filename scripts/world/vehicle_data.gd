@@ -13,4 +13,12 @@ const VARIANTS := {
 	"sedan_ev": {"size": Vector3(1.860, 1.420, 4.720), "head": Vector3(0.610, 0.570, 2.360), "tail": Vector3(0.700, 0.905, -2.360)},
 	"sedan_compact": {"size": Vector3(1.720, 1.480, 4.420), "head": Vector3(0.540, 0.645, 2.210), "tail": Vector3(0.555, 0.875, -2.210)},
 	"sedan_exec": {"size": Vector3(1.740, 1.420, 4.750), "head": Vector3(0.530, 0.680, 2.375), "tail": Vector3(0.590, 0.760, -2.375)},
+	"suv_crossover": {"size": Vector3(1.860, 1.720, 4.600), "head": Vector3(0.600, 0.865, 2.300), "tail": Vector3(0.660, 0.995, -2.300)},
+	"suv_threerow": {"size": Vector3(1.930, 1.770, 4.950), "head": Vector3(0.690, 0.885, 2.475), "tail": Vector3(0.652, 1.020, -2.475)},
+	"suv_luxury": {"size": Vector3(2.060, 1.960, 5.400), "head": Vector3(0.730, 1.075, 2.700), "tail": Vector3(0.780, 1.055, -2.700)},
+	"suv_coupe": {"size": Vector3(2.000, 1.640, 5.100), "head": Vector3(0.690, 0.900, 2.550), "tail": Vector3(0.790, 1.065, -2.550)},
+	"suv_ev": {"size": Vector3(1.980, 1.800, 4.950), "head": Vector3(0.750, 0.935, 2.475), "tail": Vector3(0.820, 1.120, -2.475)},
+	"suv_cherokee": {"size": Vector3(1.760, 1.680, 4.250), "head": Vector3(0.640, 0.860, 2.125), "tail": Vector3(0.760, 0.800, -2.125)},
+	"suv_offroad": {"size": Vector3(1.900, 1.900, 4.620), "head": Vector3(0.590, 0.990, 2.310), "tail": Vector3(0.820, 0.870, -2.310)},
+	"suv_nineties": {"size": Vector3(1.750, 1.740, 4.600), "head": Vector3(0.630, 0.840, 2.300), "tail": Vector3(0.743, 0.850, -2.300)},
 }

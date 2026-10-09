@@ -246,7 +246,8 @@ static func car(color_index: int) -> ArrayMesh:
 
 
 ## Cars use the ones modelled in Blender (VEHICLES_GLB, built by art/vehicles.py into
-## art/vehicles.blend, their sizes and lamps in VehicleData): eight sedans, each car
+## art/vehicles.blend, their sizes and lamps in VehicleData): eight sedans and eight
+## SUVs, each car
 ## painted from PAINTS. They're modelled at real size and drawn at VEHICLE_SCALE to
 ## match the ferries until the world is real scale. The code-built car above is the
 ## fallback: with `--classic-cars`, or if the model is missing.
@@ -254,9 +255,13 @@ const VEHICLES_GLB := "res://assets/models/vehicles.glb"
 static var mid_cars := not "--classic-cars" in OS.get_cmdline_user_args() \
 	and ResourceLoader.exists(VEHICLES_GLB)
 const VEHICLE_SCALE := FerryClass.MID_SCALE
-# The sedans (VehicleData keys) and how common each is on the road.
-const SEDANS := {"sedan_modern": 25, "sedan_compact": 18, "sedan_nineties": 15, "sedan_ev": 10,
-	"sedan_boxy": 8, "sedan_exec": 8, "sedan_luxury": 8, "sedan_sport": 8}
+# The cars (VehicleData keys) and how common each is on the road: about half sedans,
+# half SUVs (each set of weights sums to 100).
+const VEHICLES := {
+	"sedan_modern": 25, "sedan_compact": 18, "sedan_nineties": 15, "sedan_ev": 10,
+	"sedan_boxy": 8, "sedan_exec": 8, "sedan_luxury": 8, "sedan_sport": 8,
+	"suv_crossover": 30, "suv_threerow": 20, "suv_nineties": 10, "suv_offroad": 10,
+	"suv_luxury": 9, "suv_ev": 9, "suv_cherokee": 8, "suv_coupe": 4}
 # Paint and how common: whites, blacks, greys and silvers first, as in any car park.
 const PAINTS := [
 	[Color(0.9, 0.9, 0.88), 20], [Color(0.86, 0.84, 0.78), 5], [Color(0.1, 0.1, 0.11), 16],
@@ -266,17 +271,17 @@ const PAINTS := [
 	[Color(0.9, 0.72, 0.18), 2], [Color(0.88, 0.42, 0.14), 1], [Color(0.4, 0.3, 0.22), 2]]
 
 
-## A sedan picked by how common each is, from `u` in [0, 1).
-static func pick_sedan(u: float) -> String:
+## A car picked by how common each is, from `u` in [0, 1).
+static func pick_vehicle(u: float) -> String:
 	var total := 0
-	for n: String in SEDANS:
-		total += SEDANS[n]
+	for n: String in VEHICLES:
+		total += VEHICLES[n]
 	var x := u * total
-	for n: String in SEDANS:
-		x -= SEDANS[n]
+	for n: String in VEHICLES:
+		x -= VEHICLES[n]
 		if x < 0.0:
 			return n
-	return SEDANS.keys()[0]
+	return VEHICLES.keys()[0]
 
 
 ## A paint (index into PAINTS) picked by how common each is, from `u` in [0, 1).
