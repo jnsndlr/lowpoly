@@ -95,6 +95,7 @@ var turn_z := 0.0
 var tall := PackedInt32Array()     # lanes with the headroom for trucks (none listed: all)
 var cols := PackedFloat32Array()   # lane centres (x), port to starboard
 var row_z := PackedFloat32Array()  # row centres (z), +Z end first
+var lane_shift := PackedFloat32Array()  # per lane, added to row_z (none listed: 0)
 var end_z := 42.0                  # where cars cross the hull's end
 # The nets across the car deck at ±net_z, net_half_w either side of the centreline:
 # both up under way, the one at the docked end down while cars cross it.
@@ -486,6 +487,7 @@ const HIYU_BEAM := [
 
 ## How far in from the Hiyu's side (metres) her wing lanes run where she tapers.
 const HIYU_WING_INSET := 1.6
+const HIYU_NET_Z := 22.6   # the apron line, where the bulwarks stop (hiyu_mid.py NET_Z)
 
 
 ## The Hiyu model's half beam at the deck at |z| (metres).
@@ -503,14 +505,18 @@ func _lay_out_hiyu() -> void:
 	var d := HIYU_CAR_DECK
 	# Wing, the tunnel's two, wing; trucks keep to the tunnel, the wings having only
 	# 2.75 m under the cabins. Her ends taper too far in for the wings' end rows, so those
-	# slots stay empty, and the wing lanes arc in with her side to the nose (arc_x; the
-	# bulwark stops a metre short of the nets to let them).
+	# slots stay empty, and the wing lanes arc in with her side to the nose (arc_x). The
+	# nets (the apron line, where the ramps will meet her) are where the bulwarks stop,
+	# too close for eight rows in the tunnel: its lanes have seven, shifted half a row
+	# toward -Z, their last row blocked.
 	cols = PackedFloat32Array([-6.6 * k, -2.0 * k, 2.0 * k, 6.6 * k])
 	tall = PackedInt32Array([1, 2])
-	blocked = PackedInt32Array([0, 3, (rows - 1) * lanes, (rows - 1) * lanes + 3])
+	lane_shift = PackedFloat32Array([0.0, -0.5 * ROW_SPACING, -0.5 * ROW_SPACING, 0.0])
+	var last := (rows - 1) * lanes
+	blocked = PackedInt32Array([0, 3, last, last + 1, last + 2, last + 3])
 	throat_x = 3.0 * k
-	net_z = 23.6 * k
-	net_half_w = (_hiyu_beam(23.6) - 0.17) * k
+	net_z = HIYU_NET_Z * k
+	net_half_w = (_hiyu_beam(HIYU_NET_Z) - 0.17) * k
 	var cab_bot := d + 2.75
 	var upper := d + 5.6
 	var sill := upper + 1.35

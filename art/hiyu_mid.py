@@ -27,10 +27,10 @@
 #   CAR_DECK 2.5; four lanes at x = LANES (-6.6, -2.0, 2.0, 6.6): the tunnel's two
 #   (the tall lanes) in |x| < X_IN 3.6, the casings X_IN to CAS_X 4.9, the wings out to
 #   the hull's side, the cabins |z| < Z_C 8.85 and their gussets out to Z_C + GUSSET_L;
-#   eight rows 5.95 apart; the nets at NET_Z 23.6. The hull tapers too much for the
+#   eight rows 5.95 apart (seven in the tunnel, shifted half a row); the nets at NET_Z
+#   22.6, the apron line, where the bulwark stops. The hull tapers too much for the
 #   wings' end rows (|z| ~ 20.8), so those slots stay empty, and the wing lanes arc in
-#   with the hull's side to the nose (FerryClass.HIYU_WING_INSET in from it); the
-#   bulwark stops at BUL_Z, a metre short of the apron line (the nets), to let them.
+#   with the hull's side to the nose (FerryClass.HIYU_WING_INSET in from it).
 #   Masts at (-+MAST_X, MAST_TOP, +-MAST_Z).
 import bpy, bmesh, math, os
 from mathutils import Vector
@@ -279,9 +279,9 @@ HB = 9.6           # half beam at the deck
 HZ = 26.5          # half length at the deck (a tad over her 49.4 m, for the cars)
 CAR_DECK = 2.5     # raised to the game's pier height (Layout.DECK_Y 3.15 at MID_SCALE 1.26)
 LANES = (-6.6, -2.0, 2.0, 6.6)     # wing, the tunnel's two, wing (the wings arc in with the hull)
-NET_Z = 23.6       # the nets across the open ends (built by the game)
+NET_Z = 22.6       # the nets across the open ends (built by the game): the apron line
 BUL_H = 1.1        # the green bulwark
-BUL_Z = NET_Z - 1.0  # the bulwark stops a metre short of the apron line
+BUL_Z = NET_Z      # the bulwark stops at the apron line
 X_IN, CAS_X, Z_C = 3.6, 4.9, 8.85   # tunnel, casings, cabins (a third of her length; out to the screens: cab_x)
 SCREEN_T = 0.15
 GUSSET_L = 2.4                       # the gussets' run out along the gunwale past the cabins' ends
@@ -338,18 +338,38 @@ def cab_x(z):
     return deck_x(z) - SCREEN_T
 
 
-def oval(y, hb=HB, hz=HZ, n_end=24, n_side=4):
+def nose(hb, hz, n, k=3.0):
+    """n + 1 points (x, z) along the outline from the straight's end to the nose tip,
+    spaced evenly by length plus k metres per radian of turn, so the rounded nose gets
+    its share and reads as an arc, not a point."""
+    pts = [(hb, STRAIGHT_Z * hz / HZ)] + [(min(w, 1.0) * hb, f * hz) for f, w in OUTLINE[2:]]
+    ang = lambda i: math.atan2(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
+    cum = [0.0]
+    for i in range(1, len(pts)):
+        d = math.dist(pts[i - 1], pts[i])
+        turn = abs(ang(i - 1) - ang(i - 2)) if i >= 2 else 0.0
+        cum.append(cum[-1] + d + k * turn)
+    out, j = [], 0
+    for m in range(n + 1):
+        t = cum[-1] * m / n
+        while j < len(cum) - 2 and cum[j + 1] < t: j += 1
+        u = (t - cum[j]) / max(cum[j + 1] - cum[j], 1e-9)
+        out.append((lerp(pts[j][0], pts[j + 1][0], u), lerp(pts[j][1], pts[j + 1][1], u)))
+    out[-1] = (0.0, pts[-1][1])
+    return out
+
+
+def oval(y, hb=HB, hz=HZ, n_end=32, n_side=4):
     """Closed plan ring at height y: up the starboard side, round the +z nose, down
     the port side and round the -z nose (same vertex count for any hb, hz)."""
     oz = STRAIGHT_Z * hz / HZ
-    taper = [oz + (hz - oz) * (1 - math.cos(math.pi / 2 * i / n_end)) for i in range(n_end + 1)]
-    x = lambda z: deck_x(z, hb, hz)
-    pts = [(x(z), z) for z in (lerp(-oz, oz, i / n_side) for i in range(n_side))]
-    pts += [(x(z), z) for z in taper]
-    pts += [(-x(z), z) for z in list(reversed(taper))[1:]]
-    pts += [(-x(z), z) for z in (lerp(oz, -oz, i / n_side) for i in range(1, n_side))]
-    pts += [(-x(z), -z) for z in taper]
-    pts += [(x(z), -z) for z in list(reversed(taper))[1:-1]]
+    taper = nose(hb, hz, n_end)
+    pts = [(hb, z) for z in (lerp(-oz, oz, i / n_side) for i in range(n_side))]
+    pts += taper
+    pts += [(-x, z) for x, z in list(reversed(taper))[1:]]
+    pts += [(-hb, z) for z in (lerp(oz, -oz, i / n_side) for i in range(1, n_side))]
+    pts += [(-x, -z) for x, z in taper]
+    pts += [(x, -z) for x, z in list(reversed(taper))[1:-1]]
     return [V(x, y, z) for x, z in pts]
 
 
@@ -380,17 +400,28 @@ def side_normal(s, z):
 
 # --- Hull ---------------------------------------------------------------------------
 
+# The deck is cantilevered out over a narrower hull, as built: a tall plain drop from
+# the deck edge (DROP, the rubbing strake at its foot), then the underside sweeps in on
+# a smooth flare to the hull's wall sides (HULL_IN at the sides, HULL_IN_Z at the ends).
+DROP, HULL_IN, HULL_IN_Z, FLARE_Y = 1.0, 1.5, 4.0, 0.25
+
+
 def hull():
-    """A scow: flat bottom, the ends raking up long and shallow to the deck, the sides
-    flaring out; black, with the green running from just under the deck up the
-    bulwarks, and a heavy rubbing strake at the knuckle."""
-    rings = [oval(-2.2, HB - 1.5, HZ - 7.0), oval(-1.5, HB - 0.9, HZ - 4.6),
-             oval(-0.6, HB - 0.4, HZ - 2.4), oval(0.6, HB - 0.12, HZ - 0.9),
-             oval(CAR_DECK - 0.75, HB - 0.02, HZ - 0.1), oval(CAR_DECK - 0.55, HB, HZ),
-             oval(CAR_DECK, HB, HZ)]
-    loft(rings, lambda i, j, c: "antifoul" if c.y < -0.05 else ("green" if i == 5 else "hull"), cap_key="hull")
-    y0, y1 = CAR_DECK - 0.85, CAR_DECK - 0.6
-    r = lambda y, o: oval(y, HB - 0.02 + o, HZ - 0.1 + o)
+    """A scow under a cantilevered deck: flat bottom, the ends raking up long and
+    shallow, wall sides up to FLARE_Y, then a smooth concave flare out to the deck
+    edge's drop; black, the green running from just under the deck up the bulwarks,
+    and a heavy rubbing strake at the foot of the drop."""
+    hb, hz = HB - HULL_IN, HZ - HULL_IN_Z
+    rings = [oval(-2.2, hb - 1.2, hz - 6.0), oval(-1.5, hb - 0.7, hz - 3.8),
+             oval(-0.6, hb - 0.25, hz - 1.8), oval(0.0, hb - 0.05, hz - 0.5)]
+    y_top, n = CAR_DECK - DROP, 10
+    for k in range(n + 1):
+        a = (math.pi / 2) * k / n
+        rings.append(oval(lerp(FLARE_Y, y_top, math.sin(a)), HB - HULL_IN * math.cos(a), HZ - HULL_IN_Z * math.cos(a)))
+    rings += [oval(CAR_DECK - 0.55), oval(CAR_DECK)]
+    loft(rings, lambda i, j, c: "antifoul" if c.y < -0.05 else ("green" if c.y > CAR_DECK - 0.55 else "hull"), cap_key="hull")
+    y0, y1 = y_top, y_top + 0.25
+    r = lambda y, o: oval(y, HB + o, HZ + o)
     loft([r(y0, 0), r(y0 + 0.05, 0.16), r(y1, 0.16), r(y1, 0)], "rub", caps=False)
 
 

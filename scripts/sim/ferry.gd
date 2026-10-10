@@ -164,7 +164,9 @@ func route_point(s: float) -> Vector3:
 
 
 func _slot_local(i: int) -> Vector3:
-	return Vector3(fc.cols[i % fc.lanes], Layout.DECK_Y, fc.row_z[floori(i / float(fc.lanes))])
+	var lane := i % fc.lanes
+	var shift := fc.lane_shift[lane] if fc.lane_shift.size() > 0 else 0.0
+	return Vector3(fc.cols[lane], Layout.DECK_Y, fc.row_z[floori(i / float(fc.lanes))] + shift)
 
 
 ## Where `car` parks with its slots starting at `slot` (the far end of its run of

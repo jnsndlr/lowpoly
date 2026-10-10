@@ -114,6 +114,7 @@ func _initialize() -> void:
 		models["hiyu_end"] = [hiyu, Vector3(0, 5, 16), 24.0]
 		models["hiyu_tunnel"] = [hiyu, Vector3(0, 4.5, 14), 9.0]
 		models["hiyu_top"] = [hiyu, Vector3(0, 9, 0), 18.0]
+		models["hiyu_hull"] = [hiyu, Vector3(0, 1.5, 24), 14.0]
 		models["hiyu_gusset"] = [hiyu, Vector3(8.0, 4.5, 15.5), 9.0]
 	if ResourceLoader.exists("res://assets/models/rib_mid.glb"):
 		var rib: ArrayMesh = Models._gltf_parts("res://assets/models/rib_mid.glb", ["fixed", "sling"]).commit()
