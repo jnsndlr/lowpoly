@@ -152,6 +152,24 @@ func wake_shape() -> Vector4:
 	return Vector4((half_seg + hull_radius) * 0.4, 0.2, 3.0, 0.8)
 
 
+## Its outline where the water meets the hull, as the water shader draws the foam
+## hugging it: how far back from the bow end of its wake trail (half its length ahead
+## of it) the waterline starts, its length at the waterline, then WakeField.STATIONS
+## half-widths evenly spaced from stem to stern (metres). By default, the outline
+## wake_hull and wake_shape describe.
+func wake_waterline() -> PackedFloat32Array:
+	var hull := wake_hull()
+	var shape := wake_shape()
+	var out := PackedFloat32Array([0.0, hull.y])
+	var n := WakeField.STATIONS
+	for i in n:
+		var fb := i / float(n - 1) * hull.y
+		var bu := clampf(1.0 - fb / shape.x, 0.0, 1.0)
+		var su := clampf(1.0 - (hull.y - fb) / maxf(shape.z, 0.1), 0.0, 1.0)
+		out.append(hull.x * lerpf(1.0, shape.y, pow(bu, 2.5)) * lerpf(1.0, shape.w, su * su))
+	return out
+
+
 ## Reverse thrust thrown out ahead of the bow, 0..1.
 func front_thrust() -> float:
 	return 0.0

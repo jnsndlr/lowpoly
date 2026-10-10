@@ -106,6 +106,7 @@ var net_half_w := 0.0
 var chamfer := 9.0
 var end_in := 4.8
 var hull_radius := 12.9             # capsule round the hull (corners just touching)
+var _waterline := PackedFloat32Array()  # see waterline()
 var sidelight_scale := 3.9
 var lantern_scale := 3.6
 var lamp_scale := 2.7
@@ -290,6 +291,29 @@ func arc_x(x: float, z: float) -> float:
 
 func lane_suits(c: int, truck: bool) -> bool:
 	return tall.is_empty() or tall.has(c) == truck
+
+
+## Her outline at the waterline, as Vessel.wake_waterline: the mid-poly boats'
+## from their models (their hulls up to the car deck, taking in the flare and guards
+## overhanging the water: where the water is seen to meet them from above), the
+## code-built ones' sides closing in over the chamfer.
+func waterline() -> PackedFloat32Array:
+	if _waterline.is_empty():
+		var n := WakeField.STATIONS
+		var glb := MID_GLB if evergreen else SMALL_GLB if guemes else HIYU_GLB if hiyu else ""
+		if glb != "":
+			var k := MID_SCALE
+			var deck := MID_CAR_DECK if evergreen else SMALL_CAR_DECK if guemes else HIYU_CAR_DECK
+			var wl := Models.waterline(glb, "fixed", n, deck)
+			_waterline = PackedFloat32Array([half_length - wl[0] * k, 2.0 * wl[0] * k])
+			for i in n:
+				_waterline.append(wl[i + 1] * k)
+		else:
+			_waterline = PackedFloat32Array([0.0, 2.0 * half_length])
+			for i in n:
+				var z := absf(i / float(n - 1) * 2.0 - 1.0) * half_length
+				_waterline.append(half_beam - end_in * clampf((z - (half_length - chamfer)) / chamfer, 0.0, 1.0))
+	return _waterline
 
 
 func half_seg() -> float:

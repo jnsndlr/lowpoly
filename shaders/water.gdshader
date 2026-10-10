@@ -76,8 +76,10 @@ group_uniforms wake;
 // breadcrumbs live, and how hard a forward prop is reverse-thrusting (0..1) to
 // brake for the dock, and wake_hull its half beam, length, prop wash strength
 // (0 = none, 1 = a ferry's) and Kelvin wave scale (1 = a ferry's). wake_shape is
-// its outline: how far back from the stem the bow narrows, the half-width at the
-// stem (as a fraction of the half beam), and the same for the stern.
+// its waterline: how far behind the trail's bow point it starts, its length, how
+// far back from its stem the bow fills out, and its half-width at the stem;
+// wake_prof the waterline's half-widths at WAKE_STATIONS stations evenly spaced
+// from stem to stern (four to a vec4).
 uniform vec4 wake_aerated : source_color = vec4(0.1, 0.5, 0.47, 1.0);
 // Seconds for the churned foam to break up and fade, and for the Kelvin waves.
 uniform float wake_life = 10.0;
@@ -89,6 +91,7 @@ uniform vec4 wake_box[16];
 uniform vec4 wake_info[16];
 uniform vec4 wake_hull[16];
 uniform vec4 wake_shape[16];
+uniform vec4 wake_prof[96];
 uniform vec4 wake_pts[768];
 uniform vec4 wake_speed[192];
 group_uniforms;
@@ -280,6 +283,40 @@ float marble(vec2 q, float lod) {
 
 const int WAKE_SLOTS = 16;
 const int WAKE_PTS = 48;
+const int WAKE_STATIONS = 24;
+
+// Waterline half-width of wake slot f at station i.
+float station_w(int f, int i) {
+	int j = f * WAKE_STATIONS + i;
+	return wake_prof[j / 4][j % 4];
+}
+
+// The signed distance (negative inside) from q (along the waterline from its stem,
+// out from the centreline) to slot f's waterline of length len and greatest
+// half-width at most hw, closed across both ends; and in w its half-width at q.
+// Past `far` from the waterline's bounds, only a rough (larger) distance.
+float waterline_dist(int f, float len, float hw, vec2 q, float far, out float w) {
+	float ds = len / float(WAKE_STATIONS - 1);
+	float fi = clamp(q.x / ds, 0.0, float(WAKE_STATIONS - 1));
+	int i0 = min(int(fi), WAKE_STATIONS - 2);
+	w = mix(station_w(f, i0), station_w(f, i0 + 1), fi - float(i0));
+	float out_box = max(q.y - hw, max(-q.x, q.x - len));
+	if (out_box > far) {
+		return max(out_box, q.y - w);
+	}
+	bool inside = q.x >= 0.0 && q.x <= len && q.y < w;
+	vec2 a = vec2(0.0);
+	float best = 1e12;
+	for (int i = 0; i <= WAKE_STATIONS; i++) {
+		vec2 b = i < WAKE_STATIONS ? vec2(float(i) * ds, station_w(f, i)) : vec2(len, 0.0);
+		vec2 ab = b - a;
+		vec2 aq = q - a;
+		vec2 d = aq - ab * clamp(dot(aq, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+		best = min(best, dot(d, d));
+		a = b;
+	}
+	return inside ? -sqrt(best) : sqrt(best);
+}
 // tan(19.47°): the Kelvin wedge every ship's wake spreads in, drawn out to
 // KELVIN_REACH metres behind the bow. Everything the wake draws lies within
 // 1.1 × the wedge's half-width (+3 m), which WakeField's bounds also cover.
@@ -607,20 +644,18 @@ void wakes(vec2 p, float fp, float t, vec2 ride, inout vec2 grad, out float foam
 		float crest_foam = smoothstep(0.88, 0.99, e) * smoothstep(0.8, 0.97, x) * (1.0 - smoothstep(1.0, 1.06, x))
 				* smoothstep(0.05, 0.35, streak) * kel * exp(-age / 6.0) * (1.0 - smoothstep(25.0 * ks, 50.0 * ks, from_bow));
 
-		// The hull's outline: full beam amidships, narrowing to the stem and stern.
+		// The hull's outline where the water meets it. fb runs back from its stem.
 		float sc = clamp(hw / 4.2, 0.2, 1.0);
-		float fb = from_bow;
-		float bu = clamp(1.0 - fb / shape.x, 0.0, 1.0);
-		float su = clamp(1.0 - (hull_len - fb) / max(shape.z, 0.1), 0.0, 1.0);
-		float hull_w = hw * mix(1.0, shape.y, pow(bu, 2.5)) * mix(1.0, shape.w, su * su);
-		float stem_w = hw * shape.y;
+		float fb = from_bow - shape.x;
+		float stem_w = shape.w;
+		float hull_w;
 		// Distance out from the hull's side (rounded round the stem ahead of it).
-		float out_d = fb < 0.0 ? length(vec2(max(alat - stem_w, 0.0), fb)) : alat - hull_w;
+		float out_d = waterline_dist(f, shape.y, hw, vec2(fb, alat), 3.0, hull_w);
 		float hn = (gnoise(c * vec2(1.4, 0.5) + vec2(0.0, -t * 2.0)) * 0.6 + gnoise(c * 3.1 + vec2(t * 0.7, 2.0)) * 0.4 * lod) * 0.5;
 
 		// Water heaped up against the stem: a thin, bright cushion right ahead
 		// of it, thickest at the stem and thinning along the flare of the bow.
-		float at_bow = 1.0 - smoothstep(0.0, shape.x * 0.9 + 1.0, fb);
+		float at_bow = 1.0 - smoothstep(0.0, shape.z * 0.9 + 1.0, fb);
 		// Pocked with holes along the flanks, so it reads as foam, not a sheet.
 		float thick = (0.3 + (0.6 + 0.9 * spd) * at_bow) * sc;
 		float pock = gnoise(c * vec2(2.6, 1.1) + vec2(0.0, -t * 1.5)) * lod * (1.0 - at_bow * 0.7);

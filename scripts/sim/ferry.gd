@@ -760,13 +760,12 @@ func _blow_nets(vel: Vector3, delta: float) -> void:
 		net.set_instance_shader_parameter("wind", _net_wind)
 
 
-func wake_shape() -> Vector4:
-	# Double-ended and blunt: both ends square off over the last few metres.
-	return Vector4(9.0, 0.62, 9.0, 0.62)
-
-
 func wake_hull() -> Vector4:
 	return Vector4(fc.half_beam, fc.half_length * 2.0, 1.0, 1.0)
+
+
+func wake_waterline() -> PackedFloat32Array:
+	return fc.waterline()
 
 
 ## Reverse thrust from the forward prop, 0..1 (braking for, or holding at, the dock).

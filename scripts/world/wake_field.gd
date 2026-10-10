@@ -6,6 +6,8 @@ extends Node
 # Must match WAKE_SLOTS / WAKE_PTS in water.gdshader.
 const MAX_SLOTS := 16
 const MAX_POINTS := 48
+# Half-widths along each hull's waterline (WAKE_STATIONS in water.gdshader).
+const STATIONS := 24
 # Must match the shader's Kelvin wedge, so the bounds cover the whole wake.
 const KELVIN_SPREAD := 0.354
 const KELVIN_REACH := 540.0
@@ -23,6 +25,7 @@ var _box := PackedVector4Array()
 var _info := PackedVector4Array()
 var _hull := PackedVector4Array()
 var _shape := PackedVector4Array()
+var _prof := PackedVector4Array()
 
 
 func _ready() -> void:
@@ -35,6 +38,7 @@ func _ready() -> void:
 	_info.resize(MAX_SLOTS)
 	_hull.resize(MAX_SLOTS)
 	_shape.resize(MAX_SLOTS)
+	_prof.resize(MAX_SLOTS * STATIONS / 4)
 
 
 func _process(_delta: float) -> void:
@@ -81,8 +85,20 @@ func _process(_delta: float) -> void:
 		_box[count] = Vector4(lo.x, lo.y, hi.x, hi.y) / UNIT
 		_info[count] = Vector4(tr.odometer / UNIT, n, tr.life, thrust)
 		_hull[count] = Vector4(hull.x / UNIT, hull.y / UNIT, hull.z, hull.w)
-		var shape := v.wake_shape()
-		_shape[count] = Vector4(shape.x / UNIT, shape.y, shape.z / UNIT, shape.w)
+		# The waterline: where it starts and how long it is, how far back from its stem
+		# the bow fills out (to 97% of its widest) and its half-width at the stem.
+		var wl := v.wake_waterline()
+		var widest := 0.0
+		for i in STATIONS:
+			widest = maxf(widest, wl[2 + i])
+		var run := 0
+		while run < STATIONS - 1 and wl[2 + run] < widest * 0.97:
+			run += 1
+		var ds := wl[1] / (STATIONS - 1)
+		_shape[count] = Vector4(wl[0], wl[1], run * ds, wl[2]) / UNIT
+		for i in STATIONS / 4:
+			var j := 2 + i * 4
+			_prof[count * STATIONS / 4 + i] = Vector4(wl[j], wl[j + 1], wl[j + 2], wl[j + 3]) / UNIT
 		for i in n:
 			var q := _pts[at + i]
 			_pts[at + i] = Vector4(q.x / UNIT, q.y / UNIT, q.z / UNIT, q.w)
@@ -97,3 +113,4 @@ func _process(_delta: float) -> void:
 	water_mat.set_shader_parameter("wake_info", _info)
 	water_mat.set_shader_parameter("wake_hull", _hull)
 	water_mat.set_shader_parameter("wake_shape", _shape)
+	water_mat.set_shader_parameter("wake_prof", _prof)
