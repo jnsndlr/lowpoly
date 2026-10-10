@@ -61,6 +61,12 @@ var _runs := {}                   # at_a -> _corridor_runs() for that direction
 # (Layout.DOCK_U); a shorter one docks this much further in at both ends, a
 # longer one further out (negative).
 var _inset := 0.0
+# Her heading every metre along the route curve from YAW_PAD before its start,
+# smoothed so she swings into and out of each turn rather than taking the
+# curve's 6 m chords one kink at a time (see _build_yaws).
+var _yaws := PackedFloat32Array()
+const YAW_PAD := 120.0
+const YAW_EASE := 16.0      # m, each of the two box filters (so a turn eases in over ~32 m)
 
 
 func setup(s: Simulation, r: MapData.Route, nm: String, size: int) -> void:
@@ -105,6 +111,7 @@ func setup(s: Simulation, r: MapData.Route, nm: String, size: int) -> void:
 		net.position.z = e * fc.net_z
 		add_child(net)
 		_nets.append(net)
+	_build_yaws()
 	_place(-_inset)
 
 
@@ -674,27 +681,70 @@ func path_left() -> float:
 ## Positions the ferry at distance s along the route curve. +Z always faces A → B.
 func _place(s: float) -> void:
 	var p := route_point(s)
-	var d := route_point(s + 4.5) - route_point(s - 4.5)
-	d.y = 0.0
-	if d.length_squared() < 1e-6:
-		return
-	global_transform = Transform3D(Basis.looking_at(-d.normalized(), Vector3.UP), Vector3(p.x, 0.0, p.z))
+	global_transform = Transform3D(Basis(Vector3.UP, _yaw_at(s)), Vector3(p.x, 0.0, p.z))
+
+
+## The curve is a polyline of ~6 m chords, so its own direction turns in kinks
+## and changes rate abruptly where each arc meets a straight. Two passes of a box
+## filter over the (unwrapped) chord headings give a turn rate that ramps up,
+## holds steady round the arc and ramps down again, as under helm.
+func _build_yaws() -> void:
+	var n := int(ceil(route.length + 2.0 * YAW_PAD)) + 1
+	var raw := PackedFloat32Array()
+	raw.resize(n)
+	var prev := 0.0
+	for i in n:
+		var s := i - YAW_PAD
+		var d := route_point(s + 0.5) - route_point(s - 0.5)
+		var y := atan2(d.x, d.z) if Vector2(d.x, d.z).length_squared() > 1e-8 else prev
+		if i > 0:
+			y = prev + angle_difference(prev, y)
+		raw[i] = y
+		prev = y
+	_yaws = _box(_box(raw, int(YAW_EASE)), int(YAW_EASE))
+
+
+static func _box(a: PackedFloat32Array, w: int) -> PackedFloat32Array:
+	var n := a.size()
+	var h := w / 2
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var sum := 0.0
+	for i in range(-h, h + 1):
+		sum += a[clampi(i, 0, n - 1)]
+	for i in n:
+		out[i] = sum / (2 * h + 1)
+		sum += a[clampi(i + h + 1, 0, n - 1)] - a[clampi(i - h, 0, n - 1)]
+	return out
+
+
+func _yaw_at(s: float) -> float:
+	var f := clampf(s + YAW_PAD, 0.0, _yaws.size() - 1.001)
+	var i := int(f)
+	return lerpf(_yaws[i], _yaws[i + 1], f - i)
 
 
 func _update_trail(delta: float) -> void:
-	# Taken from the actual movement, so it can't disagree with which end leads
-	# (the ferry is double-ended).
 	var moved := global_position - _last_pos
 	moved.y = 0.0
 	# The first frame has nothing to compare against.
 	var moving := _tracking and moved.length_squared() > 1e-8
 	_tracking = true
 	_last_pos = global_position
+	# The hull's own heading, not the way it moved this frame: that follows the
+	# route curve's chords and kinks a few degrees at each, which would swing the
+	# wake's bow and stern about. The end leading is the one it moved towards
+	# (the ferry is double-ended).
+	var fwd := global_basis.z
+	fwd.y = 0.0
+	fwd = fwd.normalized()
+	if moved.dot(fwd) < 0.0:
+		fwd = -fwd
 	# Only once the ferry is actually under way: on the frame it casts off the
 	# heading still points the way it arrived, which would put the first crumb at
 	# the wrong end of the hull and fold the trail back on itself. The stern
 	# props ease off while the forward prop brakes.
-	wake.update(delta, global_position, moved.normalized() if moving else Vector3.ZERO, speed * delta,
+	wake.update(delta, global_position, fwd if moving else Vector3.ZERO, speed * delta,
 			speed / fc.cruise * (1.0 - 0.6 * _thrust), state == State.SAILING and moving)
 	_blow_nets(moved / delta if moving and delta > 0.0 else Vector3.ZERO, delta)
 
