@@ -102,6 +102,10 @@ func _initialize() -> void:
 		models["ferry_wing"] = [ferry, Vector3(8.4, 4.6, 6), 4.5]
 		models["ferry_fork"] = [ferry, Vector3(7, 6, 37), 15.0]
 		models["ferry_stair"] = [ferry, Vector3(4.5, 4.5, 25.5), 8.0]
+	if Models.mid_slip:
+		models["slip_towers"] = [Models.slip_mesh("towers"), Vector3(0, 8, 27), 40.0]
+		models["slip_span"] = [Models.slip_mesh("span"), Vector3(0, 0, 13), 30.0]
+		models["slip_apron"] = [Models.slip_mesh("apron"), Vector3(0, 0, 2.4), 12.0]
 	if ResourceLoader.exists("res://assets/models/guemes_mid.glb"):
 		var guemes: ArrayMesh = Models._gltf_parts("res://assets/models/guemes_mid.glb", ["fixed", "glass", "window"]).commit()
 		models["guemes"] = [guemes, Vector3(0, 3, 0), 48.0]

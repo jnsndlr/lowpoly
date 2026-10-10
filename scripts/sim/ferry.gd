@@ -24,6 +24,8 @@ const DISPATCH_GAP := 0.5
 # with another route, no further out than this, is taken, or while a ferry
 # coming in to the same terminal, this close to it, has it still to pass.
 const ARRIVAL_PRIORITY := 660.0
+# Coming in, the slip's span starts down to the deck this far out (SlipRamp).
+const RAMP_LOWER_AT := 40.0
 
 var sim: Simulation
 var fc: FerryClass
@@ -52,6 +54,8 @@ var _last_pos := Vector3.ZERO
 var _tracking := false
 var _waiting_for: Ferry = null   # holding off a corridor this ferry has reserved
 var _giving_way := false         # (holding in at the dock for _waiting_for to come in)
+var _casting_off := false        # loaded, waiting for the apron to come up
+var _ramp_synced := false
 var _runs := {}                   # at_a -> _corridor_runs() for that direction
 # Route curves run between where a 90 m hull's centre lies docked
 # (Layout.DOCK_U); a shorter one docks this much further in at both ends, a
@@ -69,6 +73,10 @@ func setup(s: Simulation, r: MapData.Route, nm: String, size: int) -> void:
 	cruise = fc.cruise
 	yield_decel = YIELD_DECEL
 	_inset = Layout.FERRY_HALF - fc.half_length
+	if SlipRamp.available():
+		# In far enough for the apron's toe to land on her apron line, just outboard of the
+		# yellow band across her deck at the net.
+		_inset = Layout.DOCK_U - SlipRamp.dock_end(fc.half_length - fc.net_z - 0.35) - fc.half_length
 	# A capsule round the hull: its corners just touch, its ends cover the bows.
 	half_seg = fc.half_seg()
 	hull_radius = fc.hull_radius
@@ -127,6 +135,25 @@ func start_staggered(i: int) -> void:
 
 func here() -> Terminal:
 	return term_a if at_a else term_b
+
+
+## The span and apron at `term`'s slip for this route (null with the classic slip).
+func _ramp(term: Terminal) -> SlipRamp:
+	return term.ramps.get(route.id)
+
+
+## `local` (a point on her deck at an end) in the world, up on the apron if that lies over it.
+func _over_apron(local: Vector3) -> Vector3:
+	var p := to_global(local)
+	if _ramp(here()):
+		p.y += SlipRamp.lift_at(here().to_local(p).z)
+	return p
+
+
+## Cars may cross between the slip and the deck.
+func _ramp_down() -> bool:
+	var ramp := _ramp(here())
+	return ramp == null or ramp.is_down()
 
 
 func destination() -> Terminal:
@@ -249,9 +276,14 @@ func _free_slot(car: Vehicle) -> int:
 
 func _process(delta: float) -> void:
 	_state_time += delta
+	if not _ramp_synced:
+		# (A ferry starting the game alongside already has the apron on her deck.)
+		_ramp_synced = true
+		if state != State.SAILING and _ramp(here()):
+			_ramp(here()).snap_down()
 	# Both nets up under way; alongside, the one at the docked end (-Z at A) is down
-	# while cars drive off and on over it.
-	var docked := state != State.SAILING
+	# while cars drive off and on over it, once the apron is down on the deck.
+	var docked := state != State.SAILING and _ramp_down()
 	_nets[0].visible = not (docked and at_a)
 	_nets[1].visible = not (docked and not at_a)
 	match state:
@@ -269,6 +301,8 @@ func _process(delta: float) -> void:
 
 func _begin_unloading() -> void:
 	state = State.UNLOADING
+	if _ramp(here()):
+		_ramp(here()).land()
 	_state_time = 0.0
 	_dispatch_timer = 0.0
 	_last_sent = null
@@ -280,6 +314,8 @@ func _begin_unloading() -> void:
 
 
 func _tick_unloading(delta: float) -> void:
+	if not _ramp_down():
+		return
 	_dispatch_timer -= delta
 	if not _unload_queue.is_empty():
 		if _dispatch_timer <= 0.0:
@@ -321,7 +357,7 @@ func _drive_off(car: Vehicle) -> void:
 		# Out of a wing lane: turn in to the apron's opening past the fork's end.
 		path.append(to_global(Vector3(x, Layout.DECK_Y, signf(exit_z) * fc.turn_z)))
 		x = clampf(x, -fc.throat_x, fc.throat_x)
-	path.append(to_global(Vector3(x, Layout.DECK_Y, exit_z)))
+	path.append(_over_apron(Vector3(x, Layout.DECK_Y, exit_z)))
 	car.reparent(sim.traffic)
 	path.append_array(here().exit_path(route.id))
 	_send(car, path, func(c: Vehicle): c.queue_free())
@@ -339,7 +375,7 @@ func _tick_loading(delta: float) -> void:
 	_dispatch_timer -= delta
 	var term := here()
 	var full := true
-	if _dispatch_timer <= 0.0 and _state_time < MAX_DWELL:
+	if _dispatch_timer <= 0.0 and _state_time < MAX_DWELL and not _casting_off and _ramp_down():
 		var car := term.take_car(route.id, func(c: Vehicle): return _free_slot(c) >= 0)
 		if car != null:
 			_dispatch_timer = _gap_after(car)
@@ -349,7 +385,15 @@ func _tick_loading(delta: float) -> void:
 		if lane.queue.size() > 0 and _free_slot(lane.queue[0]) >= 0:
 			full = false
 	var queue_empty := term.queued_for(route.id) == 0
-	if _boarding == 0 and _state_time >= MIN_DWELL and (full or queue_empty or _state_time >= MAX_DWELL):
+	if _casting_off or _boarding == 0 and _state_time >= MIN_DWELL and (full or queue_empty or _state_time >= MAX_DWELL):
+		# Apron up before she goes.
+		_casting_off = true
+		var ramp := _ramp(term)
+		if ramp:
+			ramp.lift()
+			if not ramp.is_clear():
+				return
+		_casting_off = false
 		state = State.SAILING
 		traveled = 0.0
 		_state_time = 0.0
@@ -371,11 +415,11 @@ func _drive_on(car: Vehicle, term: Terminal) -> void:
 		# Into a wing: in over the end and round the hull's curve to the car's tail,
 		# then on along its heading into place.
 		var tail := local - park.basis.z * (car.length * 0.5 - car.center_offset)
-		path.append(to_global(_arc_point(lane, entry_z)))
+		path.append(_over_apron(_arc_point(lane, entry_z)))
 		path.append_array(_arc_path(lane, entry_z, tail.z))
 	else:
 		var mouth := clampf(local.x, -fc.throat_x, fc.throat_x)
-		path.append(to_global(Vector3(mouth, Layout.DECK_Y, entry_z)))
+		path.append(_over_apron(Vector3(mouth, Layout.DECK_Y, entry_z)))
 		if mouth != local.x:
 			# Into a wing lane: in through the apron's opening, then out round the fork's end.
 			path.append(to_global(Vector3(local.x, Layout.DECK_Y, signf(entry_z) * fc.turn_z)))
@@ -414,6 +458,8 @@ func _tick_sailing(delta: float) -> void:
 	target = minf(target, sqrt(2.0 * YIELD_DECEL * maxf(wait - 1.5, 0.0)))
 	speed = minf(target, speed + ACCEL * delta)
 	_thrust = move_toward(_thrust, 1.0 if rem < zone and rem > 1.5 else 0.0, delta * 0.8)
+	if rem < RAMP_LOWER_AT and _ramp(destination()):
+		_ramp(destination()).lower()
 	traveled = minf(traveled + speed * delta, run_length())
 	_place(_route_s(traveled))
 	_bob_time += delta

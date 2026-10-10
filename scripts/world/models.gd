@@ -410,6 +410,24 @@ const MID_NET_H := 1.6
 static var _net_mat: ShaderMaterial
 
 
+## The mid-poly slip (art/slip_mid.py): lattice lift towers with their header, sheaves
+## and ladders (`towers`, static scenery in the slip frame) and the moving parts SlipRamp
+## works: the transfer span, the apron, counterweights, hoist cables and the apron's
+## rams. The old boxes are the fallback: with `--classic-slip`, or if the model is missing.
+const MID_SLIP_GLB := "res://assets/models/slip_mid.glb"
+static var mid_slip := not "--classic-slip" in OS.get_cmdline_user_args() \
+	and ResourceLoader.exists(MID_SLIP_GLB)
+
+
+## One part of the mid-poly slip, about its own pivot (see SlipRamp).
+static func slip_part(part: String) -> MeshBuilder:
+	return _gltf_library(MID_SLIP_GLB)[part]
+
+
+static func slip_mesh(part: String) -> ArrayMesh:
+	return _cached("slip_" + part, func(): return slip_part(part).commit())
+
+
 ## One of a ferry's car deck nets (FerryClass.net_z, net_half_w), centred on z = 0:
 ## rope strung from wall to wall, held up by two yellow posts a third of the way
 ## across. Ferry places one at each end and drops the one at the docked end while

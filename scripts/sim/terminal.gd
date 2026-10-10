@@ -10,6 +10,7 @@ var island: MapData.Island
 var lanes := {}        # route id -> Array of {v: float, queue: Array, enroute: int (slots)}
 var slip_v := {}       # route id -> lateral offset of that route's slip
 var ferry_for := {}    # route id -> Ferry
+var ramps := {}        # route id -> SlipRamp (none with the classic slip)
 var slots_per_lane := Layout.slots_per_lane()
 var avg_wait := 6.0    # minutes, moving average
 var turned_recent := 0.0
@@ -28,6 +29,10 @@ func setup(s: Simulation, isl: MapData.Island) -> void:
 	for i in isl.slips.size():
 		var rid := isl.slips[i]
 		slip_v[rid] = isl.slip_offset(i)
+		if SlipRamp.available():
+			var ramp := SlipRamp.new(slip_v[rid])
+			add_child(ramp)
+			ramps[rid] = ramp
 		var arr: Array = []
 		for v in lane_sets[i]:
 			arr.append({"v": v, "queue": [], "enroute": 0})
@@ -205,21 +210,35 @@ func take_car(rid: int, fits := Callable()) -> Vehicle:
 
 func boarding_path(car: Vehicle, rid: int) -> PackedVector3Array:
 	var sv: float = slip_v[rid]
-	return PackedVector3Array([
+	var path := PackedVector3Array([
 		_local(car.lane_v, Layout.LANE_HEAD + 6.0),
 		_local(sv - 3.0, Layout.LOT_FRONT + 1.5),
-		_local(sv - 3.0, Layout.PIER_END),
 	])
+	if ramps.has(rid):
+		# Up the span to its tip, a little above the ferry's deck (the apron slopes down onto it).
+		var ramp: SlipRamp = ramps[rid]
+		for p in ramp.crossing(-3.0):
+			path.append(to_global(p))
+	else:
+		path.append(_local(sv - 3.0, Layout.PIER_END))
+	return path
 
 
 func exit_path(rid: int) -> PackedVector3Array:
 	var sv: float = slip_v[rid]
-	var path := PackedVector3Array([
-		_local(sv + 3.0, Layout.PIER_END),
+	var path := PackedVector3Array()
+	if ramps.has(rid):
+		var ramp: SlipRamp = ramps[rid]
+		var over := ramp.crossing(3.0)
+		path.append(to_global(over[1]))
+		path.append(to_global(over[0]))
+	else:
+		path.append(_local(sv + 3.0, Layout.PIER_END))
+	path.append_array(PackedVector3Array([
 		_local(sv + 3.0, Layout.LOT_FRONT + 1.5),
 		_local(Layout.EXIT_V, Layout.LANE_HEAD + 6.0),
 		_local(Layout.EXIT_V, Layout.LOT_BACK + 1.5),
-	])
+	]))
 	path.append_array(_outbound[sim.rng.randi() % _outbound.size()])
 	return path
 

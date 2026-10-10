@@ -354,27 +354,43 @@ func _build_slip(mb: MeshBuilder, v: float) -> void:
 	var ly := Layout.LOT_Y
 	var pe := Layout.PIER_END
 	var lf := Layout.LOT_FRONT
-	mb.box(Vector3(v, ly - 0.6, (lf + pe) * 0.5), Vector3(15.0, 1.2, pe - lf + 1.2), CONCRETE)
-	mb.box(Vector3(v, ly + 0.03, (lf + pe) * 0.5), Vector3(0.36, 0.06, pe - lf - 3.0), LINE_YELLOW)
+	# With the mid-poly slip a short trestle runs out to the transfer span's hinge
+	# (the span, apron and counterweights are SlipRamp's, the towers are scenery here).
+	var mid := Models.mid_slip
+	var deck_end := SlipRamp.HINGE_U if mid else pe
+	mb.box(Vector3(v, ly - 0.6, (lf + deck_end) * 0.5), Vector3(15.0, 1.2, deck_end - lf + 1.2), CONCRETE)
+	mb.box(Vector3(v, ly + 0.03, (lf + deck_end) * 0.5), Vector3(0.36, 0.06, deck_end - lf - 1.5), LINE_YELLOW)
 	var u := lf + 3.0
-	while u < pe:
+	while u < deck_end:
 		for side: float in [-6.6, 6.6]:
 			mb.box(Vector3(v + side, -4.2, u), Vector3(1.2, 12.6, 1.2), Models.WOOD)
-		u += 9.0
-	mb.box(Vector3(v, ly - 0.36, pe - 4.5), Vector3(15.6, 1.08, 9.0), Color(0.4, 0.42, 0.45))
-	for side: float in [-8.7, 8.7]:
-		mb.box(Vector3(v + side, 8.4, pe - 3.0), Vector3(1.5, 16.8, 1.5), Models.WSF_GREEN)
-	mb.box(Vector3(v, 16.2, pe - 3.0), Vector3(18.9, 1.5, 1.5), Models.WSF_GREEN)
+		u += 9.0 if not mid else 4.5
+	# Tower lateral offset (the eagles sit over it) and how far the header's top runs.
+	var tower_x := 8.7
+	var beam_x := 8.7
+	if mid:
+		# The hinge bent: a concrete cap on piles carrying the span's hinge pin.
+		mb.box(Vector3(v, ly - 1.9, deck_end), Vector3(15.6, 1.4, 1.5), CONCRETE)
+		for side: float in [-6.0, -2.0, 2.0, 6.0]:
+			mb.box(Vector3(v + side, -4.5, deck_end), Vector3(1.0, 9.0, 1.0), CONCRETE.darkened(0.2))
+		Models._append_part(mb, Models.slip_part("towers"), mb.xform * Transform3D(Basis.IDENTITY, Vector3(v, 0, 0)))
+		tower_x = SlipRamp.TOWER_X
+		beam_x = 8.0
+	else:
+		mb.box(Vector3(v, ly - 0.36, pe - 4.5), Vector3(15.6, 1.08, 9.0), Color(0.4, 0.42, 0.45))
+		for side: float in [-8.7, 8.7]:
+			mb.box(Vector3(v + side, 8.4, pe - 3.0), Vector3(1.5, 16.8, 1.5), Models.WSF_GREEN)
+		mb.box(Vector3(v, 16.2, pe - 3.0), Vector3(18.9, 1.5, 1.5), Models.WSF_GREEN)
 	# Steady red 360° light on top of the lift, for ferries lining up at night.
 	var top := Vector3(v, 16.95, pe - 3.0)
 	Models.add_cage_lantern(mb, top, GlowBuilder.RED, LIFT_LANTERN)
 	glows.glow(Models.cage_lantern_glow_at(top, LIFT_LANTERN), GlowBuilder.RED, 0.6, 7.0, true, 0.0, Vector3.ZERO, Models.LAMP_ON_AT)
 	# Along the lift's cross beam, either side of the lantern.
 	for side: float in [-1.0, 1.0]:
-		_perch(mb.xform * Vector3(v + side * 1.35, 16.95, pe - 3.0), mb.xform * Vector3(v + side * 8.7, 16.95, pe - 3.0),
+		_perch(mb.xform * Vector3(v + side * 1.35, 16.95, pe - 3.0), mb.xform * Vector3(v + side * beam_x, 16.95, pe - 3.0),
 			0.0, Seagulls.Kind.LIFT)
-		# An eagle on top of each tower, over the post.
-		eagle_perches.append(Eagles.Perch.new(mb.xform * Vector3(v + side * 8.7, 16.95, pe - 3.0), Eagles.Kind.LIFT))
+		# An eagle on top of each tower.
+		eagle_perches.append(Eagles.Perch.new(mb.xform * Vector3(v + side * tower_x, 16.95, pe - 3.0), Eagles.Kind.LIFT))
 	for side: float in [-1.0, 1.0]:
 		var ww: Array = Layout.WING_WALL
 		for k in ww.size() - 1:
