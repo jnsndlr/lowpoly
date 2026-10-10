@@ -399,7 +399,8 @@ def deckhouse():
     rail([V(-2.35, t, WH["z0"] + 0.1), V(-2.35, t, -0.5), V(-1.3, t, -0.5)])
     rail([V(-0.7, t, -0.5), V(2.35, t, -0.5), V(2.35, t, WH["z0"] + 0.1)])
     # Liferaft in its cradle, a life ring on the rail, the EPIRB.
-    cyl(V(-1.75, t + 0.4, -0.35), V(-1.75, t + 0.4, 0.45), 0.3, 0.3, 10, "white")
+    # Body stops short of the end bands so their caps aren't coplanar (z-fighting).
+    cyl(V(-1.75, t + 0.4, -0.33), V(-1.75, t + 0.4, 0.43), 0.3, 0.3, 10, "white")
     for z in (-0.35, 0.45):
         cyl(V(-1.75, t + 0.4, z), V(-1.75, t + 0.4, z + (0.04 if z < 0 else -0.04)), 0.31, 0.31, 10, "dark")
         box(V(-1.75, t + 0.06, z + (0.1 if z < 0 else -0.1)), (0.5, 0.12, 0.06), "steel")
