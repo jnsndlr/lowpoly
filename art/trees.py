@@ -14,17 +14,20 @@ from mathutils import Vector
 
 UP = Vector((0, 0, 1))
 BARK = (0.42, 0.26, 0.16)
+SPRUCE_BARK = (0.6, 0.36, 0.2)
 BIRCH = (0.86, 0.84, 0.77)
 BIRCH_MARK = (0.28, 0.27, 0.25)
 # Foliage palettes: shade (under / facing down), mid (side-on), lit (facing up).
 NEEDLES = ((0.09, 0.25, 0.17), (0.2, 0.44, 0.2), (0.5, 0.64, 0.2))
 LEAVES = ((0.13, 0.32, 0.16), (0.32, 0.53, 0.18), (0.64, 0.73, 0.22))
-# Spruce boughs are coloured by part, as in the studies: their backs light green at the
-# bottom of the tree to yellow-green at the top, the slab sides darker, underneath dark.
-SPRUCE_BACK_LOW = (0.3, 0.5, 0.2)
-SPRUCE_BACK_HIGH = (0.66, 0.74, 0.28)
-SPRUCE_SIDE = 0.6
-SPRUCE_UNDER = (0.08, 0.2, 0.13)
+# Spruce planks: the main colour goes from green low on the tree to lime at the top, the
+# ends turn yellow, dark planks and the fringe lean toward teal, as in the study.
+SPRUCE_LOW = (0.42, 0.66, 0.24)
+SPRUCE_HIGH = (0.72, 0.8, 0.24)
+SPRUCE_TIP = (0.93, 0.84, 0.2)
+SPRUCE_CORE = (0.07, 0.4, 0.36)
+SPRUCE_FRINGE = (0.08, 0.42, 0.36)
+SPRUCE_UNDER = (0.06, 0.3, 0.27)
 
 # Pines: h height, r radius of the lowest tier, space between tiers (x the tier's
 # radius), k paddles per tier, base the height of the lowest tier (bare trunk below),
@@ -97,6 +100,18 @@ class Builder:
             return
         f.smooth = False
         for l in f.loops: l[self.cl] = (*to_lin(col), 1.0)
+
+    def vface(self, pts, cols, out):
+        """As face, with a colour per corner."""
+        n = (pts[1] - pts[0]).cross(pts[2] - pts[0])
+        if n.length < 1e-9: return
+        if n.dot(out) < 0: pts, cols = list(reversed(pts)), list(reversed(cols))
+        try:
+            f = self.bm.faces.new([self.bm.verts.new(p) for p in pts])
+        except ValueError:
+            return
+        f.smooth = False
+        for l, c in zip(f.loops, cols): l[self.cl] = (*to_lin(c), 1.0)
 
     def foliage(self, pts, out, lift, pal):
         """Coloured by how much the face looks up (once wound along `out`) and how
@@ -340,58 +355,45 @@ def broad(name, p, lod):
 
 
 # --- Spruce ----------------------------------------------------------------------
-# Modelled on the spruce studies: tiers of thick boughs, each a slab with a ridge down
-# its back, visible sides and a notched end, drooping as it goes out. Tiers are built
-# from the top down, each hanging from partway down the skirt above, so they step out
-# into a cone of distinct skirts, deeper toward the bottom; a thick flared trunk on
-# root buttresses shows below. Each is kept under about 1500 triangles.
-# r radius of the lowest skirt, tiers, k boughs on the lowest tier (k_top on the
+# Modelled on the painted fir study: tiers of skirts that leave the trunk steeply and
+# flare out to a point (concave, like a pagoda roof), shingled from long flat planks.
+# Each tier has three layers: a dark toothed fringe showing under the hem, the main
+# planks, creased so one side takes more sun, with ragged ends, and shorter bright
+# planks laid over their joints. A dark shell closes each tier, so gaps show shade, not
+# sky. Tiers are built from the top down, each hanging from partway down the skirt
+# above; a thick flared trunk on root buttresses shows below. Each stays under about
+# 1500 triangles.
+# r radius of the lowest skirt, tiers, k planks on the lowest tier (k_top on the
 # highest), overlap (how far down the skirt above the next tier hangs from, 0..1; more
-# opens gaps that show the trunk), edge0 height of the lowest skirt's edge, pitch
-# (added to the boughs' angle all along: less spreads the tree wider for its height),
-# droop (extra pitch at the bough ends), stem (bare branch before the bough, x the tier's
-# radius, on some boughs), lean (m the top sits off the base, the trunk curving into
-# it), sweep (boughs longer away from the lean), wide (bough width, 1 = boughs just
-# meet round the tier), seg bough segments, h the height the finished tree is scaled
-# to, seed.
+# opens gaps that show the trunk), edge0 height of the lowest skirt's edge, slope (drop
+# per radius of the lowest skirt: less spreads the tree wider for its height), flare (how
+# concave the skirts are, 0 straight), stem (bare branch before the plank, x the tier's
+# radius, on some planks), lean (m the top sits off the base, the trunk curving into
+# it), sweep (planks longer away from the lean), wide (plank width, 1 = planks just
+# meet round the tier), bright (share of main planks in the light tone), h the height
+# the finished tree is scaled to, seed.
 SPRUCES = {
-    "spruce":        dict(r=2.8, tiers=7, k=7, k_top=4, overlap=0.5, edge0=1.0, pitch=0.0, droop=0.0, stem=0.0, lean=0.0, sweep=0.0, wide=1.0, seg=2, h=6.2, seed=21),
-    "spruce_open":   dict(r=4.3, tiers=7, k=5, k_top=3, overlap=0.75, edge0=1.8, pitch=-0.2, droop=0.25, stem=0.3, lean=0.2, sweep=0.0, wide=0.62, seg=2, h=7.0, seed=22),
-    "spruce_lean":   dict(r=3.4, tiers=7, k=6, k_top=3, overlap=0.55, edge0=1.4, pitch=-0.12, droop=0.12, stem=0.18, lean=3.8, sweep=0.35, wide=0.8, seg=2, h=6.2, seed=23),
-    "spruce_broad":  dict(r=3.2, tiers=6, k=8, k_top=5, overlap=0.42, edge0=0.8, pitch=-0.05, droop=0.05, stem=0.0, lean=0.0, sweep=0.0, wide=1.05, seg=2, h=5.0, seed=24),
-    "spruce_tall":   dict(r=2.1, tiers=8, k=5, k_top=3, overlap=0.58, edge0=1.3, pitch=0.08, droop=0.1, stem=0.12, lean=0.4, sweep=0.0, wide=0.9, seg=2, h=7.4, seed=25),
-    "spruce_young":  dict(r=1.4, tiers=5, k=6, k_top=3, overlap=0.5, edge0=0.4, pitch=0.0, droop=0.0, stem=0.0, lean=0.0, sweep=0.0, wide=1.0, seg=2, h=3.2, seed=26),
+    "spruce":        dict(r=3.2, tiers=6, k=8, k_top=4, overlap=0.6, edge0=2.4, slope=0.9, flare=0.6, stem=0.0, lean=0.0, sweep=0.0, wide=1.15, bright=0.5, h=6.2, seed=21),
+    "spruce_open":   dict(r=3.6, tiers=6, k=6, k_top=4, overlap=0.74, edge0=3.2, slope=0.8, flare=0.7, stem=0.3, lean=0.2, sweep=0.0, wide=0.8, bright=0.5, h=7.0, seed=22),
+    "spruce_lean":   dict(r=3.2, tiers=6, k=7, k_top=4, overlap=0.6, edge0=2.6, slope=0.84, flare=0.65, stem=0.18, lean=3.8, sweep=0.35, wide=0.95, bright=0.45, h=6.2, seed=23),
+    "spruce_broad":  dict(r=3.4, tiers=5, k=9, k_top=5, overlap=0.55, edge0=1.9, slope=0.84, flare=0.6, stem=0.0, lean=0.0, sweep=0.0, wide=1.15, bright=0.42, h=5.0, seed=24),
+    "spruce_tall":   dict(r=2.2, tiers=7, k=6, k_top=4, overlap=0.62, edge0=2.4, slope=1.1, flare=0.55, stem=0.12, lean=0.4, sweep=0.0, wide=1.05, bright=0.45, h=7.4, seed=25),
+    "spruce_young":  dict(r=1.5, tiers=4, k=6, k_top=4, overlap=0.58, edge0=1.0, slope=0.92, flare=0.6, stem=0.0, lean=0.0, sweep=0.0, wide=1.15, bright=0.5, h=3.2, seed=26),
 }
-# Boughs leave the trunk BOUGH_A0 below horizontal and droop to BOUGH_A1 at the end,
-# both steeper by BOUGH_STEEP toward the top so the crown comes to a point.
-BOUGH_A0, BOUGH_A1, BOUGH_STEEP = 0.35, 1.2, 0.55
-
-
-def bough_pitch(u):
-    """(a0, a1) for a tier at u (0 bottom, 1 top)."""
-    return BOUGH_A0 + BOUGH_STEEP * u ** 1.5, BOUGH_A1 + BOUGH_STEEP * 0.35 * u ** 1.5
-
-
-def bough_reach(a0, a1):
-    """How far out and down, per unit length, a bough pitched a0 -> a1 reaches."""
-    a = [a0 + (a1 - a0) * (i + 0.5) / 12 for i in range(12)]
-    return sum(math.cos(x) for x in a) / 12, sum(math.sin(x) for x in a) / 12
 # The leader above the top tier.
 LEADER = 0.7
 
 
 def spruce_tiers(p):
-    """(tiers, height): tiers bottom first as (root height, skirt radius, boughs, skirt
+    """(tiers, height): tiers bottom first as (root height, skirt radius, planks, skirt
     edge height, u), u = 0 at the bottom and 1 at the top."""
     n, R = p["tiers"], p["r"]
     rel = []
     z = 0.0
     for t in range(n):                       # top down, apex of the top tier at 0
         v = t / (n - 1)
-        r = 0.5 + (R - 0.5) * v ** 0.95
-        p0, p1 = bough_pitch(1.0 - v)
-        ro, rd = bough_reach(p0 + p["pitch"], p1 + p["pitch"] + p["droop"])
-        d = r / ro * rd
+        r = 0.42 + (R - 0.42) * v ** 0.92
+        d = r * (p["slope"] + 1.3 * (1.0 - v) ** 1.5)
         rel.append((z, r, round(p["k_top"] + (p["k"] - p["k_top"]) * v), z - d, 1.0 - v))
         z -= d * p["overlap"]
     shift = p["edge0"] - rel[-1][3]
@@ -399,54 +401,77 @@ def spruce_tiers(p):
     return tiers, shift + LEADER
 
 
-def bough(b, root, out, L, w0, w1, thk, seg, lift, tone, a0, a1):
-    """A thick bough from `root` out along horizontal `out`: L long, widening from w0
-    to w1, leaving at a0 below horizontal and drooping to a1. Its section is a slab
-    with a ridge along the top (so one side takes the sun and the other doesn't),
-    `thk` thick at the root and thinner toward the end, which is cut in two teeth.
-    `tone` scales its colour."""
-    side = UP.cross(out).normalized()
-    back = tuple(min(c * tone, 1.0) for c in lerp3(SPRUCE_BACK_LOW, SPRUCE_BACK_HIGH, lift))
-    flank = tuple(c * SPRUCE_SIDE for c in back)
-    under = SPRUCE_UNDER
+def skirt(reach, drop, flare):
+    """The skirt's line at t 0..1 as (out, down from the root): a curve that starts
+    steep and flattens toward the hem."""
+    pr, pz = reach * (0.5 - 0.36 * flare), drop * (0.5 + 0.42 * flare)
+    return lambda t: (2 * (1 - t) * t * pr + t * t * reach, 2 * (1 - t) * t * pz + t * t * drop)
 
-    def tri(pts, col, hint):
-        j = b.rng.uniform(0.95, 1.04)
-        b.face(pts, tuple(min(c * j, 1.0) for c in col), hint)
-    cs, ds = [root], []
-    for i in range(seg):
-        a = a0 + (a1 - a0) * (i + 0.5) / seg
-        ds.append((out * math.cos(a) - UP * math.sin(a)).normalized())
-        cs.append(cs[-1] + ds[-1] * (L / seg))
-    rings, ns = [], []
-    for i, c in enumerate(cs):
-        t = i / seg
-        w = w0 + (w1 - w0) * t ** 0.6
-        d = ds[min(i, seg - 1)] if i < seg else ds[-1]
+
+def plank(b, root, out, line, t0, t1, w0, w1, col, rows=3, lift=0.0, hem=True, shade=0.68):
+    """One flat plank laid along a skirt `line` from t0 to t1, out along horizontal
+    `out`, widening from w0 to w1. A crease off its centre gives two long facets, one a
+    little darker; it ends in a ragged point (`hem`) or a plain one. Dark (`shade`) at
+    the root, where it tucks under the tier above, turning yellower at the end."""
+    side = UP.cross(out).normalized()
+    rng = b.rng
+    off = rng.uniform(-0.2, 0.2)
+    dim = rng.choice((0.8, 1.0))
+    tones = (dim, 1.8 - dim)
+
+    def tint(f):
+        c = lerp3(col, SPRUCE_TIP, 0.22 * smooth(0.6, 1.0, f))
+        return tuple(min(x * (shade + (1.0 - shade) * smooth(0.0, 0.45, f)), 1.0) for x in c)
+    rs, ns = [], []
+    for i in range(rows):
+        f = i / (rows - 1)
+        t = t0 + (t1 - t0) * f
+        a, c_ = line(t - 0.02), line(t + 0.02)
+        d = (out * (c_[0] - a[0]) - UP * (c_[1] - a[1])).normalized()
         n = side.cross(d).normalized()
         if n.z < 0: n = -n
-        h = thk * (1.0 - 0.45 * t)
-        ridge = w * 0.13
-        # Ring: left, ridge, right along the top; right, middle, left underneath.
-        rings.append([c - side * (w / 2), c + n * ridge, c + side * (w / 2),
-                      c + side * (w * 0.45) - n * h, c + n * (ridge * 0.4) - n * h, c - side * (w * 0.45) - n * h])
+        ro, dn = line(t)
+        c = root + out * ro - UP * dn + n * lift
+        w = w0 + (w1 - w0) * f ** 0.7
+        rs.append(((c - side * (w / 2) - n * (w * 0.13), c + side * (w * off) + n * (w * 0.07), c + side * (w / 2) - n * (w * 0.13)), f, w))
         ns.append(n)
-    hints = lambda n: [n + side * -0.3, n + side * 0.3, side, -n, -n, -side]
-    for i in range(seg):
-        a, c_ = rings[i], rings[i + 1]
-        for f, hint in enumerate(hints(ns[i])):
-            g = (f + 1) % 6
-            q = [a[f], a[g], c_[g], c_[f]]
-            col = back if f < 2 else (flank if f in (2, 5) else under)
-            tri([q[0], q[1], q[2]], col, hint); tri([q[0], q[2], q[3]], col, hint)
-    # The end: two teeth either side of the ridge, each a wedge closing to a point.
-    e = rings[-1]; d = ds[-1]; n = ns[-1]; w = w1
-    for (ta, tb, ba, bb), k in (((e[0], e[1], e[5], e[4]), 0.17), ((e[1], e[2], e[4], e[3]), 0.13)):
-        tip = ta.lerp(tb, 0.5).lerp(ba.lerp(bb, 0.5), 0.3) + d * (w * k)
-        tri([ta, tip, tb], back, n)
-        tri([ba, bb, tip], under, -n)
-        tri([ta, ba, tip], flank, d - side)
-        tri([tb, tip, bb], flank, d + side)
+    for i in range(rows - 1):
+        (a, f0, _), (c_, f1, _) = rs[i], rs[i + 1]
+        for s in (0, 1):
+            v = [a[s], a[s + 1], c_[s + 1], c_[s]]
+            cs = [tuple(min(x * tones[s], 1.0) for x in tint(g)) for g in (f0, f0, f1, f1)]
+            b.vface([v[0], v[1], v[2]], [cs[0], cs[1], cs[2]], ns[i])
+            b.vface([v[0], v[2], v[3]], [cs[0], cs[2], cs[3]], ns[i])
+    (l, m, r), _, w = rs[-1]
+    n = ns[-1]
+    tipdir = (rs[-1][0][1] - rs[-2][0][1]).normalized()
+    cl = tuple(min(x * tones[0], 1.0) for x in tint(1.0))
+    cr = tuple(min(x * tones[1], 1.0) for x in tint(1.0))
+    tm = m + tipdir * (w * rng.uniform(0.1, 0.2))
+    if not hem:
+        b.vface([l, tm, m], [cl] * 3, n)
+        b.vface([m, tm, r], [cr] * 3, n)
+        return
+    tl = l + tipdir * (w * rng.uniform(-0.1, 0.04)) + (m - l) * 0.12
+    tr = r + tipdir * (w * rng.uniform(-0.1, 0.04)) + (m - r) * 0.12
+    nl = l.lerp(m, rng.uniform(0.45, 0.7)) + tipdir * (w * 0.01)
+    nr = r.lerp(m, rng.uniform(0.45, 0.7)) + tipdir * (w * 0.01)
+    for tri, col_ in (((l, tl, nl), cl), ((l, nl, m), cl), ((nl, tm, m), cl),
+                      ((m, tm, nr), cr), ((m, nr, r), cr), ((r, nr, tr), cr)):
+        b.vface(list(tri), [col_] * 3, n)
+
+
+def tier_shell(b, c, reach, drop, u, sides=6):
+    """Dark inside of a tier: a shallow cone a little under its planks, and its underside."""
+    a0 = u * 4.0
+    apex = c + UP * (-0.2 * drop)
+    rim = [c + Vector((reach * 0.7 * math.cos(a0 + math.tau * i / sides), reach * 0.7 * math.sin(a0 + math.tau * i / sides), -drop * 1.02)) for i in range(sides)]
+    under = c + UP * (-0.5 * drop)
+    for i in range(sides):
+        j = (i + 1) % sides
+        o = rim[i] + rim[j] - 2 * c
+        b.face([apex, rim[i], rim[j]], SPRUCE_CORE, o.normalized() + UP * 0.5)
+        b.face([under, rim[j], rim[i]], SPRUCE_UNDER, -UP)
 
 
 def spruce_axis(p, H):
@@ -461,7 +486,7 @@ def spruce_lod(name, p):
     b = Builder(rng)
     tiers, H = spruce_tiers(p)
     axis = spruce_axis(p, H)
-    b.limb(axis(-0.4), axis(H * 0.5), 0.45, 0.15, 4, BARK)
+    b.limb(axis(-0.4), axis(H * 0.5), H * 0.07, H * 0.025, 4, SPRUCE_BARK)
     for t, (z, r, k, e, u) in enumerate(tiers + [(H, 0.5, 0, tiers[-1][3], 1.0)]):
         s = 5
         a0 = t * math.pi / 5
@@ -469,68 +494,90 @@ def spruce_lod(name, p):
         c = axis(e)
         rim = [c + Vector((r * math.cos(a0 + math.tau * i / s), r * math.sin(a0 + math.tau * i / s), 0)) for i in range(s)]
         under = axis(e + (z - e) * 0.35)
+        main = lerp3(SPRUCE_LOW, SPRUCE_HIGH, 0.3 + 0.7 * u)
         for i in range(s):
             j = (i + 1) % s
-            b.face([apex, rim[i], rim[j]], lerp3(SPRUCE_BACK_LOW, SPRUCE_BACK_HIGH, u), rim[i] + rim[j] - 2 * c + UP * r)
+            # The same mix of lit and dark planks as the tree, face by face.
+            top = lerp3(main, SPRUCE_CORE, 0.05 if (i * 2 + t) % 5 < 3 else 0.55)
+            b.vface([apex, rim[i], rim[j]], [lerp3(top, SPRUCE_CORE, 0.5), top, top], rim[i] + rim[j] - 2 * c + UP * r)
             b.face([under, rim[j], rim[i]], SPRUCE_UNDER, -UP)
     return spruce_finish(b, p, H, name)
 
 
 def spruce(name, p, mid=False):
     """The spruce; `mid` builds its middle-distance version (Models swaps it in past
-    Models.TREE_NEAR_DIST): single-segment boughs, a quarter fewer and as much wider,
-    no bare stems, a plainer trunk; same tiers and outline, about half the faces."""
+    Models.TREE_NEAR_DIST): a quarter fewer planks and as much wider, two rows each, a
+    plain point, a sparser fringe, no bare stems; same tiers and outline, about half the
+    faces."""
     rng = random.Random(p["seed"])
     b = Builder(rng)
     tiers, H = spruce_tiers(p)
     axis = spruce_axis(p, H)
     # Trunk: flared foot on root buttresses, tapering up into the crown along its curve.
-    zs = [-0.4, 0.25, 1.1, H * 0.35, H * 0.6, H * 0.93]
-    rs = [0.5, 0.36, 0.28, 0.2, 0.13, 0.04]
+    zs = [-0.4, 0.5, 2.0, H * 0.35, H * 0.6, H * 0.93]
+    rs = [H * x for x in (0.064, 0.05, 0.04, 0.03, 0.02, 0.006)]
     for i in range(len(zs) - 1):
-        b.limb(axis(zs[i]), axis(zs[i + 1]), rs[i], rs[i + 1], 4 if mid else (6 if i < 2 else 5), BARK, a0=0.2)
+        b.limb(axis(zs[i]), axis(zs[i + 1]), rs[i], rs[i + 1], 4 if mid else (6 if i < 2 else 5), SPRUCE_BARK, a0=0.2)
     for i in range(4):
         a = 0.6 + math.tau * i / 4 + rng.uniform(-0.3, 0.3)
         o = Vector((math.cos(a), math.sin(a), 0))
-        b.limb(Vector((0, 0, 0.5)) + o * 0.15, o * 0.7 + Vector((0, 0, -0.2)), 0.15, 0.04, 3, BARK)
+        b.limb(Vector((0, 0, 0.9)) + o * rs[1] * 0.55, o * rs[0] * 1.08 + Vector((0, 0, -0.2)), rs[1] * 0.4, rs[1] * 0.25, 3, SPRUCE_BARK)
     lean_dir = Vector((1, 0, 0))
     for z, r, k, e, u in tiers:
-        p0, p1 = bough_pitch(u)
-        p0 += p["pitch"]
-        p1 += p["pitch"] + p["droop"]
-        reach = bough_reach(p0, p1)[0]
+        drop = z - e
+        rise = 0.3 + 0.7 * u
+        tier_shell(b, axis(z), r, drop, u)
         a0 = rng.uniform(0, math.tau)
         k_full = k
         if mid:
             k = max(3, round(k * 0.75))
+        main = lerp3(SPRUCE_LOW, SPRUCE_HIGH, rise)
+        dark = lerp3(main, SPRUCE_CORE, 0.7)
         for i in range(k):
             a = a0 + math.tau * (i + rng.uniform(-0.2, 0.2)) / k
             out = Vector((math.cos(a), math.sin(a), 0))
-            # Alternate boughs sit a touch higher, so neighbours overlap rather than
+            # Alternate planks lie a touch higher, so neighbours overlap rather than
             # fight for the same plane.
             lay = 0.5 if i % 2 else -0.5
-            w1 = math.tau * r / k_full * 0.95 * p["wide"] * rng.uniform(0.9, 1.1) * (k_full / k) ** 0.8
+            w1 = min(math.tau * r / k_full * 1.2 * p["wide"], r * 0.95) * rng.uniform(0.9, 1.1) * (k_full / k) ** 0.8
             # Wind-swept: longer away from the lean.
             sw = 1.0 - p["sweep"] * out.dot(lean_dir)
-            root = axis(z + 0.06 * lay) + out * 0.1
-            reach_r = r
+            root = axis(z) + out * 0.08
+            reach = r
             if p["stem"] > 0 and rng.random() < 0.75 and not mid:
                 # A bare branch out from the trunk before the foliage starts.
                 sl = p["stem"] * r * rng.uniform(0.7, 1.2)
                 end = root + (out - UP * 0.25).normalized() * sl
                 b.limb(root, end, 0.08, 0.045, 3, BARK)
                 root = end
-                reach_r = r - sl * 0.95
-            L = (reach_r - 0.1) * rng.uniform(0.86, 1.1) * sw / reach
-            bough(b, root, out, L, w1 * 0.4, w1, max(0.1, w1 * 0.13), 1 if mid else p["seg"], 0.3 + 0.7 * u,
-                  rng.uniform(0.9, 1.1), p0 + 0.05 * lay + rng.uniform(-0.08, 0.08),
-                  p1 + 0.05 * lay + rng.uniform(-0.15, 0.15))
-    # The leader: a short spike of four steep boughs to a point.
+                reach = r - sl * 0.95
+            L = (reach - 0.08) * rng.uniform(0.9, 1.1) * sw
+            D = (root.z - e) * rng.uniform(0.94, 1.06)
+            line = skirt(L, D, p["flare"])
+            lit = rng.random() < p["bright"] + (0.2 if mid else 0.0)
+            plank(b, root, out, line, 0.0, 1.0, w1 * 0.5, w1, main if lit else dark, 3 if mid else 4, 0.04 * lay * r, not mid)
+            # The fringe: a smaller dark plank showing under the hem, turned to the gap
+            # between this plank and the next.
+            if not mid or i % 2 == 0:
+                g = a + math.pi / k
+                o2 = Vector((math.cos(g), math.sin(g), 0))
+                fr = skirt(r * rng.uniform(1.0, 1.08) * sw, drop * rng.uniform(1.06, 1.14), p["flare"])
+                plank(b, axis(z) + o2 * 0.08, o2, fr, 0.55, 1.0, w1 * 0.75, w1 * 0.95, SPRUCE_FRINGE, 2, -0.05 * r, not mid, 0.8)
+            # A short bright plank over the joint, more of them on the upper tiers.
+            if not mid and rng.random() < 0.4 + 0.3 * u:
+                g = a + math.pi / k + rng.uniform(-0.15, 0.15)
+                o2 = Vector((math.cos(g), math.sin(g), 0))
+                t0 = rng.uniform(0.22, 0.34)
+                t1 = rng.uniform(0.74, 0.92)
+                top = lerp3(main, SPRUCE_HIGH, 0.35)
+                plank(b, axis(z) + o2 * 0.08, o2, skirt(r * sw, drop, p["flare"]), t0, t1, w1 * 0.55, w1 * 0.78, top, 2, 0.06 * r, True, 0.85)
+    # The leader: a spike of four steep planks to a point.
     zt = tiers[-1][0]
     a0 = rng.uniform(0, math.tau)
+    tip = lerp3(SPRUCE_HIGH, SPRUCE_TIP, 0.4)
     for i in range(4):
         out = Vector((math.cos(a0 + math.tau * i / 4), math.sin(a0 + math.tau * i / 4), 0))
-        bough(b, axis(H), out, (H - zt + 0.3) * 1.05, 0.02, 0.45, 0.07, 1 if mid else 2, 1.0, 1.0, 1.35, 1.3)
+        plank(b, axis(H), out, skirt(0.2, H - zt + 0.5, 0.6), 0.0, 1.0, 0.04, 0.24, tip, 2, 0.0, False, 1.0)
     return spruce_finish(b, p, H, name)
 
 

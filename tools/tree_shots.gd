@@ -1,11 +1,12 @@
 extends SceneTree
 ## Renders an island forest close up, mid and far (across the tree LOD switch) for
 ## checking the trees by eye. Add --classic-trees to compare with the old ones.
-##   godot --path . --script tools/tree_shots.gd -- --seed=9164 --out=DIR
+##   godot --path . --script tools/tree_shots.gd -- --seed=9164 --out=DIR [--time=13.5]
 
 var main: Node
 var frames := 0
 var out := "user://"
+var hour := 11.0
 var shots := 0
 var spot := Vector3.ZERO
 # [distance, pitch, yaw offset]
@@ -16,6 +17,8 @@ func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--out="):
 			out = a.substr(6)
+		elif a.begins_with("--time="):
+			hour = float(a.substr(7))
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 
@@ -38,6 +41,7 @@ func _process(_delta: float) -> bool:
 		print("forest spot ", spot)
 	if frames < 60:
 		return false
+	main.sim.minutes = hour * 60.0
 	if shots >= VIEWS.size():
 		return true
 	var v: Array = VIEWS[shots]
