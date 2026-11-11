@@ -54,6 +54,7 @@ scripts/
   camera/camera_rig.gd    RTS orbit camera
   ui/hud.gd               all UI, built in code
 tools/vessel_soak_test.gd headless soak test: hulls touching, groundings, long holds
+tools/teaser_capture.sh   records the teaser's scripted shots and cuts them together (teaser_capture.gd)
 shaders/water.gdshader    depth-based shallow/deep colour + shoreline foam
 shaders/seagull.gdshader     gull wing flap/fold
 shaders/orca.gdshader     orca dorsal fin height/sweep and tail beat

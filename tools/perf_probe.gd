@@ -44,6 +44,9 @@ func _apply() -> void:
 			"clouds": _hide(main, "Clouds")
 			"backdrop": _hide(main, "Backdrop")
 			"mtrees": _hide(main, "MainlandPines*")
+			"trees":
+				_hide(main, "Pines*")
+				_hide(main, "RoundTrees*")
 			"cards": _hide(main, "TreeCards*")
 			"mland": _hide(main, "Mainland")
 			"cumulus": _hide(main, "Cumulus")
