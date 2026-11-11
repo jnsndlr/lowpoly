@@ -9,10 +9,11 @@ const SEA_FLOOR := -16.5
 
 var half_size: float
 var n: int  # cells per side
-var e_grid := PackedFloat32Array()  # raw island "elevation" 0..~1.3
+var e_grid := PackedFloat32Array()  # raw island "elevation" 0..~4.5
 var h_grid := PackedFloat32Array()  # final heights
 var warp := FastNoiseLite.new()
 var detail := FastNoiseLite.new()
+var hills := FastNoiseLite.new()
 var flats: Array[Dictionary] = []
 ## The land past the grid's edge (heights there come from it, see outer_height).
 var mainland: Mainland
@@ -26,10 +27,14 @@ func _init(map_seed: int, half: float) -> void:
 	e_grid.resize((n + 1) * (n + 1))
 	e_grid.fill(0.0)
 	warp.seed = map_seed
-	warp.frequency = 0.0046667
-	warp.fractal_octaves = 3
+	warp.frequency = 0.0018
+	warp.fractal_octaves = 5
+	warp.fractal_gain = 0.4
 	detail.seed = map_seed + 17
 	detail.frequency = 0.0166667
+	hills.seed = map_seed + 23
+	hills.frequency = 0.0024
+	hills.fractal_octaves = 3
 	mainland = Mainland.new(map_seed, half)
 
 
@@ -56,7 +61,7 @@ func stamp_island(center: Vector2, radius: float, strength: float) -> void:
 
 
 func _stamp_e(center: Vector2, radius: float, strength: float, x: float, z: float) -> float:
-	var d := Vector2(x, z).distance_to(center) / radius + warp.get_noise_2d(x, z) * 0.3
+	var d := Vector2(x, z).distance_to(center) / radius + warp.get_noise_2d(x, z) * 0.55
 	return clampf(1.0 - d, 0.0, 1.0) * strength
 
 
@@ -71,10 +76,13 @@ func finalize() -> void:
 			h_grid[j * (n + 1) + i] = _height_of(e_grid[j * (n + 1) + i], x, z)
 
 
-## A steep rocky shoreline, then gentle hills.
+## A steep rocky shoreline, then gentle hills, broken up well inland into ridges and valleys.
 func _height_of(e: float, x: float, z: float) -> float:
 	var land := smoothstep(0.2, 0.32, e)
-	return SEA_FLOOR + land * 18.6 + e * 21.0 + detail.get_noise_2d(x, z) * 5.4 * land
+	var relief := hills.get_noise_2d(x, z) * 66.0 * smoothstep(1.0, 3.0, e)
+	# Past the shore the ground eases off, leaving room for towns and farms.
+	var rise := minf(e, 0.4) + maxf(e - 0.4, 0.0) * 0.5
+	return SEA_FLOOR + land * 18.6 + rise * 21.0 + detail.get_noise_2d(x, z) * 5.4 * land + relief
 
 
 ## Height past the grid: the mainland's shores, hills and mountains, and the parts

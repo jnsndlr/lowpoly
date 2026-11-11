@@ -14,8 +14,8 @@ const PILOT_NAMES := ["Pacific Pilot", "Salish Pilot", "Haro Pilot", "Strait Pil
 const TUG_NAMES := ["Sea Bear", "Tenacious", "Saturna", "Kodiak", "Valiant", "Ocean Ranger"]
 const RANK_TENDER := 1600
 const LAND_LEAD := 45.0        # seconds early a boat aims to be for a pilot coming off
-const REACH := 1860.0
-const SHORT_PASSAGE := 1050.0
+const REACH := 4400.0
+const SHORT_PASSAGE := 2500.0
 
 var traffic: MarineTraffic
 var station: MapData.PilotStation

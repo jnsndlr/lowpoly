@@ -8,7 +8,7 @@ extends Node3D
 signal ground_clicked(screen_pos: Vector2)
 
 const MIN_DIST := 42.0
-const MAX_DIST := 1860.0
+const MAX_DIST := 4400.0
 const MIN_PITCH := 0.06   # ~3.5°: down near the water, looking up the passage
 ## The camera never goes lower than this above the water or ground.
 const MIN_EYE := 7.5
@@ -21,7 +21,7 @@ var follow: Node3D = null
 
 var yaw := -0.6
 var pitch := 0.95
-var distance := 1140.0
+var distance := 1500.0
 var target_yaw := yaw
 var target_pitch := pitch
 var target_dist := distance

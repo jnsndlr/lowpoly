@@ -15,10 +15,11 @@ var _slip_zones: Array = []   # [shore, dock_dir, lateral, slip offset, route id
 
 const DOCK_MIN_ANGLE := deg_to_rad(35.0)   # no two docks face within this of each other
 const ISLAND_GAP := 360.0
+const RELIEF_RADIUS := 175.0  # islands rise this many metres per RELIEF_RADIUS of stamp, whatever their size
 const QUAY_DEPTH := -8.7      # the shallowest water a fish quay's boats come and go through
 const MAX_SPREAD := deg_to_rad(160.0)  # widest arc of neighbours one terminal serves
 const MIN_CROSSING := 270.0    # dock to dock, so a ferry has room to line up both ends
-const MAX_DETOUR := 1.45      # route length over the dock-to-dock distance
+const MAX_DETOUR := 1.6       # route length over the dock-to-dock distance
 const MAX_TURN := deg_to_rad(200.0)    # total heading change along a route
 
 
@@ -62,19 +63,19 @@ func _place_mainland() -> void:
 	var start := rng.randf() * TAU
 	for k in count:
 		var ang := start + TAU * k / count + rng.randf_range(-0.25, 0.25)
-		var dist := rng.randf_range(map.half_size + 120.0, map.half_size + 270.0)
-		var isl := _new_island(Vector2(cos(ang), sin(ang)) * dist, rng.randf_range(360.0, 480.0), 1.3, false)
+		var dist := rng.randf_range(map.half_size + 400.0, map.half_size + 890.0)
+		var isl := _new_island(Vector2(cos(ang), sin(ang)) * dist, rng.randf_range(1190.0, 1580.0), 1.3, false)
 		isl.is_mainland = true
 
 
 func _place_islands() -> void:
 	var target := rng.randi_range(8, 11)
-	var limit := map.half_size - 330.0
+	var limit := map.half_size - 1090.0
 	var placed := 0
 	for attempt in 5000:
 		if placed >= target:
 			break
-		var r := rng.randf_range(138.0, 210.0)
+		var r := rng.randf_range(450.0, 690.0)
 		var c := Vector2(rng.randf_range(-limit, limit), rng.randf_range(-limit, limit))
 		var ok := true
 		for o in map.islands:
@@ -83,7 +84,7 @@ func _place_islands() -> void:
 				ok = false
 				break
 		if ok:
-			_new_island(c, r, rng.randf_range(0.9, 1.15), true)
+			_new_island(c, r, rng.randf_range(0.9, 1.15) * r / RELIEF_RADIUS, true)
 			placed += 1
 
 
@@ -131,7 +132,7 @@ func _try_routes(mains: Array[MapData.Island], banned: Dictionary) -> Array:
 	for i in mains.size():
 		for j in range(i + 1, mains.size()):
 			var d := mains[i].center.distance_to(mains[j].center)
-			if d < 1290.0 and not banned.has(Vector2i(i, j)):
+			if d < 3100.0 and not banned.has(Vector2i(i, j)):
 				edges.append([d, i, j])
 	edges.sort_custom(func(a, b): return a[0] < b[0])
 
@@ -155,7 +156,7 @@ func _try_routes(mains: Array[MapData.Island], banned: Dictionary) -> Array:
 	for e in edges:
 		var a: int = e[1]
 		var b: int = e[2]
-		if chosen.has(e) or e[0] > 780.0 or degree[a] >= 2 or degree[b] >= 2 or not _fits_terminal(mains, bearings, a, b):
+		if chosen.has(e) or e[0] > 1900.0 or degree[a] >= 2 or degree[b] >= 2 or not _fits_terminal(mains, bearings, a, b):
 			continue
 		if rng.randf() < 0.6:
 			_link(mains, bearings, degree, chosen, e)
@@ -183,7 +184,9 @@ func _try_routes(mains: Array[MapData.Island], banned: Dictionary) -> Array:
 	for e in chosen:
 		var a: MapData.Island = mains[e[1]]
 		var b: MapData.Island = mains[e[2]]
+		# No dock for it: plan again without this link, so the network goes another way.
 		if not (a.has_terminal and b.has_terminal):
+			bad.append(Vector2i(e[1], e[2]))
 			continue
 		var test := _route_curve(a.shore + a.dock_dir * Layout.DOCK_U, a.dock_dir, b.shore + b.dock_dir * Layout.DOCK_U, b.dock_dir)
 		if test == null or not _route_sensible(test):
@@ -293,20 +296,13 @@ func _departure_lateral(isl: MapData.Island, route_id: int, lat: Vector3) -> flo
 
 ## Searches around the desired heading for a shoreline with land behind (for the
 ## holding lot) and open water ahead (for the slip and approach), never facing
-## within DOCK_MIN_ANGLE of a dock already placed.
+## within DOCK_MIN_ANGLE of a dock already placed. The coast is rarely square to a
+## line from the island's middle, so each landfall tries facing a little either way.
 func _find_dock(isl: MapData.Island, desired: Vector2, taken: Array[Vector3]) -> bool:
 	var base := atan2(desired.y, desired.x)
-	for k in 17:
-		var ang := base + ceili(k / 2.0) * 0.2 * (1.0 if k % 2 == 1 else -1.0)
+	for k in 33:
+		var ang := base + ceili(k / 2.0) * 0.1 * (1.0 if k % 2 == 1 else -1.0)
 		var dir := Vector2(cos(ang), sin(ang))
-		var n3 := Vector3(dir.x, 0.0, dir.y)
-		var clash := false
-		for t in taken:
-			if n3.angle_to(t) < DOCK_MIN_ANGLE:
-				clash = true
-				break
-		if clash:
-			continue
 		var shore := -1.0
 		var r := 0.0
 		while r < isl.radius * 1.8:
@@ -318,27 +314,34 @@ func _find_dock(isl: MapData.Island, desired: Vector2, taken: Array[Vector3]) ->
 		if shore < 24.0:
 			continue
 		var s3 := Vector3(isl.center.x + dir.x * shore, 0.0, isl.center.y + dir.y * shore)
-		var lat := Vector3.UP.cross(n3)
-		var land := 0
-		for u: float in [-18.0, -36.0, -54.0, -72.0, -90.0]:
-			if terrain.height_v(s3 + n3 * u) > 1.5:
-				land += 1
-		if land < 4:
-			continue
-		var water_ok := true
-		for u in range(18, 156, 9):
-			for v: float in [-36.0, 0.0, 36.0]:
-				if terrain.height_v(s3 + n3 * float(u) + lat * v) > -3.0:
-					water_ok = false
+		for face: float in [0.0, 0.3, -0.3, 0.6, -0.6]:
+			var n3 := Vector3(cos(ang + face), 0.0, sin(ang + face))
+			var clash := false
+			for t in taken:
+				if n3.angle_to(t) < DOCK_MIN_ANGLE:
+					clash = true
 					break
-			if not water_ok:
-				break
-		if not water_ok:
-			continue
-		isl.shore = s3
-		isl.dock_dir = n3
-		return true
+			if clash or not _dock_fits(s3, n3):
+				continue
+			isl.shore = s3
+			isl.dock_dir = n3
+			return true
 	return false
+
+
+func _dock_fits(s3: Vector3, n3: Vector3) -> bool:
+	var lat := Vector3.UP.cross(n3)
+	var land := 0
+	for u: float in [-18.0, -36.0, -54.0, -72.0, -90.0]:
+		if terrain.height_v(s3 + n3 * u) > 1.5:
+			land += 1
+	if land < 4:
+		return false
+	for u in range(18, 156, 9):
+		for v: float in [-36.0, 0.0, 36.0]:
+			if terrain.height_v(s3 + n3 * float(u) + lat * v) > -3.0:
+				return false
+	return true
 
 
 # Ferries leave and enter each slip on a straight run along its centreline, long
@@ -509,13 +512,13 @@ func _clear_of_slips(c: Curve3D, route_id: int) -> bool:
 
 ## Small rocky islets for scenery, kept away from shipping lanes and docks.
 func _place_islets() -> void:
-	var target := rng.randi_range(12, 20)
+	var target := rng.randi_range(24, 40)
 	var placed := 0
 	var limit := map.half_size - 120.0
-	for attempt in 1500:
+	for attempt in 3000:
 		if placed >= target:
 			break
-		var r := rng.randf_range(18.0, 39.0)
+		var r := rng.randf_range(30.0, 78.0)
 		var c := Vector2(rng.randf_range(-limit, limit), rng.randf_range(-limit, limit))
 		var ok := true
 		for o in map.islands:
@@ -1013,7 +1016,7 @@ func _layout_towns() -> void:
 			# Unconnected island: settle on the highest ground near the centre.
 			var best := Vector3(isl.center.x, 0.0, isl.center.y)
 			for k in 24:
-				var p := Vector3(isl.center.x + rng.randf_range(-45, 45), 0.0, isl.center.y + rng.randf_range(-45, 45))
+				var p := Vector3(isl.center.x + rng.randf_range(-150, 150), 0.0, isl.center.y + rng.randf_range(-150, 150))
 				if _h(p) > _h(best):
 					best = p
 			isl.town_center = best

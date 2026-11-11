@@ -233,7 +233,7 @@ func _ground_color(h: float, ny: float, sx: float, sz: float) -> Color:
 	elif h < 3.45:
 		col = Color(0.8, 0.73, 0.54)
 	else:
-		var g := clampf((h - 3.6) / 24.0, 0.0, 1.0)
+		var g := clampf((h - 3.6) / 60.0, 0.0, 1.0)
 		col = Color(0.52, 0.6, 0.25).lerp(Color(0.33, 0.46, 0.2), g)
 	return col.darkened(r * 0.08)
 
@@ -255,8 +255,8 @@ func _build_water() -> void:
 	water_material = mat
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(inner * 2.0, inner * 2.0)
-	plane.subdivide_width = 180
-	plane.subdivide_depth = 180
+	plane.subdivide_width = 300
+	plane.subdivide_depth = 300
 	var water := _add_mesh(plane, "Water", false)
 	water.material_override = mat
 
@@ -584,7 +584,7 @@ func _build_towns() -> void:
 				if _is_blocked(p.x, p.z):
 					continue
 				var h := terrain.height_v(p)
-				if h < 4.2 or h > 30.0:
+				if h < 4.2 or h > 45.0:
 					continue
 				var hmin := h
 				var hmax := h
@@ -704,7 +704,11 @@ func _build_haul_outs() -> void:
 func _build_vegetation() -> void:
 	var forest := FastNoiseLite.new()
 	forest.seed = map.map_seed + 5
-	forest.frequency = 0.0066667
+	forest.frequency = 0.0033333
+	var pasture := FastNoiseLite.new()
+	pasture.seed = map.map_seed + 6
+	pasture.frequency = 0.0014
+	pasture.fractal_octaves = 3
 	var pines: Array[Transform3D] = []
 	var pine_cols: Array[Color] = []
 	var rounds: Array[Transform3D] = []
@@ -732,6 +736,10 @@ func _build_vegetation() -> void:
 				terrain.height_at(px, pz + 3.0) - terrain.height_at(px, pz - 3.0)).length() / 6.0
 			if h > 3.9 and slope < 1.0:
 				var density := 0.85 + forest.get_noise_2d(px, pz) * 1.2
+				# Open pasture here and there, and taller, thinner stands up on the hills.
+				density *= 1.0 - smoothstep(0.16, 0.28, pasture.get_noise_2d(px, pz))
+				var upland := smoothstep(12.0, 36.0, h)
+				density *= 1.0 - upland * 0.45
 				var near_town := false
 				for isl in towns:
 					var town_r := sqrt(isl.population / 90.0) * 9.0 + 18.0
@@ -742,7 +750,7 @@ func _build_vegetation() -> void:
 					density *= 0.2
 				if rng.randf() > density:
 					continue
-				var s := rng.randf_range(0.75, 1.35)
+				var s := rng.randf_range(0.75, 1.35) * (1.0 + upland * 0.25)
 				var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.2), s) * Models.LEGACY_SCALE)
 				var xf := Transform3D(basis, Vector3(px, h - 0.3, pz))
 				var tint := Color(rng.randf_range(0.8, 1.0), rng.randf_range(0.85, 1.0), rng.randf_range(0.8, 0.95))
