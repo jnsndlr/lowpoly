@@ -116,3 +116,16 @@ seconds and quits. Metal doesn't report GPU time, so profile with Vulkan:
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot --path . --rendering-driver vulkan -- --seed=42 --bench=6
 ```
+
+## Quick PR validation
+
+Draft PRs skip the **Godot fast check**. Mark a PR targeting main ready for review
+to run it. New commits rerun the check and cancel an older run for the same PR.
+The Linux job imports the project with Godot 4.7.2, tests demand-based ferry
+assignment and starts the normal game on seed 123 for 120 frames. Run the same
+checks locally with `bash tools/fast_ci.sh` and Godot on PATH, or set `GODOT_BIN`.
+Use the running game for visual review and the relevant longer diagnostics for
+changes to traffic. An iPad playtest covers touch, rendering and device performance.
+The current main scene reports one retained resource and up to 31 leaked objects
+at shutdown on this seed. The launch check tolerates that recorded baseline;
+additional leaks and other Godot errors fail the job.
