@@ -131,3 +131,14 @@ changes to traffic. An iPad playtest covers touch, rendering and device performa
 The current main scene reports one retained resource and up to 31 leaked objects
 at shutdown on this seed. The launch check tolerates that recorded baseline;
 additional leaks and other Godot errors fail the job.
+
+## Physical iPad playtest
+
+Use Godot 4.7.2 with the matching iOS export template and Xcode. In the
+**iPad Playtest** export preset, set your Apple development team locally.
+Export the release Xcode project to a folder outside this checkout, then
+development-sign and run it on the connected iPad. The app installs as
+**Ferry Tycoon (preview)** with a separate identifier from the Tideways3D build.
+
+For a comparable generated-map sample, pass `-- --seed=123` to Godot.
+Record device model, commit, camera and sample duration alongside measurements.
