@@ -9,7 +9,6 @@ const TEXT := Color(0.9, 0.94, 0.95)
 const MUTED := Color(0.58, 0.66, 0.68)
 const ACCENT := Color(0.47, 0.86, 0.6)
 const SPEEDS := [0.0, 1.0, 3.0, 8.0]
-const SPEED_LABELS := ["❚❚", "▶", "▶▶", "▶▶▶"]
 const WILD := Color(0.98, 0.78, 0.42)
 
 var main: Node
@@ -198,11 +197,20 @@ func _build_top_bar() -> void:
 	var speeds := HBoxContainer.new()
 	for i in SPEEDS.size():
 		var b := Button.new()
-		b.text = SPEED_LABELS[i]
 		b.toggle_mode = true
 		b.focus_mode = Control.FOCUS_NONE
 		b.custom_minimum_size = Vector2(40, 26)
+		b.tooltip_text = "Pause" if i == 0 else "Speed %d" % i
 		b.pressed.connect(set_speed.bind(i))
+		# Drawn rather than typed: iPad's system fonts lack the ❚❚ / ▶ glyphs.
+		var icon := Control.new()
+		icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon.draw.connect(_draw_speed_icon.bind(icon, b, i))
+		b.add_child(icon)
+		b.toggled.connect(func(_on: bool) -> void: icon.queue_redraw())
+		b.mouse_entered.connect(icon.queue_redraw)
+		b.mouse_exited.connect(icon.queue_redraw)
 		speeds.add_child(b)
 		_speed_buttons.append(b)
 	clock.add_child(speeds)
@@ -230,8 +238,11 @@ func _build_sidebar() -> void:
 
 
 func _build_help() -> void:
-	var l := _label("Drag: pan · Right-drag / Q E: rotate & tilt · Wheel / pinch: zoom · Click: select (or photograph wildlife)\n" +
-		"Space: pause · 1-3: speed · Tab: next ferry · Esc: deselect · G: new map · [ ]: time of day · T: follow clock", 12, Color(1, 1, 1, 0.75))
+	var text := "Drag: pan · Right-drag / Q E: rotate & tilt · Wheel / pinch: zoom · Click: select (or photograph wildlife)\n" + \
+		"Space: pause · 1-3: speed · Tab: next ferry · Esc: deselect · G: new map · [ ]: time of day · T: follow clock"
+	if DisplayServer.is_touchscreen_available() and OS.has_feature("mobile"):
+		text = "Drag: pan · Two fingers: pinch to zoom, twist to rotate · Three fingers up/down: tilt · Tap: select"
+	var l := _label(text, 12, Color(1, 1, 1, 0.75))
 	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
 	l.add_theme_constant_override("shadow_offset_y", 1)
 	l.anchor_top = 1.0
@@ -262,6 +273,23 @@ func _on_sidebar(id: String) -> void:
 			show_toast(id.to_upper(), "Coming soon: this screen is a placeholder in the preview.")
 
 
+func _draw_speed_icon(icon: Control, b: Button, i: int) -> void:
+	var col := ACCENT if b.button_pressed else (Color.WHITE if b.is_hovered() else TEXT)
+	var c := icon.size * 0.5
+	var h := 11.0
+	if i == 0:
+		icon.draw_rect(Rect2(c + Vector2(-5.0, -h * 0.5), Vector2(3.5, h)), col)
+		icon.draw_rect(Rect2(c + Vector2(1.5, -h * 0.5), Vector2(3.5, h)), col)
+		return
+	var w := 8.0
+	var step := 7.0
+	var x0 := c.x - (w + step * (i - 1)) * 0.5
+	for k in i:
+		var x := x0 + step * k
+		icon.draw_colored_polygon(PackedVector2Array([
+			Vector2(x, c.y - h * 0.5), Vector2(x + w, c.y), Vector2(x, c.y + h * 0.5)]), col)
+
+
 func set_speed(i: int) -> void:
 	_speed_index = i
 	if i > 0:
@@ -285,7 +313,7 @@ func _build_labels() -> void:
 		var title := HBoxContainer.new()
 		title.add_theme_constant_override("separation", 6)
 		if isl.has_terminal:
-			title.add_child(_label("⚓", 13, ACCENT))
+			title.add_child(_label("•", 13, ACCENT))
 		title.add_child(_label(isl.name.to_upper(), 13, TEXT, true))
 		v.add_child(title)
 		v.add_child(_label("pop. " + fmt_int(isl.population), 12, MUTED))
@@ -508,7 +536,7 @@ func _refresh_panels() -> void:
 	if selected_ferry:
 		var f := selected_ferry
 		_info_title.text = f.ferry_name.to_upper()
-		_info_sub.text = "M/V · %s ⇄ %s" % [f.term_a.island.name, f.term_b.island.name]
+		_info_sub.text = "M/V · %s – %s" % [f.term_a.island.name, f.term_b.island.name]
 		_set_rows([
 			["Status", f.status_text()],
 			["Class", f.fc.label],
@@ -629,7 +657,7 @@ func _update_terminal_bar(term: Terminal) -> void:
 		var mins: float = nd[0]
 		var when := "Boarding now" if f.state == Ferry.State.LOADING and f.here() == term else sim.clock_text(sim.minutes + mins)
 		var dest := f.term_b if f.term_a == term else f.term_a
-		_tb_set("departure", "NEXT DEPARTURE", when, "%s → %s" % [f.ferry_name, dest.island.name])
+		_tb_set("departure", "NEXT DEPARTURE", when, "%s to %s" % [f.ferry_name, dest.island.name])
 	else:
 		_tb_set("departure", "NEXT DEPARTURE", "-", "")
 	_tb_set("weather", "WEATHER", sim.weather, "%d°C" % sim.temperature())
@@ -722,8 +750,8 @@ func _rebuild_wildlife() -> void:
 			for isl in v.credited:
 				names.append(isl.name)
 			seen = "seen from " + ", ".join(names)
-		b.text = "%s%s · %s%s\n%s · %s" % ["● " if v.active() else "", v.title(), v.target.name,
-			"  📷" if v.photographed else "", when, seen]
+		b.text = "%s%s · %s%s\n%s · %s" % ["• " if v.active() else "", v.title(), v.target.name,
+			"  · photo" if v.photographed else "", when, seen]
 		b.add_theme_color_override("font_color", WILD if v.active() else TEXT)
 		b.set_meta("visit", v)
 	var lines := PackedStringArray()
