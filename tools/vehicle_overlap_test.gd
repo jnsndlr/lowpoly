@@ -25,7 +25,7 @@ func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--frames="):
 			max_frames = int(a.substr(9))
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/sandbox.tscn").instantiate()
 	root.add_child(main)
 
 

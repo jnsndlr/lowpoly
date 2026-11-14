@@ -30,7 +30,7 @@ func _initialize() -> void:
 		elif a.begins_with("--time="):
 			hour = float(a.substr(7))
 	DirAccess.make_dir_recursive_absolute(out)
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/sandbox.tscn").instantiate()
 	root.add_child(main)
 
 

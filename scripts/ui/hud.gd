@@ -426,6 +426,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				select_ferry(sim.ferries[(i + 1) % sim.ferries.size()])
 		KEY_G:
 			main.regenerate()
+		KEY_M:
+			Scenes.go(get_tree(), Scenes.MENU)
 		KEY_BRACKETLEFT, KEY_BRACKETRIGHT:
 			var step := -1.0 if (event as InputEventKey).physical_keycode == KEY_BRACKETLEFT else 1.0
 			main.day_cycle.set_hour(roundf(main.day_cycle.hour()) + step)

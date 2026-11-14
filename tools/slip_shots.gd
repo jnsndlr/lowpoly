@@ -48,7 +48,7 @@ func _initialize() -> void:
 	if _poses:
 		_setup_poses()
 		return
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/sandbox.tscn").instantiate()
 	root.add_child(main)
 
 

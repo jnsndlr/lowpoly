@@ -27,7 +27,7 @@ func _initialize() -> void:
 			every = int(a.substr(8))
 		elif a == "--top":
 			top = true
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/sandbox.tscn").instantiate()
 	root.add_child(main)
 
 

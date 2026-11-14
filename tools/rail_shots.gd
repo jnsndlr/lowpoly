@@ -29,7 +29,7 @@ func _initialize() -> void:
 			side = float(a.substr(7))
 		elif a.begins_with("--up="):
 			up = float(a.substr(5))
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/sandbox.tscn").instantiate()
 	root.add_child(main)
 
 
@@ -43,7 +43,7 @@ func _process(_delta: float) -> bool:
 		return false
 	Engine.time_scale = 1.0
 	if cam == null:
-		# Zoomed in, as a player looking at her would be (main.gd sizes the shadows by it).
+		# Zoomed in, as a player looking at her would be (sandbox.gd sizes the shadows by it).
 		main.rig.target_dist = 60.0
 		main.rig.snap()
 		cam = Camera3D.new()

@@ -35,7 +35,7 @@ func _initialize() -> void:
 			out = a.substr(6)
 		elif a.begins_with("--only="):
 			only = a.substr(7)
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/sandbox.tscn").instantiate()
 	root.add_child(main)
 
 

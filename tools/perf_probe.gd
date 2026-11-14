@@ -17,7 +17,7 @@ func _initialize() -> void:
 			off = a.substr(6)
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	RenderingServer.viewport_set_measure_render_time(root.get_viewport_rid(), true)
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/sandbox.tscn").instantiate()
 	root.add_child(main)
 	main.set("uncapped", true)
 	Engine.max_fps = 0

@@ -30,7 +30,7 @@ func _initialize() -> void:
 			dist_k = float(a.substr(7))
 		elif a == "--terminals":
 			terminals = true
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/sandbox.tscn").instantiate()
 	root.add_child(main)
 
 
