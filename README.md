@@ -8,6 +8,8 @@ at the other side.
 Open the folder in Godot 4.7 and press **Play** (F5). Everything is built in code,
 so there are no assets to import.
 
+For Paul, Jon and their AI agents, see the [development and merge workflow](docs/workflow.md).
+
 ## Controls
 
 | Action | Mouse / trackpad | Keys |
