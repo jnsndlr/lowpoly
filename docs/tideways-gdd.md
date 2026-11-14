@@ -9,7 +9,7 @@ Built from GDD v0.3 in the Tideways prototype repo, the systems on the "Ferry ga
 - This GDD is the master design. Anything not marked otherwise is decided.
 - **Default** marks a suggestion that was not explicitly confirmed. It stands until someone changes it.
 - All numbers are starting points for tuning unless a rule says otherwise.
-- The TypeScript prototype is a reference, not a spec. Its scheduling and terminal ideas are useful, but its numbers are not canonical. Real cars in real lanes and real space on boats, as in the lowpoly project, are what matter.
+- The TypeScript prototype is a reference, not a spec. Its scheduling and terminal ideas are useful, but its numbers are not canonical. Real cars in real lanes and real space on boats, as in [Jon's Tideways Godot project](https://github.com/jnsndlr/tideways), are what matter.
 
 ---
 
@@ -400,7 +400,7 @@ Later phases will be chosen by what the game needs once Phase 1 is playable. Lik
 
 ## From Tech Demo to Game
 
-The lowpoly project already has terminals, lanes, real vehicles, shuttling boats, five ferry sizes, fares, seasons and working Fleet, Wildlife, Routes and Map panels.
+The Tideways Godot project already has terminals, lanes, real vehicles, shuttling boats, five ferry sizes, fares, seasons and working Fleet, Wildlife, Routes and Map panels.
 
 It does not yet have expenses, breakdowns, foot passengers, audio or saves. Company, Research and Finances are placeholders.
 
