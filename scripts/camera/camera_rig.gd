@@ -3,6 +3,8 @@ extends Node3D
 ## RTS-style orbit camera around a point on the water plane.
 ##   Left-drag / two-finger swipe / WASD: pan      Right- or middle-drag, Q/E: rotate
 ##   Right-drag vertical, R/F: tilt                Wheel / pinch / Z/X: zoom (toward cursor)
+## Touch screens (iPad): one finger pans and taps select; two fingers pan, pinch to zoom
+## and twist to rotate; three fingers dragged up/down tilt.
 ## Uses real time, so it keeps working while the simulation is paused.
 
 signal ground_clicked(screen_pos: Vector2)
@@ -34,6 +36,10 @@ var _moved := false
 var _last_ticks := 0
 var _last_magnify := 0        # ticks (usec) of the latest pinch event
 var _follow_pan := Vector2.ZERO   # swipe accumulated while following, before it breaks the follow
+var _touches := {}                # finger index -> screen position
+## Set once a second finger lands; the emulated mouse stays muted until every finger lifts,
+## so a pinch never turns into a one-finger pan or a tap on release.
+var _multi_touch := false
 
 
 func _ready() -> void:
@@ -62,6 +68,14 @@ func focus_on(p: Vector3, dist := -1.0) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch or event is InputEventScreenDrag:
+		_touch_input(event)
+		return
+	# One-finger touches arrive as emulated mouse events; ignore them mid-gesture.
+	if _multi_touch and (event is InputEventMouseButton or event is InputEventMouseMotion):
+		if event is InputEventMouseButton and not (event as InputEventMouseButton).pressed:
+			_pan_drag = false
+		return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		match mb.button_index:
@@ -111,6 +125,58 @@ func _unhandled_input(event: InputEvent) -> void:
 		var mg := event as InputEventMagnifyGesture
 		_last_magnify = Time.get_ticks_usec()
 		_zoom(1.0 / mg.factor, mg.position)
+
+
+func _touch_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		var st := event as InputEventScreenTouch
+		if st.pressed:
+			_touches[st.index] = st.position
+			if _touches.size() >= 2:
+				_multi_touch = true
+				_pan_drag = false
+				_follow_pan = Vector2.ZERO
+		else:
+			_touches.erase(st.index)
+			if _touches.is_empty():
+				_multi_touch = false
+		return
+	var sd := event as InputEventScreenDrag
+	if not _touches.has(sd.index):
+		return
+	var before := _touches.duplicate()
+	_touches[sd.index] = sd.position
+	var n := _touches.size()
+	if n < 2:
+		return
+	var keys := _touches.keys()
+	keys.sort()
+	if n >= 3:
+		# Three-finger vertical drag tilts, like right-drag.
+		target_pitch = clampf(target_pitch + sd.relative.y * 0.004 / n, MIN_PITCH, MAX_PITCH)
+		return
+	var a0: Vector2 = before[keys[0]]
+	var b0: Vector2 = before[keys[1]]
+	var a1: Vector2 = _touches[keys[0]]
+	var b1: Vector2 = _touches[keys[1]]
+	var c0 := (a0 + b0) * 0.5
+	var c1 := (a1 + b1) * 0.5
+	# Pinch: zoom toward the midpoint between the fingers.
+	var d0 := a0.distance_to(b0)
+	var d1 := a1.distance_to(b1)
+	if d0 > 1.0 and d1 > 1.0:
+		_zoom(d0 / d1, c1)
+	# Twist: the map turns with the fingers.
+	var turn := wrapf((b1 - a1).angle() - (b0 - a0).angle(), -PI, PI)
+	target_yaw += turn
+	# Two-finger swipe pans; while following, only a deliberate swipe breaks the follow.
+	if follow != null:
+		_follow_pan += c1 - c0
+		if _follow_pan.length() < 24.0:
+			return
+		follow = null
+		_follow_pan = Vector2.ZERO
+	_drag_pan(c0, c1)
 
 
 func ground_at(screen: Vector2) -> Variant:
