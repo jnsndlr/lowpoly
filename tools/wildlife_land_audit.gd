@@ -18,7 +18,7 @@ func _initialize() -> void:
 			visits = int(a.substr(9))
 		elif a.begins_with("--species="):
 			only = a.substr(10)
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/sandbox.tscn").instantiate()
 	root.add_child(main)
 
 

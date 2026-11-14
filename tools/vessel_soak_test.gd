@@ -45,7 +45,7 @@ func _initialize() -> void:
 			max_frames = int(a.substr(9))
 		if a.begins_with("--trace="):
 			trace = a.substr(8)
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/sandbox.tscn").instantiate()
 	root.add_child(main)
 
 

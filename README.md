@@ -5,7 +5,8 @@ generates an archipelago with towns, terminals and routes. Cars drive from town 
 the holding lots, queue in lanes, board double-ended ferries, cross, and drive off
 at the other side.
 
-Open the folder in Godot 4.7 and press **Play** (F5). Everything is built in code,
+Open the folder in Godot 4.7 and press **Play** (F5). The menu offers **Play** (the main map, still empty) and
+**Sandbox** (the procedural archipelago where features are prototyped first). Everything is built in code,
 so there are no assets to import.
 
 For Paul, Jon and their AI agents, see the [development and merge workflow](docs/workflow.md).
@@ -20,6 +21,7 @@ For Paul, Jon and their AI agents, see the [development and merge workflow](docs
 | Select island / vessel | Click (or click an island label) | Tab = next ferry, Esc = deselect |
 | Time | Speed buttons in the top bar | Space = pause, 1–3 = speed |
 | New random map | | G |
+| Back to menu | | M (sandbox), Esc (main map) |
 
 Selecting a ferry, sailboat or cargo ship follows it with the camera. Selecting an
 island shows its stats and the terminal status bar (queue, next departure, weather,
@@ -29,7 +31,10 @@ wind, tide).
 
 ```
 scripts/
-  main.gd                 entry point: generate → build world → start sim → HUD
+  scenes.gd               scene paths: menu, main map, sandbox
+  ui/main_menu.gd         title screen (Play → main map, Sandbox, Quit)
+  main_map.gd             the main game map (placeholder; systems move over from the sandbox)
+  sandbox.gd              procedural test map: generate → build world → start sim → HUD
   map/map_data.gd         pure data: islands, terminals, marinas, towns, routes (editor-friendly)
   map/map_generator.gd    procedural layout → MapData
   map/terrain.gd          heightfield (island stamping, cliffs, terminal flattening)
@@ -128,6 +133,6 @@ assignment and starts the normal game on seed 123 for 120 frames. Run the same
 checks locally with `bash tools/fast_ci.sh` and Godot on PATH, or set `GODOT_BIN`.
 Use the running game for visual review and the relevant longer diagnostics for
 changes to traffic. An iPad playtest covers touch, rendering and device performance.
-The current main scene reports one retained resource and up to 31 leaked objects
+The sandbox scene reports one retained resource and up to 31 leaked objects
 at shutdown on this seed. The launch check tolerates that recorded baseline;
 additional leaks and other Godot errors fail the job.

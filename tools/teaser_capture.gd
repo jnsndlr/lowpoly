@@ -93,7 +93,7 @@ func _initialize() -> void:
 			else:
 				_queue.append(s)
 	_queue.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return b.has("last") and not a.has("last"))
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/sandbox.tscn").instantiate()
 	main.set("uncapped", true)
 	root.add_child(main)
 
