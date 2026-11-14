@@ -126,3 +126,6 @@ assignment and starts the normal game on seed 123 for 120 frames. Run the same
 checks locally with `bash tools/fast_ci.sh` and Godot on PATH, or set `GODOT_BIN`.
 Use the running game for visual review and the relevant longer diagnostics for
 changes to traffic. An iPad playtest covers touch, rendering and device performance.
+The current main scene reports one retained resource and up to 31 leaked objects
+at shutdown on this seed. The launch check tolerates that recorded baseline;
+additional leaks and other Godot errors fail the job.
